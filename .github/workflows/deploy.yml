@@ -30,6 +30,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # E2E（Chromium + WebKit）に合格したときだけ公開する
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm e2e --grep-invert 画面キャプチャ
       - run: pnpm build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/

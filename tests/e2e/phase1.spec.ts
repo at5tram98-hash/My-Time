@@ -114,6 +114,7 @@ test.describe('境界ハンドル', () => {
     await expect(page.getByTestId('fcard-running')).toBeVisible();
     await expect(page.getByTestId('fcard-next')).toContainText('次のタスク');
     await expect(page.getByTestId('fcard-running')).toContainText('実行中タスク');
+    await page.waitForTimeout(600); // スプリングの収束を待つ
     const h2 = await center(page.getByTestId('split-handle'));
     await touchDrag(page, h2, { x: h2.x, y: h2.y + 260 });
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
@@ -167,6 +168,7 @@ test.describe('作成・編集・永続化・日付', () => {
     await page.getByTestId('event-end').fill('2026-10-12T14:00');
     await expect(page.getByTestId('conflict-warning')).toContainText('授業A');
     await page.getByTestId('save-event').click();
+    await expect(page.getByTestId('event-title-input')).toHaveCount(0); // 保存完了（シートが閉じる）を待ってから再起動
     await page.reload();
     await expect(page.getByRole('button', { name: /予定 面談/ })).toBeVisible();
     expect((await readEvent(page, 'ex'))?.start).toBe(at(13));
