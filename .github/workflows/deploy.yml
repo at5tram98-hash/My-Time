@@ -34,6 +34,10 @@ jobs:
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm e2e --grep-invert 画面キャプチャ
+      # サーバー連携（ローカル Worker + 模擬 Google）：同期・バックアップ・期限削除・復元のデータ保護ゲート
+      - run: pnpm e2e:stack
+        env:
+          WRANGLER_SEND_METRICS: 'false'
       - run: pnpm build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/

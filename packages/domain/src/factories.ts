@@ -1,4 +1,4 @@
-import type { Calendar, CalEvent, EpochMs, Subtask, Task } from './types';
+import type { Calendar, CalEvent, Employer, EpochMs, Subject, Subtask, Task } from './types';
 
 export function newId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
@@ -18,6 +18,20 @@ export function makeTask(fields: Partial<Task> & Pick<Task, 'title'>, now: Epoch
   return {
     id: newId(),
     kind: 'do',
+    special: 'normal',
+    assignment: null,
+    testPrep: null,
+    sourceEventId: null,
+    sourceKey: null,
+    estimateMinutes: null,
+    priority: 0,
+    tags: [],
+    flagged: false,
+    notifyMinutesBefore: null,
+    location: null,
+    repeat: null,
+    autoStartAt: null,
+    autoEndAt: null,
     icon: '📘',
     calendarId: null,
     category: null,
@@ -43,7 +57,40 @@ export function makeTask(fields: Partial<Task> & Pick<Task, 'title'>, now: Epoch
 }
 
 export function makeEvent(fields: Partial<CalEvent> & Pick<CalEvent, 'title' | 'calendarId' | 'start' | 'end'>, now: EpochMs): CalEvent {
-  return { id: newId(), timeZone: deviceTimeZone(), notes: '', createdAt: now, updatedAt: now, ...fields };
+  return {
+    id: newId(),
+    timeZone: deviceTimeZone(),
+    notes: '',
+    recurrence: null,
+    exceptions: [],
+    classInfo: null,
+    employerId: null,
+    hideAfterEnd: false,
+    source: null,
+    createdAt: now,
+    updatedAt: now,
+    ...fields,
+  };
+}
+
+export function makeSubject(name: string, now: EpochMs): Subject {
+  return { id: newId(), name, createdAt: now, updatedAt: now };
+}
+
+export function makeEmployer(name: string, now: EpochMs, reminderHours = 2): Employer {
+  return { id: newId(), name, reminderHours, createdAt: now, updatedAt: now };
+}
+
+/** 旧スキーマ（Phase 1）のレコードに新しい項目の既定値を補う。既存の値は上書きしない。 */
+export function normalizeTask(raw: Partial<Task> & Pick<Task, 'id' | 'title' | 'createdAt'>): Task {
+  return makeTask({ ...raw }, raw.createdAt);
+}
+export function normalizeEvent(raw: Partial<CalEvent> & Pick<CalEvent, 'id' | 'title' | 'calendarId' | 'start' | 'end' | 'createdAt'>): CalEvent {
+  return makeEvent({ ...raw }, raw.createdAt);
+}
+export function normalizeCalendar(raw: Partial<Calendar> & Pick<Calendar, 'id' | 'name' | 'kind' | 'createdAt'>): Calendar {
+  const icon = raw.kind === 'class' ? '🎓' : raw.kind === 'job' ? '💼' : '📅';
+  return { color: '#0A84FF', visible: true, order: 0, updatedAt: raw.createdAt, icon, ...raw } as Calendar;
 }
 
 export function makeSubtask(taskId: string, title: string, order: number, now: EpochMs): Subtask {
@@ -53,8 +100,8 @@ export function makeSubtask(taskId: string, title: string, order: number, now: E
 /** 初回起動時に作る既定カレンダー（ユーザーデータではなく器のみ。既存があれば作らない）。 */
 export function defaultCalendars(now: EpochMs): Calendar[] {
   return [
-    { id: 'cal-general', name: '一般', color: '#0A84FF', kind: 'general', visible: true, order: 0, createdAt: now, updatedAt: now },
-    { id: 'cal-class', name: '授業', color: '#5E5CE6', kind: 'class', visible: true, order: 1, createdAt: now, updatedAt: now },
-    { id: 'cal-job', name: 'アルバイト', color: '#FF9F0A', kind: 'job', visible: true, order: 2, createdAt: now, updatedAt: now },
+    { id: 'cal-general', name: '一般', color: '#0A84FF', icon: '📅', kind: 'general', visible: true, order: 0, createdAt: now, updatedAt: now },
+    { id: 'cal-class', name: '授業', color: '#5E5CE6', icon: '🎓', kind: 'class', visible: true, order: 1, createdAt: now, updatedAt: now },
+    { id: 'cal-job', name: 'アルバイト', color: '#FF9F0A', icon: '💼', kind: 'job', visible: true, order: 2, createdAt: now, updatedAt: now },
   ];
 }

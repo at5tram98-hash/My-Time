@@ -1,26 +1,57 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { CalEvent, Calendar, Subtask, Task } from '@my-time/domain';
+import { normalizeCalendar, normalizeEvent, normalizeTask, type CalEvent, type Calendar, type Employer, type Subject, type Subtask, type Task } from '@my-time/domain';
+import type { EntityName } from '@my-time/contracts';
+
+export type SyncEntity = EntityName;
 
 export interface OperationLogEntry {
   /** 自動採番（同一ミリ秒でも操作順を保証） */
   seq?: number;
   id: string;
   at: number;
-  entity: 'task' | 'event' | 'subtask' | 'calendar';
+  entity: SyncEntity;
   entityId: string;
   action: string;
   detail?: Record<string, unknown>;
 }
 
-/** Phase 2 で Cloudflare に送る未同期キュー。opId は冪等キー。 */
+/** クラウドへ送る未同期キュー。opId は冪等キー（再送しても二重に反映されない）。 */
 export interface OutboxEntry {
   opId: string;
   at: number;
-  entity: 'task' | 'event' | 'subtask' | 'calendar';
+  entity: SyncEntity;
   entityId: string;
   op: 'put' | 'delete';
-  /** 0 = 未同期（Phase 1 では同期処理なし） */
+  /** 0 = 未同期、1 = サーバーが受領済み */
   synced: 0 | 1;
+}
+
+/** サーバー側の版（衝突検出用）と、期間指定復元で一時的に戻したデータの印 */
+export interface RecordMeta {
+  key: string; // `${entity}:${id}`
+  entity: SyncEntity;
+  id: string;
+  version: number;
+  restoredSessionId: string | null;
+}
+
+export interface SyncState {
+  key: 'sync';
+  cursor: number;
+  lastSuccessAt: number | null;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+  attempts: number;
+}
+
+/** 端末内だけのお知らせ（同期の失敗など。サーバーのお知らせと一緒に表示） */
+export interface LocalNotice {
+  key: string;
+  level: 'info' | 'warn' | 'error';
+  title: string;
+  body: string;
+  createdAt: number;
+  resolvedAt: number | null;
 }
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -34,6 +65,19 @@ export interface AppSettings {
   homeDays: 1 | 2;
   expandedDays: number;
   calendarView: CalendarViewPref;
+  /** 初回セットアップを終えたか */
+  onboarded: boolean;
+  /** 分析：一時停止経験・自動開始/終了のタスクを含めるか（初期は除外） */
+  analysisIncludePaused: boolean;
+  analysisIncludeAuto: boolean;
+  /** 重複時の空き時間の提案範囲 */
+  suggestFromHour: number;
+  suggestToHour: number;
+  suggestStepMin: 15 | 30 | 60;
+  /** 新規タスクの通知（分前、null はなし） */
+  defaultNotifyMinutes: number | null;
+  /** アルバイトの勤務前リマインダー（新しい勤務先の初期値） */
+  defaultJobReminderHours: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -43,6 +87,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   homeDays: 1,
   expandedDays: 3,
   calendarView: '2day',
+  onboarded: false,
+  analysisIncludePaused: false,
+  analysisIncludeAuto: false,
+  suggestFromHour: 7,
+  suggestToHour: 23,
+  suggestStepMin: 15,
+  defaultNotifyMinutes: null,
+  defaultJobReminderHours: 2,
 };
 
 export class MyTimeDB extends Dexie {
@@ -50,8 +102,13 @@ export class MyTimeDB extends Dexie {
   events!: EntityTable<CalEvent, 'id'>;
   tasks!: EntityTable<Task, 'id'>;
   subtasks!: EntityTable<Subtask, 'id'>;
+  subjects!: EntityTable<Subject, 'id'>;
+  employers!: EntityTable<Employer, 'id'>;
   operationLog!: EntityTable<OperationLogEntry, 'seq'>;
   outbox!: EntityTable<OutboxEntry, 'opId'>;
+  meta!: EntityTable<RecordMeta, 'key'>;
+  syncState!: EntityTable<SyncState, 'key'>;
+  notices!: EntityTable<LocalNotice, 'key'>;
   settings!: EntityTable<AppSettings, 'key'>;
 
   constructor(name = 'my-time') {
@@ -65,6 +122,24 @@ export class MyTimeDB extends Dexie {
       outbox: 'opId, at, synced',
       settings: 'key',
     });
+    // Phase 2：同期・授業/勤務先・お知らせ。既存データは消さず、新しい項目に既定値を補う
+    this.version(2)
+      .stores({
+        subjects: 'id, name',
+        employers: 'id, name',
+        tasks: 'id, plannedStart, checkAt, status, kind, eventId, sourceKey, sourceEventId',
+        outbox: 'opId, at, synced, [entity+entityId]',
+        meta: 'key, restoredSessionId',
+        syncState: 'key',
+        notices: 'key, resolvedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('tasks').toCollection().modify((t: Task) => Object.assign(t, normalizeTask(t)));
+        await tx.table('events').toCollection().modify((e: CalEvent) => Object.assign(e, normalizeEvent(e)));
+        await tx.table('calendars').toCollection().modify((c: Calendar) => Object.assign(c, normalizeCalendar(c)));
+        // 既存の設定で初めて起動した人には初回セットアップを出さない
+        await tx.table('settings').toCollection().modify((s: AppSettings) => Object.assign(s, { ...DEFAULT_SETTINGS, ...s, onboarded: true }));
+      });
   }
 }
 

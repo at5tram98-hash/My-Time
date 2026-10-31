@@ -25,10 +25,10 @@ describe('保存前の重複チェック', () => {
   it('自分自身は重複に数えない（編集・移動時）', () => {
     expect(checkPlacement({ id: `event:${ev.id}`, start: at(10, 30), end: at(11, 30) }, others).conflicts).toEqual([]);
   });
-  it('その日に空きがなければ翌日の候補を返す', () => {
+  it('その日に空きがなければ翌日の提案範囲の最初を返す', () => {
     const full = placementItems([makeEvent({ title: '終日', calendarId: 'c', start: at(7), end: at(23) }, 0)], []);
     const r = checkPlacement({ id: 'n', start: at(9), end: at(10) }, full);
-    expect(r.suggestion?.start).toBe(at(8, 0, 1));
+    expect(r.suggestion?.start).toBe(at(7, 0, 1));
   });
 });
 

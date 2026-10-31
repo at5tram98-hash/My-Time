@@ -1,5 +1,12 @@
-import { useEffect } from 'react';
-import { DataProvider, useData } from './data';
+import { useEffect, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { expandAll, planNotices } from '@my-time/domain';
+import { useNow } from './useNow';
+import { repo } from '../data/repo';
+import { api } from '../sync/api';
+import { syncEngine } from '../sync/engine';
+import { Onboarding } from '../features/onboarding/Onboarding';
+import { DataProvider, useAttention, useData, useSync } from './data';
 import { UIProvider, useUI, type TabId } from './ui';
 import { SheetHost } from './SheetHost';
 import { AlertHost, ToastHost } from '../components/Overlays';
@@ -50,12 +57,99 @@ function AppearanceSync() {
   return null;
 }
 
+/** 同期の開始、AR の反映、アプリ表示中の通知、通知タップからの遷移 */
+function Background() {
+  const { tasks, events, employers } = useData();
+  const { openSheet, setTab, showToast } = useUI();
+  const now = useNow(30_000);
+  useEffect(() => {
+    void syncEngine.start();
+    return () => syncEngine.stop();
+  }, []);
+  useEffect(() => {
+    void repo.applyAutoReservations();
+  }, [now]);
+  // アプリを開いている間の通知（Push と重複しないよう画面内の表示のみ。同じものは二度出さない）
+  useEffect(() => {
+    const seen = new Set<string>(JSON.parse(sessionStorageGet('mt-seen') ?? '[]') as string[]);
+    const evs = expandAll(events, now - 86_400_000 * 2, now + 86_400_000 * 2);
+    const fresh = planNotices(tasks, evs, employers, now, 60_000).filter((n) => !seen.has(n.key));
+    for (const n of fresh) {
+      seen.add(n.key);
+      showToast(`${n.title}：${n.body}`);
+    }
+    if (fresh.length) sessionStorageSet('mt-seen', JSON.stringify([...seen].slice(-200)));
+  }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 通知をタップして開いたとき
+  useEffect(() => {
+    const open = (t: { kind: string; id: string | null } | null) => {
+      if (t?.kind === 'task' && t.id) openSheet({ kind: 'task', id: t.id });
+      else if (t?.kind === 'event' && t.id) openSheet({ kind: 'editEvent', eventId: t.id });
+      else if (t?.kind === 'settings') setTab('tasks');
+    };
+    const p = new URLSearchParams(location.search);
+    if (p.get('task')) open({ kind: 'task', id: p.get('task') });
+    if (p.get('event')) open({ kind: 'event', id: p.get('event') });
+    const onMsg = (e: MessageEvent<{ type: string; target: { kind: string; id: string | null } | null }>) => e.data?.type === 'open' && open(e.data.target);
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
+  }, [openSheet, setTab]);
+  return null;
+}
+
+function sessionStorageGet(k: string): string | null {
+  try {
+    return sessionStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function sessionStorageSet(k: string, v: string) {
+  try {
+    sessionStorage.setItem(k, v);
+  } catch {
+    /* 保存できない環境では毎回表示しうるが、機能は維持 */
+  }
+}
+
+/** 期間指定の復元で過去データを表示している間のお知らせ */
+function RestoreBanner() {
+  const { restoredKeys } = useData();
+  const sync = useSync();
+  const { confirm, showToast } = useUI();
+  const [busy, setBusy] = useState(false);
+  if (restoredKeys.size === 0) return null;
+  const end = async () => {
+    if (!(await confirm({ title: '閲覧を終了しますか？', message: '戻した過去データを通常の画面から外します。Googleドライブの保管データは残ります。', confirmLabel: '閲覧を終了' }))) return;
+    setBusy(true);
+    try {
+      const { items } = await api.restoreSessions();
+      for (const s of items) await api.endRestore(s.id);
+      await syncEngine.syncNow();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '終了できませんでした');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="restore-banner" role="status" data-testid="restore-banner">
+      <Icon name="undo" size={16} />
+      <span>過去のデータを{restoredKeys.size}件表示中</span>
+      <button type="button" className="pill-btn small" disabled={busy || !sync.me} onClick={() => void end()} data-testid="banner-end-restore">閲覧を終了</button>
+    </div>
+  );
+}
+
 function Shell() {
   const { tab, setTab } = useUI();
-  const { ready } = useData();
+  const { ready, settings } = useData();
+  const attention = useAttention();
   return (
     <div className="app-shell">
       <AppearanceSync />
+      {ready && <Background />}
+      <RestoreBanner />
       <main className="app-main">
         {ready ? (
           <>
@@ -74,12 +168,14 @@ function Shell() {
           <button key={t.id} type="button" className={`tab ${tab === t.id ? 'active' : ''}`} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
             <span className="tab-icon">
               <Icon name={t.icon} size={25} strokeWidth={tab === t.id ? 2.2 : 1.8} />
+              {t.id === 'other' && attention > 0 && <span className="tab-alert" aria-label="確認が必要なお知らせがあります" data-testid="other-alert">!</span>}
             </span>
             <span className="tab-label">{t.label}</span>
           </button>
         ))}
       </nav>
       <SheetHost />
+      <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>
       <AlertHost />
       <ToastHost />
     </div>

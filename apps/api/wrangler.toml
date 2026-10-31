@@ -1,0 +1,28 @@
+name = "my-time"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 静的なPWAとAPIを同じオリジンで配信（iPhone Safari でセッションCookieを使うため）
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "my-time"
+database_id = "00000000-0000-0000-0000-000000000000" # 本番のIDはセットアップ時に置き換える（docs/setup-cloudflare-google.md）
+migrations_dir = "migrations"
+
+# 毎日 22:00 JST = 13:00 UTC にバックアップ・期限処理、5分ごとに通知
+[triggers]
+crons = ["0 13 * * *", "*/5 * * * *"]
+
+[vars]
+APP_ORIGIN = "http://localhost:8787"
+APP_TIME_ZONE = "Asia/Tokyo"
+GOOGLE_AUTH_BASE = "https://accounts.google.com"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+GOOGLE_API_BASE = "https://www.googleapis.com"

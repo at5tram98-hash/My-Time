@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { isUnscheduled, taskAnchor, type Task, type TaskKind } from '@my-time/domain';
+import { needsSetup, taskAnchor, type Task, type TaskKind } from '@my-time/domain';
 import { useData } from '../../app/data';
 import { useUI } from '../../app/ui';
 import { useNow } from '../../app/useNow';
@@ -22,9 +22,9 @@ export function TasksScreen() {
       .filter((t) => t.kind === kind)
       .filter((t) => showDone || t.status !== 'done')
       .filter((t) => !k || t.title.toLowerCase().includes(k) || (t.category ?? '').toLowerCase().includes(k) || t.notes.toLowerCase().includes(k));
-    const unscheduled = list.filter(isUnscheduled).sort((a, b) => b.createdAt - a.createdAt);
+    const unscheduled = list.filter(needsSetup).sort((a, b) => b.createdAt - a.createdAt);
     const groups = new Map<string, Task[]>();
-    for (const t of list.filter((x) => !isUnscheduled(x))) {
+    for (const t of list.filter((x) => !needsSetup(x))) {
       const key = t.category ?? 'カテゴリなし';
       groups.set(key, [...(groups.get(key) ?? []), t]);
     }

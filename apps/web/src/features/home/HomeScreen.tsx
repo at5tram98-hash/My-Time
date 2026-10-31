@@ -19,7 +19,6 @@ const SPRING = { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 } as con
 
 export function HomeScreen() {
   const { tasks, subtasksByTask, calendarById, settings } = useData();
-  const events = useVisibleEvents();
   const { homeDate, setHomeDate, openSheet } = useUI();
   const now = useNow();
   const reduce = useReducedMotion() ?? false;
@@ -123,6 +122,7 @@ export function HomeScreen() {
   };
 
   const days = expanded ? Math.min(7, Math.max(1, settings.expandedDays)) : settings.homeDays;
+  const events = useVisibleEvents(addDays(homeDate, -1), addDays(homeDate, days + 1), now);
   const dayTasks = useMemo(() => tasksForDay(tasks, homeDate), [tasks, homeDate]);
   const doneCount = dayTasks.filter((t) => t.status === 'done').length;
   const isToday = isSameDay(homeDate, now);
