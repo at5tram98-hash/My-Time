@@ -67,13 +67,32 @@ export function Timeline(props: Props) {
 
   usePager(pagerRef, { x, onPage, reduceMotion: reduce });
 
-  // 初回は現在時刻（なければ8時）付近へ
+  // 初回は現在時刻（なければ8時）付近へ。ユーザーが触るまでは、画面サイズが落ち着く（ホームの上下分割が確定する）たびに合わせ直す
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const d = new Date(now);
-    const minutes = isSameDay(now, startDay) || days > 1 ? d.getHours() * 60 + d.getMinutes() : 8 * 60;
-    el.scrollTop = Math.max(0, minutes * pxPerMin - el.clientHeight * 0.35);
+    let anchored = true;
+    const anchor = () => {
+      if (!anchored) return;
+      const d = new Date(now);
+      const minutes = isSameDay(now, startDay) || days > 1 ? d.getHours() * 60 + d.getMinutes() : 8 * 60;
+      el.scrollTop = Math.max(0, (minutes * hourRef.current) / 60 - el.clientHeight * 0.35);
+    };
+    const release = () => {
+      anchored = false;
+    };
+    anchor();
+    const ro = new ResizeObserver(anchor);
+    ro.observe(el);
+    el.addEventListener('pointerdown', release, { passive: true });
+    el.addEventListener('touchstart', release, { passive: true });
+    el.addEventListener('wheel', release, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('pointerdown', release);
+      el.removeEventListener('touchstart', release);
+      el.removeEventListener('wheel', release);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

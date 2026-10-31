@@ -69,6 +69,17 @@ test.describe('ナビゲーションと表示', () => {
     await expect(page.locator('[data-testid="cal-timeline"] .tl-col')).toHaveAttribute('data-date', String(at(0, 0, 8)));
   });
 
+  test('夜に開いても現在時刻線が画面内に見える', async ({ page }) => {
+    await openApp(page, at(21, 30));
+    await page.waitForTimeout(600);
+    const line = page.locator('[data-testid="home-timeline"] [data-testid="now-line"]');
+    await expect(line).toBeInViewport();
+    const scroller = await page.getByTestId('home-timeline-scroll').boundingBox();
+    const y = (await line.boundingBox())!.y;
+    expect(y).toBeGreaterThan(scroller!.y);
+    expect(y).toBeLessThan(scroller!.y + scroller!.height);
+  });
+
   test('赤い現在時刻線は今日の列だけ', async ({ page }) => {
     await openApp(page);
     await page.getByTestId('tab-calendar').click();
