@@ -28,7 +28,8 @@ async function login(browser: Browser) {
   await page.getByTestId('login').click();
   await page.waitForURL(/login=ok/);
   // 初回は「ログインしていない間の領域」から、このアカウントの領域へ切り替わる（再読み込み）
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('mytime:activeDb')), { timeout: 15_000 }).toMatch(/^my-time@/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('mytime:activeDb')).catch(() => ''), { timeout: 15_000 }).toMatch(/^my-time@/);
+  await page.waitForLoadState('load');
   await expect(page.getByTestId('home-screen')).toBeVisible();
   await page.getByTestId('tab-other').click();
   await expect(page.getByTestId('account-row')).toContainText('yuki', { timeout: 15_000 });
@@ -55,8 +56,20 @@ async function skipOnboarding(page: Page) {
   await expect(page.getByTestId('onboarding')).toHaveCount(0);
 }
 
+/** 領域の切り替え直後は再読み込みが入るので、読み取りに失敗したら少し待って読み直す */
 async function taskTitles(page: Page): Promise<string[]> {
-  await page.waitForLoadState('domcontentloaded');
+  for (let i = 0; ; i++) {
+    try {
+      await page.waitForLoadState('load');
+      return await readTitles(page);
+    } catch (e) {
+      if (i >= 10 || !String(e).includes('Execution context was destroyed')) throw e;
+      await page.waitForTimeout(300);
+    }
+  }
+}
+
+async function readTitles(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     // 表示中の保存領域（ログイン中はアカウントごとの領域）
     const name = localStorage.getItem('mytime:activeDb') ?? 'my-time';

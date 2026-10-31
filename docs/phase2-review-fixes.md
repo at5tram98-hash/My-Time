@@ -71,7 +71,17 @@
 - E2E・CI・文書：`tests/stack/dataProtection.spec.ts`、`.github/workflows/deploy-cloudflare.yml`、`docs/setup-cloudflare-google.md`、`docs/adr/0002-sync-store.md`、`docs/open-questions.md`、`docs/phase2-report.md`、本書、`docs/screenshots/p2-14-account-migrate.png`
 
 ## テスト結果（実測：2026-11-01）
-TEST_RESULTS_PLACEHOLDER
+| コマンド | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功（web / sw / api / domain / contracts、strict） |
+| `pnpm lint` | 成功（エラー・警告0） |
+| `pnpm test` | **83件成功**（ドメイン55・Web 28〔永続化9・コンポーネント4・同期エンジン15〕）＋ **API 37件成功**（workerd + 実 D1） |
+| `pnpm build` | 成功 |
+| `pnpm e2e`（Chromium モバイル + WebKit） | **106件成功・4件スキップ**（Phase 1・Phase 2 の回帰を含む。スキップは WebKit で CDP タッチが必要な3件と Linux 版 WebKit のオフライン再読込1件） |
+| `pnpm e2e:stack`（ローカル Worker + 模擬 Google、Chromium + WebKit） | **6件成功**（2回連続で全件成功） |
+
+テストの追加：API 23→37件、Web 単体 20→28件、サーバー連携 E2E 2→6件。
+途中で見つけた問題：サーバー連携 E2E の1回目で2件失敗。原因はアカウント切り替えに伴う再読み込みの最中にテストが IndexedDB を読んでいたこと（アプリの不具合ではない）。テストを再読み込みの完了を待って読み直すよう修正し、2回連続で全件成功を確認。
 
 ## セキュリティ・データ保護上の残存リスク（隠さない）
 1. **本物の Google / Drive / Cloudflare では未検証**。OAuth・Drive・cron はすべて模擬 Google とローカル Worker で確認した。本番では手順書の「復元試験」と dry-run を経てから期限削除を有効にする運用が前提。
