@@ -12,8 +12,8 @@ pnpm dev            # http://localhost:5173（同じWi-FiのiPhoneからは表�
 pnpm build && pnpm preview   # 本番ビルドの確認（http://localhost:4173）
 ```
 
-PWA として iPhone に入れるには HTTPS で配信し、Safari の共有メニュー →「ホーム画面に追加」。
-（GitHub Pages / Cloudflare Pages への公開はまだ行っていません。公開はユーザーの承認後。）
+公開URL：https://at5tram98-hash.github.io/my-time/ （main への push で自動デプロイ。各フェーズ完了時に更新）
+iPhone では Safari で開き、共有メニュー →「ホーム画面に追加」。
 
 ## 検証コマンド
 
