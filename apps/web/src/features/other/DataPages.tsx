@@ -19,6 +19,16 @@ function NeedsLogin() {
   );
 }
 
+/** 失敗理由を利用者向けの言葉にする（技術的な詳細はサーバーの記録に残す） */
+function backupErrorLabel(e: string | null): string {
+  if (!e) return '原因不明';
+  if (/ハッシュ|件数|検証/.test(e)) return '読み戻して確認した内容が一致しませんでした（データは削除していません）';
+  if (/storageQuota|quota|容量/.test(e)) return 'Googleドライブの空き容量が足りません';
+  if (/401|403|invalid_grant|権限|ログイン/.test(e)) return 'Googleドライブの権限がありません。もう一度ログインしてください';
+  if (/Drive|5\d\d|fetch|network/i.test(e)) return 'Googleドライブに保存できませんでした。次回自動で再試行します';
+  return e.length > 60 ? `${e.slice(0, 60)}…` : e;
+}
+
 const kb = (b: number | null) => (b == null ? '' : b < 1024 ? `${b}B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(1)}KB` : `${(b / 1024 / 1024).toFixed(1)}MB`);
 
 /** バックアップ一覧と古い日次バックアップの整理。アーカイブ（削除データの保管先）と最新の検証済みは削除できない */
@@ -76,7 +86,7 @@ export function BackupsPage() {
               <span className={`status-dot ${b.status}`} aria-label={b.status === 'verified' ? '確認済み' : b.status === 'failed' ? '失敗' : '処理中'} />
               <span className="row-label">
                 {b.kind === 'daily' ? '日次' : 'アーカイブ'} · {formatFull(b.created_at)}
-                <span className="sub-label">{b.status === 'failed' ? `失敗：${b.error ?? ''}` : `予定${counts.event ?? 0}・タスク${counts.task ?? 0} ${kb(b.bytes)}`}</span>
+                <span className="sub-label">{b.status === 'failed' ? `失敗：${backupErrorLabel(b.error)}` : `予定${counts.event ?? 0}・タスク${counts.task ?? 0} ${kb(b.bytes)}`}</span>
               </span>
               {b.kind === 'daily' && b.id !== latestVerified && (
                 <button type="button" className="icon-btn subtle" aria-label="削除" onClick={() => void remove(b)}>

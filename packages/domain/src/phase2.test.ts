@@ -204,3 +204,12 @@ describe('タイムゾーン（UTCで動くサーバーでも利用者の暦で�
     }
   });
 });
+
+import { formatOverMinutes } from './time';
+describe('遅延の短い表示', () => {
+  it('分・時間・日で切り替える', () => {
+    expect(formatOverMinutes(10)).toBe('10分');
+    expect(formatOverMinutes(130)).toBe('2時間10分');
+    expect(formatOverMinutes(64192)).toBe('44日');
+  });
+});

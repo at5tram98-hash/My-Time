@@ -302,12 +302,15 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
             <div className="group-header sub">小テスト</div>
             <div className="group-body">
               {quizzes.map((q, i) => (
-                <div className="row" key={q.key} data-testid="quiz-row">
-                  <input className="row-input small" value={q.title} onChange={(e) => setQuizzes((l) => l.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} placeholder="小テスト" aria-label="小テスト名" />
-                  <input type="datetime-local" className="dt-input" value={q.at != null ? toLocalInput(q.at) : ''} onChange={(e) => setQuizzes((l) => l.map((x, j) => (j === i ? { ...x, at: fromLocalInput(e.target.value) } : x)))} aria-label="小テストの日時" />
+                <div className="sub-form" key={q.key} data-testid="quiz-row">
+                  <input className="row-input" value={q.title} onChange={(e) => setQuizzes((l) => l.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} placeholder="小テスト名" aria-label="小テスト名" />
+                  <div className="row">
+                    <span className="row-label small">日時</span>
+                    <input type="datetime-local" className="dt-input" value={q.at != null ? toLocalInput(q.at) : ''} onChange={(e) => setQuizzes((l) => l.map((x, j) => (j === i ? { ...x, at: fromLocalInput(e.target.value) } : x)))} aria-label="小テストの日時" />
                   <button type="button" className="icon-btn subtle" aria-label="小テストを外す" onClick={() => setQuizzes((l) => l.filter((_, j) => j !== i))}>
-                    <Icon name="close" size={16} />
-                  </button>
+                      <Icon name="close" size={16} />
+                    </button>
+                  </div>
                 </div>
               ))}
               <button type="button" className="row row-button tint-row" onClick={() => setQuizzes((l) => [...l, { key: newId(), title: '', at: null }])} data-testid="add-quiz">

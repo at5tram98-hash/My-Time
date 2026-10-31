@@ -4,6 +4,7 @@ import {
   actualProgress, availableActions, canAddSubtask, delayInfo, ETA_REASON_JA, subtaskLabel, estimateEnd, formatDuration, formatHm, idealProgress,
   workedMs, type TaskAction,
 } from '@my-time/domain';
+import { formatOverMinutes } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Icon, type IconName } from '../../components/Icon';
 import { TaskIcon } from '../../components/TaskIcon';
@@ -140,7 +141,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
                   <span className={`row-value ${eta.kind === 'estimate' ? 'tint' : ''}`} data-testid="eta-value">{eta.kind === 'estimate' ? formatHm(eta.at) : ETA_REASON_JA[eta.reason]}</span>
                 </div>
               )}
-              {delay.delayed && <div className="row"><span className="row-label">遅延</span><span className="row-value late">予定終了から {delay.overMinutes}分</span></div>}
+              {delay.delayed && <div className="row"><span className="row-label">遅延</span><span className="row-value late">予定終了から {formatOverMinutes(delay.overMinutes)}</span></div>}
             </>
           ) : (
             <>

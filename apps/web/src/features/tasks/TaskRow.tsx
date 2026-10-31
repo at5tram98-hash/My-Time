@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import {
   actualProgress, canScrubProgress, delayInfo, formatDayLabel, formatHm, idealProgress, rowTimeLabel, type Subtask, type Task,
 } from '@my-time/domain';
+import { formatOverMinutes } from '@my-time/domain';
 import { TaskIcon } from '../../components/TaskIcon';
 import { Icon } from '../../components/Icon';
 import { useUI } from '../../app/ui';
@@ -152,7 +153,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
       onPointerCancel={() => void end(false)}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <button type="button" className="task-row-main" onClick={onClick} aria-label={`${task.title}${delay.delayed ? `、${delay.overMinutes}分遅延` : ''}${ap.value != null ? `、実績${Math.round(ap.value * 100)}%` : ''}。タップで詳細${task.kind === 'do' ? '、長押しで進捗入力' : ''}`}>
+      <button type="button" className="task-row-main" onClick={onClick} aria-label={`${task.title}${delay.delayed ? `、${formatOverMinutes(delay.overMinutes)}遅延` : ''}${ap.value != null ? `、実績${Math.round(ap.value * 100)}%` : ''}。タップで詳細${task.kind === 'do' ? '、長押しで進捗入力' : ''}`}>
         {task.kind === 'check' ? (
           <span
             role="checkbox"
@@ -193,7 +194,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
         <span className={`task-row-time ${label.kind} ${delay.delayed ? 'late' : ''} ${delay.delayed && !reduce ? 'blink' : ''}`}>
           {timeTag && <span className="time-tag">{timeTag}</span>}
           <span className="time-val">{timeText}</span>
-          {delay.delayed && <span className="late-text">+{delay.overMinutes}分</span>}
+          {delay.delayed && <span className="late-text">+{formatOverMinutes(delay.overMinutes)}</span>}
         </span>
       </button>
       {scrubbing && (

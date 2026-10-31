@@ -152,7 +152,7 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   await expect(a.getByTestId('restore-banner')).toContainText('1件');
   if (info.project.name === 'stack-chromium') {
     await a.getByTestId('tab-tasks').click();
-    await a.waitForTimeout(400);
+    await a.waitForTimeout(3500); // 案内のトーストが消えてから
     await a.screenshot({ path: 'docs/screenshots/p2-13-restore-banner.png' });
   }
 

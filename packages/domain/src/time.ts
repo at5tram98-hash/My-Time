@@ -131,3 +131,10 @@ export function formatDuration(ms: number): string {
   if (h === 0) return `${m}分`;
   return m === 0 ? `${h}時間` : `${h}時間${m}分`;
 }
+
+/** 遅延の短い表示：60分未満は「N分」、1日未満は「N時間M分」、それ以上は「N日」 */
+export function formatOverMinutes(min: number): string {
+  if (min < 60) return `${min}分`;
+  if (min < 24 * 60) return formatDuration(min * MINUTE);
+  return `${Math.floor(min / (24 * 60))}日`;
+}
