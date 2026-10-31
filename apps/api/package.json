@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "node -e \"require('fs').mkdirSync('../web/dist',{recursive:true})\" && vitest run"
   },
   "dependencies": {
     "@my-time/contracts": "workspace:*",
