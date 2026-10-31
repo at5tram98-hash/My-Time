@@ -4,6 +4,9 @@ import { makeEvent, makeTask, type CalEvent, type Task } from '@my-time/domain';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 import { installFakeGoogle, type FakeGoogle } from './fakeGoogle';
 import { runDailyBackup, runRetention } from '../src/jobs/backup';
+import { recoverSnapshot } from '../src/lib/recovery';
+import { canonicalJson, type SnapshotBody } from '@my-time/domain';
+import { nextSeq } from '../src/lib/store';
 import { runNotifications } from '../src/jobs/notify';
 import { encryptPayload, vapidAuthorization } from '../src/lib/webpush';
 import { b64url, fromB64url } from '../src/lib/crypto';
@@ -639,4 +642,66 @@ describe('タスクの型', () => {
     const t: Task = makeTask({ title: '既定' }, NOW);
     expect((await push(cookie, [putOp('task', t)])).results[0]!.status).toBe('applied');
   });
+});
+
+
+describe('通信断・カーソル・全データ復旧の回帰試験', () => {
+  it('削除拒否の応答が失われても同じ操作IDで削除理由と内容を再取得できる', async () => {
+    const { cookie } = await login();
+    const task = makeTask({ id: 'refused-retry', title: '削除前' }, NOW);
+    await push(cookie, [putOp('task', task)]);
+    await push(cookie, [{ ...putOp('task', task, 1), op: 'delete', record: null }]);
+    const op = putOp('task', { ...task, title: 'オフライン編集', updatedAt: NOW + 100 }, 1);
+    const first = await push(cookie, [op]); // treat response as lost
+    const retry = await push(cookie, [op]);
+    expect(retry).toEqual(first);
+    expect(retry.results[0]).toMatchObject({ status: 'conflict', serverDeleted: true, deleteReason: 'user' });
+  });
+
+  it('先に予約した小さいカーソルを後から書いても、pullで取り逃がさない', async () => {
+    const { cookie, userId } = await login();
+    const reserved = await nextSeq(E.DB, userId);
+    await push(cookie, [putOp('task', makeTask({ id: 'first', title: '先に確定' }, NOW))]);
+    const before = await pullAll(cookie);
+    const late = makeTask({ id: 'late', title: '後に確定' }, NOW);
+    await E.DB.prepare("INSERT INTO records(user_id,entity,id,version,data,deleted,updated_at,server_seq) VALUES (?,'task',?,1,?,0,?,?)").bind(userId, late.id, JSON.stringify(late), NOW, reserved).run();
+    const after = await pullAll(cookie, before.cursor);
+    expect(after.changes.map((c) => c.id)).toEqual(['late']);
+    expect(after.cursor).toBeGreaterThan(before.cursor);
+  });
+
+  it('Driveから読み戻した日次ファイルを空の別D1へ実際に書き戻し、全記録・設定・ログ・tombstoneが一致する', async () => {
+    const { cookie, userId } = await login();
+    await seedForRetention(cookie);
+    await api(cookie, '/settings', { method: 'PUT', body: JSON.stringify({ theme: 'dark' }) });
+    const gone = makeTask({ id: 'gone-recovery', title: '消したタスク' }, NOW);
+    await push(cookie, [putOp('task', gone)]);
+    await push(cookie, [{ ...putOp('task', gone, 1), op: 'delete', record: null }]);
+    expect((await runDailyBackup(E, userId, NOW)).ok).toBe(true);
+    const file = [...fg.files.values()].find((f) => f.name.startsWith('MyTime-daily-'))!;
+    const body = JSON.parse(file.content) as SnapshotBody;
+    await recoverSnapshot(env.RECOVERY_DB, userId, body);
+    const source = await E.DB.prepare('SELECT entity,id,version,data,deleted,delete_reason FROM records WHERE user_id = ? ORDER BY entity,id').bind(userId).all();
+    const restored = await env.RECOVERY_DB.prepare('SELECT entity,id,version,data,deleted,delete_reason FROM records WHERE user_id = ? ORDER BY entity,id').bind(userId).all();
+    const normalize = (rs: Record<string, unknown>[]) => rs.map((r) => ({ ...r, data: r.data ? canonicalJson(JSON.parse(r.data as string)) : null }));
+    expect(normalize(restored.results)).toEqual(normalize(source.results));
+    for (const sql of [
+      'SELECT data,updated_at FROM user_settings WHERE user_id = ?',
+      'SELECT at,entity,entity_id,action,detail FROM operation_log WHERE user_id = ? ORDER BY seq',
+    ]) expect((await env.RECOVERY_DB.prepare(sql).bind(userId).all()).results).toEqual((await E.DB.prepare(sql).bind(userId).all()).results);
+    expect((await env.RECOVERY_DB.prepare('SELECT COUNT(*) AS n FROM sessions').first<{ n: number }>())!.n).toBe(0);
+    await expect(recoverSnapshot(env.RECOVERY_DB, userId, body)).rejects.toThrow('空');
+    await expect(recoverSnapshot(env.RECOVERY_DB, 'another-account', body)).rejects.toThrow('アカウント');
+  });
+});
+
+
+it('同じ操作IDの並行リクエストでもレコードは1回だけ反映する', async () => {
+  const { cookie, userId } = await login();
+  const op = putOp('task', makeTask({ id: 'concurrent-retry', title: '一度だけ' }, NOW));
+  await Promise.all([push(cookie, [op]), push(cookie, [op])]);
+  const row = await E.DB.prepare("SELECT version FROM records WHERE user_id = ? AND id = 'concurrent-retry'").bind(userId).first<{ version: number }>();
+  expect(row?.version).toBe(1);
+  const logs = await E.DB.prepare("SELECT COUNT(*) AS n FROM operation_log WHERE user_id = ? AND entity_id = 'concurrent-retry' AND action = 'put'").bind(userId).first<{ n: number }>();
+  expect(logs?.n).toBe(1);
 });

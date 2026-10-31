@@ -139,7 +139,11 @@ export async function scheduled(cron: string, env: Env, now: number): Promise<vo
 }
 
 export default {
-  fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => {
+    const path = new URL(req.url).pathname;
+    if (path === '/api' || path.startsWith('/api/')) return app.fetch(req, env, ctx);
+    return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
+  },
   scheduled: async (ev: ScheduledController, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(scheduled(ev.cron, env, ev.scheduledTime));
   },

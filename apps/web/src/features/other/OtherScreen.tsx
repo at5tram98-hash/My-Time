@@ -13,15 +13,17 @@ import { api } from '../../sync/api';
 import { syncEngine } from '../../sync/engine';
 import { CalendarsPage, EmployersPage, SubjectsPage } from './ManagePages';
 import { BackupsPage, NoticesPage, RestorePage } from './DataPages';
+import { DeviceTransferPage } from './DeviceTransferPage';
 import { NotificationSettings } from './NotificationSettings';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
   root: 'その他',
+  transfer: 'データの移行',
   calendars: 'カレンダー',
   subjects: '授業の科目',
   employers: '勤務先',
@@ -147,6 +149,7 @@ export function OtherScreen() {
             <span className="row-value muted" data-testid="sync-status">{syncLabel(sync, outboxPending)}</span>
           </button>
           <NavRow icon="stack" color="#FF9500" label="Driveバックアップ" value={loggedIn ? (sync.me!.drive.connected ? '毎日22時' : '未接続') : '—'} onClick={() => setPage('backups')} testId="nav-backups" />
+          <NavRow icon="stack" color="#30B0C7" label="データの移行" onClick={() => setPage('transfer')} testId="nav-transfer" />
           <NavRow icon="undo" color="#5856D6" label="期間指定の復元" onClick={() => setPage('restore')} testId="nav-restore" />
           <NavRow icon="bell" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
           {loggedIn && (
@@ -259,6 +262,7 @@ export function OtherScreen() {
             {page === 'backups' && <BackupsPage />}
             {page === 'restore' && <RestorePage />}
             {page === 'notices' && <NoticesPage />}
+            {page === 'transfer' && <DeviceTransferPage />}
             {page === 'notifications' && <NotificationSettings />}
           </SubPage>
         )}

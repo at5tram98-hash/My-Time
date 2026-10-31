@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { ENTITY_SCHEMAS, pushRequestSchema, type PullChange, type PullResult, type PushResult, type SyncOp } from '@my-time/contracts';
 import type { AppBindings } from '../env';
-import { getRecord, logStmt, nextSeq, type RecordRow } from '../lib/store';
+import { getRecord, logStmt, type RecordRow } from '../lib/store';
 
 export const syncRoutes = new Hono<AppBindings>();
 
@@ -18,8 +18,18 @@ type DeleteReason = NonNullable<OpResult['deleteReason']>;
  *   間に入った変更（特に削除）を上書きしない。条件が外れたら読み直して判定をやり直す
  */
 export async function applyOp(db: D1Database, userId: string, op: SyncOp, now: number): Promise<OpResult> {
-  const receipt = await db.prepare('SELECT status, version FROM sync_receipts WHERE user_id = ? AND op_id = ?').bind(userId, op.opId).first<{ status: string; version: number }>();
-  if (receipt) return { opId: op.opId, status: 'duplicate', version: receipt.version };
+  const receipt = await db.prepare('SELECT status, version, result_json FROM sync_receipts WHERE user_id = ? AND op_id = ?').bind(userId, op.opId).first<{ status: string; version: number; result_json: string | null }>();
+  if (receipt) {
+    if (receipt.result_json) return JSON.parse(receipt.result_json) as OpResult;
+    // Old receipts lack the conflict payload. Re-read authoritative state.
+    if (receipt.status === 'conflict') {
+      const cur = await getRecord(db, userId, op.entity, op.entityId);
+      return { opId: op.opId, status: 'conflict', version: cur?.version ?? receipt.version,
+        serverRecord: cur?.data ? JSON.parse(cur.data) : null, serverDeleted: cur?.deleted === 1,
+        deleteReason: (cur?.delete_reason as DeleteReason) ?? null };
+    }
+    return { opId: op.opId, status: 'duplicate', version: receipt.version };
+  }
 
   let data: string | null = null;
   let updatedAt = op.clientUpdatedAt;
@@ -32,8 +42,8 @@ export async function applyOp(db: D1Database, userId: string, op: SyncOp, now: n
     updatedAt = (parsed.data as { updatedAt: number }).updatedAt;
   }
 
-  const receiptStmt = (status: string, version: number) =>
-    db.prepare('INSERT INTO sync_receipts (user_id, op_id, status, version, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING').bind(userId, op.opId, status, version, now);
+  const receiptStmt = (status: string, version: number, result?: OpResult) =>
+    db.prepare('INSERT INTO sync_receipts (user_id, op_id, status, version, created_at, result_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING').bind(userId, op.opId, status, version, now, result ? JSON.stringify(result) : null);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const cur = await getRecord(db, userId, op.entity, op.entityId);
@@ -44,37 +54,38 @@ export async function applyOp(db: D1Database, userId: string, op: SyncOp, now: n
         await receiptStmt('applied', cur.version).run();
         return { opId: op.opId, status: 'applied', version: cur.version };
       }
-      await db.batch([receiptStmt('conflict', cur.version), logStmt(db, userId, now, op.entity, op.entityId, 'put-refused', { reason: 'tombstone', deleteReason: cur.delete_reason, base: op.baseVersion })]);
-      return { opId: op.opId, status: 'conflict', version: cur.version, serverRecord: null, serverDeleted: true, deleteReason: (cur.delete_reason as DeleteReason | null) ?? 'user' };
+      const result: OpResult = { opId: op.opId, status: 'conflict', version: cur.version, serverRecord: null, serverDeleted: true, deleteReason: (cur.delete_reason as DeleteReason | null) ?? 'user' };
+      await db.batch([receiptStmt('conflict', cur.version, result), logStmt(db, userId, now, op.entity, op.entityId, 'put-refused', { reason: 'tombstone', deleteReason: cur.delete_reason, base: op.baseVersion })]);
+      return result;
     }
 
     // 2) 版の衝突：サーバー側の方が新しければ反映しない
     const curVersion = cur?.version ?? 0;
     const conflicted = curVersion !== op.baseVersion;
     if (conflicted && cur && cur.updated_at > updatedAt) {
-      await receiptStmt('conflict', cur.version).run();
-      return { opId: op.opId, status: 'conflict', version: cur.version, serverRecord: cur.data ? (JSON.parse(cur.data) as Record<string, unknown>) : null };
+      const result: OpResult = { opId: op.opId, status: 'conflict', version: cur.version, serverRecord: cur.data ? JSON.parse(cur.data) : null };
+      await receiptStmt('conflict', cur.version, result).run();
+      return result;
     }
 
     // 3) 読んだ版のままのときだけ書く（復元閲覧中の印 restored_session_id はここでは変えない）
     const version = curVersion + 1;
-    const seq = await nextSeq(db, userId);
+    const seq = 0; // database triggers assign the committed cursor
     const del = op.op === 'delete' ? 1 : 0;
     const write = cur
       ? db
-          .prepare('UPDATE records SET version = ?, data = ?, deleted = ?, delete_reason = ?, updated_at = ?, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0')
-          .bind(version, data, del, del ? 'user' : null, updatedAt, seq, userId, op.entity, op.entityId, curVersion)
+          .prepare('UPDATE records SET version = ?, data = ?, deleted = ?, delete_reason = ?, updated_at = ?, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0 AND NOT EXISTS (SELECT 1 FROM sync_receipts WHERE user_id = ? AND op_id = ?)')
+          .bind(version, data, del, del ? 'user' : null, updatedAt, seq, userId, op.entity, op.entityId, curVersion, userId, op.opId)
       : db
-          .prepare('INSERT INTO records (user_id, entity, id, version, data, deleted, delete_reason, updated_at, server_seq, restored_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT(user_id, entity, id) DO NOTHING')
-          .bind(userId, op.entity, op.entityId, version, data, del, del ? 'user' : null, updatedAt, seq);
+          .prepare('INSERT INTO records (user_id, entity, id, version, data, deleted, delete_reason, updated_at, server_seq, restored_session_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL WHERE NOT EXISTS (SELECT 1 FROM sync_receipts WHERE user_id = ? AND op_id = ?) ON CONFLICT(user_id, entity, id) DO NOTHING')
+          .bind(userId, op.entity, op.entityId, version, data, del, del ? 'user' : null, updatedAt, seq, userId, op.opId);
     // 受領記録と操作ログは「この書き込みが実際に入ったとき」だけ残す（server_seq はこの操作だけの値）
-    const wrote = 'EXISTS (SELECT 1 FROM records WHERE user_id = ? AND entity = ? AND id = ? AND server_seq = ?)';
     const [w] = await db.batch([
       write,
-      db.prepare(`INSERT INTO sync_receipts (user_id, op_id, status, version, created_at) SELECT ?, ?, 'applied', ?, ? WHERE ${wrote} ON CONFLICT DO NOTHING`).bind(userId, op.opId, version, now, userId, op.entity, op.entityId, seq),
+      db.prepare(`INSERT INTO sync_receipts (user_id, op_id, status, version, created_at) SELECT ?, ?, 'applied', ?, ? WHERE changes() > 0 ON CONFLICT DO NOTHING`).bind(userId, op.opId, version, now),
       db
-        .prepare(`INSERT INTO operation_log (user_id, at, entity, entity_id, action, detail) SELECT ?, ?, ?, ?, ?, ? WHERE ${wrote}`)
-        .bind(userId, now, op.entity, op.entityId, del ? 'delete' : 'put', conflicted ? JSON.stringify({ conflict: true, base: op.baseVersion, server: curVersion }) : null, userId, op.entity, op.entityId, seq),
+        .prepare(`INSERT INTO operation_log (user_id, at, entity, entity_id, action, detail) SELECT ?, ?, ?, ?, ?, ? WHERE changes() > 0`)
+        .bind(userId, now, op.entity, op.entityId, del ? 'delete' : 'put', conflicted ? JSON.stringify({ conflict: true, base: op.baseVersion, server: curVersion }) : null),
     ]);
     if ((w?.meta.changes ?? 0) > 0) return { opId: op.opId, status: 'applied', version };
     // 読んだ直後に別の処理（期限削除・他端末）が書き換えた：読み直して判定し直す

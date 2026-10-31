@@ -287,20 +287,27 @@ export class SyncEngine {
         ops.push({ opId: g.lastOpId, entity: g.entity, entityId: g.id, op: rec ? 'put' : 'delete', record: rec ?? null, baseVersion: meta?.version ?? 0, clientUpdatedAt: (rec?.updatedAt as number | undefined) ?? g.lastAt });
       }
       const res = await this.apiImpl.push(ops, this.owner!);
+      const resultById = new Map(res.results.map((r) => [r.opId, r]));
+      if (resultById.size !== ops.length || ops.some((o) => !resultById.has(o.opId))) throw new Error('同期の受領確認が不完全です。再送します');
       // すべて「再送」なら今回はここまで（サーバーの同時処理が落ち着いてから、バックオフで再試行）
       if (res.results.every((r) => r.status === 'retry')) throw new Error('サーバーで同時に更新中のため、少し待ってから再送します');
-      await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.notices, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
-        for (const [i, r] of res.results.entries()) {
-          const g = batch[i]!;
+      await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.notices, this.database.recovery, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
+        for (const [i, g] of batch.entries()) {
+          const r = resultById.get(g.lastOpId)!;
           const key = `${g.entity}:${g.id}`;
           const table = this.database[TABLE[g.entity]] as unknown as Dexie.Table<Record<string, unknown>, string>;
           // 同時更新で書けなかった：端末の変更はそのまま残し、次回の同期で送り直す
           if (r.status === 'retry') continue;
+          const local = await table.get(g.id);
+          const newer = await this.database.outbox.where('[entity+entityId]').equals([g.entity, g.id]).filter((o) => o.synced === 0 && !g.opIds.includes(o.opId)).count();
+          if (r.status === 'conflict' || r.status === 'rejected') {
+            if (local) await this.database.recovery.put({ key: `${key}:${g.lastOpId}`, entity: g.entity, id: g.id, at: this.clock(), reason: r.serverDeleted ? `tombstone:${r.deleteReason}` : r.status, record: local });
+          }
           if (r.status === 'conflict' && r.serverDeleted) {
             // サーバーで削除済み（ユーザー削除・期限削除・復元閲覧の終了）。削除が常に優先され、端末の記録も消す
             const hadEdit = ops[i]!.op === 'put';
             await table.delete(g.id);
-            await this.database.meta.delete(key);
+            await this.database.meta.put({ key, entity: g.entity, id: g.id, version: r.version, restoredSessionId: null });
             if (hadEdit) {
               await this.database.notices.put({
                 key: `sync:tombstone:${key}`,
@@ -308,16 +315,16 @@ export class SyncEngine {
                 title: '削除済みのデータへの変更は反映されませんでした',
                 body:
                   r.deleteReason === 'purge'
-                    ? '保存期間（30日）を過ぎてバックアップ済みのデータを、この端末で変更していました。変更内容は操作ログに残っています。必要なら「期間指定の復元」から戻せます。'
-                    : '別の端末などで削除されたデータを、この端末で変更していました。変更内容は操作ログに残っています。',
+                    ? '保存期間（30日）を過ぎてバックアップ済みのデータを、この端末で変更していました。変更内容はこの端末の退避データに保存され、移行ファイルに書き出せます。必要なら「期間指定の復元」から戻せます。'
+                    : '別の端末などで削除されたデータを、この端末で変更していました。変更内容はこの端末の退避データに保存され、移行ファイルに書き出せます。',
                 createdAt: this.clock(),
                 resolvedAt: null,
               });
             }
-            await this.database.outbox.where('opId').anyOf(g.opIds).modify({ synced: 1 });
+            await this.database.outbox.where('[entity+entityId]').equals([g.entity, g.id]).modify({ synced: 1 });
             continue;
           }
-          if (r.status === 'conflict') {
+          if (r.status === 'conflict' && !newer) {
             // サーバー側の方が新しかった：サーバーの内容で端末を上書き（端末の古い変更は操作ログに残る）
             if (r.serverRecord) await table.put((NORMALIZE[g.entity]?.(r.serverRecord as never) ?? r.serverRecord) as Record<string, unknown>);
             else await table.delete(g.id);
@@ -361,28 +368,37 @@ export class SyncEngine {
     for (let page = 0; page < 50; page++) {
       const st = await this.state();
       const res = await this.apiImpl.pull(st.cursor, this.owner!);
-      await this.applyRemote(res.changes);
-      await this.database.syncState.put({ ...(await this.state()), cursor: res.cursor });
+      if (!Number.isSafeInteger(res.cursor) || res.cursor < st.cursor || (res.hasMore && res.cursor === st.cursor)) throw new Error('同期カーソルが不正です');
+      await this.applyRemote(res.changes, res.cursor);
       if (!res.hasMore) return;
     }
   }
 
   /** サーバーの変更を端末へ反映。未同期の変更がある記録には触れない（次の送信でサーバー側を更新する） */
-  async applyRemote(changes: PullChange[]): Promise<void> {
-    await this.database.transaction('rw', [this.database.outbox, this.database.meta, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
+  async applyRemote(changes: PullChange[], cursor?: number): Promise<void> {
+    await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.syncState, this.database.recovery, this.database.notices, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
       for (const c of changes) {
         const table = this.database[TABLE[c.entity]] as unknown as Dexie.Table<Record<string, unknown>, string>;
         const key = `${c.entity}:${c.id}`;
         const dirty = await this.database.outbox.where('[entity+entityId]').equals([c.entity, c.id]).filter((o) => o.synced === 0).count();
-        if (dirty > 0) continue;
+        const meta = await this.database.meta.get(key);
+        if (meta && c.version < meta.version) continue;
+        if (dirty > 0 && !c.deleted) continue;
+        if (dirty > 0 && c.deleted) {
+          const local = await table.get(c.id);
+          if (local) await this.database.recovery.put({ key: `${key}:pull:${c.version}`, entity: c.entity, id: c.id, at: this.clock(), reason: `tombstone:${c.reason}`, record: local });
+          await this.database.outbox.where('[entity+entityId]').equals([c.entity, c.id]).modify({ synced: 1 });
+          await this.database.notices.put({ key: `sync:tombstone:${key}`, level: 'warn', title: '削除済みのデータへの変更を退避しました', body: '変更内容を移行ファイルに書き出せます。削除済みデータは自動で復活させません。', createdAt: this.clock(), resolvedAt: null });
+        }
         if (c.deleted || !c.record) {
           await table.delete(c.id);
-          await this.database.meta.delete(key);
+          await this.database.meta.put({ key, entity: c.entity, id: c.id, version: c.version, restoredSessionId: null });
         } else {
           await table.put((NORMALIZE[c.entity]?.(c.record as never) ?? c.record) as Record<string, unknown>);
           await this.database.meta.put({ key, entity: c.entity, id: c.id, version: c.version, restoredSessionId: c.restoredSessionId });
         }
       }
+      if (cursor !== undefined) await this.database.syncState.put({ ...(await this.state()), cursor });
     });
   }
 }

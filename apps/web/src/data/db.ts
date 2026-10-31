@@ -112,6 +112,7 @@ export class MyTimeDB extends Dexie {
   syncState!: EntityTable<SyncState, 'key'>;
   notices!: EntityTable<LocalNotice, 'key'>;
   settings!: EntityTable<AppSettings, 'key'>;
+  recovery!: EntityTable<{ key: string; entity: SyncEntity; id: string; at: number; reason: string; record: Record<string, unknown> }, 'key'>;
 
   constructor(name = 'my-time') {
     super(name);
@@ -142,6 +143,7 @@ export class MyTimeDB extends Dexie {
         // 既存の設定で初めて起動した人には初回セットアップを出さない
         await tx.table('settings').toCollection().modify((s: AppSettings) => Object.assign(s, { ...DEFAULT_SETTINGS, ...s, onboarded: true }));
       });
+    this.version(3).stores({ recovery: 'key, at' });
   }
 }
 

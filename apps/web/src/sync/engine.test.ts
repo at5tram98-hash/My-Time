@@ -173,7 +173,7 @@ describe('同期エンジン', () => {
     engine.stop();
   });
 
-  it('サーバーの変更・削除を取り込む。ただし未同期の変更がある記録は消さない', async () => {
+  it('削除は未同期の変更より優先し、未送信の内容を退避してから取り込む', async () => {
     const { server, engine, repo } = setup();
     await engine.checkAccount();
     const a = makeTask({ title: 'A' }, now);
@@ -188,7 +188,9 @@ describe('同期エンジン', () => {
     await repo.saveTask({ ...b, title: 'B（未送信の編集）' }, false);
     await engine.pullAll();
     expect(await database.tasks.get(a.id)).toBeUndefined();
-    expect((await database.tasks.get(b.id))?.title).toBe('B（未送信の編集）');
+    expect(await database.tasks.get(b.id)).toBeUndefined();
+    expect((await database.recovery.toArray()).find((r) => r.id === b.id)?.record.title).toBe('B（未送信の編集）');
+    expect((await database.syncState.get('sync'))?.cursor).toBeGreaterThan(0);
     engine.stop();
   });
 

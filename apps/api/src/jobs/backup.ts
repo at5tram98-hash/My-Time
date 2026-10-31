@@ -209,7 +209,7 @@ export async function runRetention(env: Env, userId: string, now: number): Promi
   for (const r of dueRows) {
     seq += 1;
     del.push(
-      env.DB.prepare("UPDATE records SET deleted = 1, delete_reason = 'purge', data = NULL, version = version + 1, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0 AND restored_session_id IS NULL").bind(seq, userId, r.entity, r.id, r.version),
+      env.DB.prepare("UPDATE records SET deleted = 1, delete_reason = 'purge', data = NULL, version = version + 1, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0 AND restored_session_id IS NULL RETURNING id").bind(seq, userId, r.entity, r.id, r.version),
       env.DB.prepare('INSERT INTO purge_ledger (user_id, entity, record_id, version, manifest_id, reason, purged_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() > 0').bind(userId, r.entity, r.id, r.version, up.manifestId, '期限到来', now),
     );
   }
@@ -222,7 +222,7 @@ export async function runRetention(env: Env, userId: string, now: number): Promi
   }
   del.push(logStmt(env.DB, userId, now, 'retention', up.manifestId, 'purge', { candidates: dueRows.length, occurrences: occ }));
   const res = await env.DB.batch(del);
-  for (let i = 0; i < dueRows.length; i++) purged += res[i * 2]!.meta.changes ?? 0;
+  for (let i = 0; i < dueRows.length; i++) purged += res[i * 2]!.results.length;
   return { purged, occurrences: occ, manifestId: up.manifestId };
 }
 

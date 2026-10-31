@@ -1,3 +1,4 @@
+import { activeDbName, ownerOf } from '../data/db';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 
 /** API がない配信先（例：GitHub Pages の旧版）では 'unavailable' を返し、機能を「未設定」と表示する */
@@ -67,12 +68,15 @@ export interface RestoreSession {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const account = ownerOf(activeDbName());
+  const scoped = !['/config', '/me', '/auth/logout'].includes(path);
+  if (scoped && !account) throw new ApiError('アカウントの保存領域に切り替えてから操作してください', 409);
   let res: Response;
   try {
     res = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
       ...init,
       credentials: 'same-origin',
-      headers: { 'x-mytime': '1', ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
+      headers: { 'x-mytime': '1', ...(scoped && account ? acct(account) : {}), ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
     });
   } catch {
     throw new ApiError('オフラインです', 0);

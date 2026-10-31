@@ -18,20 +18,22 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ github.event.inputs.confirm == '公開する' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.event.inputs.confirm == '公開する' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: 'false'
+      MYTIME_APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      MYTIME_D1_ID: ${{ secrets.D1_DATABASE_ID }}
     steps:
       - uses: actions/checkout@v4
       - name: 必要な設定があるか確認
         run: |
           for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do [ -n "${!v}" ] || { echo "::error::$v が未設定です（docs/setup-cloudflare-google.md）"; exit 1; }; done
-          [ -n "${{ secrets.D1_DATABASE_ID }}" ] || { echo "::error::D1_DATABASE_ID が未設定です"; exit 1; }
-          [ -n "${{ vars.APP_ORIGIN }}" ] || { echo "::error::Variables の APP_ORIGIN が未設定です"; exit 1; }
+          [ -n "$MYTIME_D1_ID" ] || { echo "::error::D1_DATABASE_ID が未設定です"; exit 1; }
+          [ "$MYTIME_APP_ORIGIN" = "https://my-time.at5tram98.workers.dev" ] || { echo "::error::Variables の APP_ORIGIN が未設定です"; exit 1; }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -47,11 +49,12 @@ jobs:
       - run: pnpm e2e:stack
       - name: D1 の ID を設定（ファイルには書き戻さない）
         working-directory: apps/api
-        run: sed -i "s/00000000-0000-0000-0000-000000000000/${{ secrets.D1_DATABASE_ID }}/" wrangler.toml
+        run: |
+          [ "$MYTIME_D1_ID" = 'd165e2a5-8de2-4bec-80d2-03fbc6650762' ] || { echo '::error::My Time専用D1以外には公開できません'; exit 1; }
       - name: D1 マイグレーション（追加のみ。既存データは削除しない）
         working-directory: apps/api
         run: npx wrangler d1 migrations apply DB --remote
       - name: 公開
         working-directory: apps/api
-        # 期限削除は GitHub の Variables「RETENTION_MODE」で切り替える（未設定なら off＝停止）
-        run: npx wrangler deploy --var APP_ORIGIN:${{ vars.APP_ORIGIN }} --var RETENTION_MODE:${{ vars.RETENTION_MODE || 'off' }}
+        # 初回は必ず off。on への変更には利用者の明示承認が必要。
+        run: npx wrangler deploy --var "APP_ORIGIN:$MYTIME_APP_ORIGIN" --var RETENTION_MODE:off
