@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { useUI } from '../../app/ui';
 import { useSync } from '../../app/data';
 import { summaryText } from '../../data/accounts';
 import { syncEngine } from '../../sync/engine';
@@ -10,6 +11,7 @@ import { syncEngine } from '../../sync/engine';
  */
 export function AccountChoice() {
   const sync = useSync();
+  const { showToast } = useUI();
   const reduce = useReducedMotion();
   const [busy, setBusy] = useState(false);
   const p = sync.pendingMigration;
@@ -18,6 +20,8 @@ export function AccountChoice() {
     setBusy(true);
     try {
       await syncEngine.resolveMigration(migrate);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '移行できませんでした。元データはこの端末に残っています');
     } finally {
       setBusy(false);
     }
@@ -54,7 +58,7 @@ export function AccountChoice() {
           <span className="ac-target-label">移行先</span>
           <span className="ac-target-value" data-testid="ac-target">{p.me.user.email}</span>
         </div>
-        <p className="ac-note">移さない場合も、このデータは端末に残り、ログアウトすると表示されます。移したデータはこのアカウントで同期・バックアップされます。</p>
+        <p className="ac-note">移行後も元のデータはこの端末に残り、ログアウトすると表示されます。コピーしたデータは選んだアカウントで同期・バックアップされます。</p>
         <div className="ac-actions">
           <button type="button" className="ac-btn primary" disabled={busy} onClick={() => void choose(true)} data-testid="ac-migrate">
             {summaryText(s)}を移して同期

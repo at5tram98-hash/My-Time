@@ -87,7 +87,7 @@ async function uploadVerified(env: Env, drive: Drive, userId: string, kind: 'dai
 async function dailyTables(env: Env, userId: string): Promise<Record<string, Record<string, unknown>[]>> {
   // D1 batch reads share one transaction: records, settings, logs and tombstones
   // must represent the same point in time even while another device is syncing.
-  const [live, settings, logs, dead] = await env.DB.batch([
+  const [live, settings, logs, dead] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare('SELECT * FROM records WHERE user_id = ? AND deleted = 0 AND restored_session_id IS NULL').bind(userId),
     env.DB.prepare('SELECT data, updated_at FROM user_settings WHERE user_id = ?').bind(userId),
     env.DB.prepare('SELECT seq, at, entity, entity_id, action, detail FROM operation_log WHERE user_id = ? ORDER BY seq').bind(userId),

@@ -301,13 +301,13 @@ export class SyncEngine {
           const local = await table.get(g.id);
           const newer = await this.database.outbox.where('[entity+entityId]').equals([g.entity, g.id]).filter((o) => o.synced === 0 && !g.opIds.includes(o.opId)).count();
           if (r.status === 'conflict') await this.database.syncState.put({ ...(await this.state()), cursor: 0 });
+          if (r.status === 'conflict' || r.status === 'rejected') {
+            if (local) await this.database.recovery.put({ key: `${key}:${g.lastOpId}`, entity: g.entity, id: g.id, at: this.clock(), reason: r.serverDeleted ? `tombstone:${r.deleteReason}` : r.status, record: local });
+          }
           const known = await this.database.meta.get(key);
           if (known && known.version > r.version && r.status !== 'rejected') {
             await this.database.outbox.where('opId').anyOf(g.opIds).modify({ synced: 1 });
             continue;
-          }
-          if (r.status === 'conflict' || r.status === 'rejected') {
-            if (local) await this.database.recovery.put({ key: `${key}:${g.lastOpId}`, entity: g.entity, id: g.id, at: this.clock(), reason: r.serverDeleted ? `tombstone:${r.deleteReason}` : r.status, record: local });
           }
           if (r.status === 'conflict' && r.serverDeleted) {
             // サーバーで削除済み（ユーザー削除・期限削除・復元閲覧の終了）。削除が常に優先され、端末の記録も消す

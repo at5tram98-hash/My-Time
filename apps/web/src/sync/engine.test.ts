@@ -375,3 +375,37 @@ describe('Phase 1 → Phase 2 のデータ移行', () => {
     expect(await v2.settings.get('app')).toMatchObject({ theme: 'dark', onboarded: true, analysisIncludePaused: false });
   });
 });
+
+
+it('古い削除拒否の再送応答でも、進んだカーソルを巻き戻して後の復元を取り逃がさない', async () => {
+  const { server, engine, repo, api } = setup();
+  await engine.checkAccount();
+  const task = makeTask({ id: 'restored-later', title: '元' }, now);
+  await repo.saveTask(task, true);
+  await engine.syncNow();
+  server.serverEdit('task', task.id, null, 'purge');
+  server.serverEdit('task', task.id, { ...task, title: '復元後', updatedAt: now + 50 });
+  await engine.pullAll(); // cursor has already passed the restoration
+  await repo.saveTask({ ...task, title: '未送信の編集', updatedAt: now + 100 }, false);
+  api.push.mockImplementationOnce(async (ops: SyncOp[]) => ({ results: ops.map((o) => ({ opId: o.opId, status: 'conflict', version: 2, serverDeleted: true, serverRecord: null, deleteReason: 'purge' })) }));
+  await engine.syncNow();
+  expect((await database.tasks.get(task.id))?.title).toBe('復元後');
+  expect((await database.recovery.toArray())[0]?.record.title).toBe('未送信の編集');
+  expect((await database.meta.get(`task:${task.id}`))?.version).toBe(3);
+  engine.stop();
+});
+
+it('応答待ちの間の新しい端末編集を、古い競合応答で上書きしない', async () => {
+  const { engine, repo, api } = setup();
+  await engine.checkAccount();
+  const task = makeTask({ id: 'in-flight-edit', title: '最初' }, now);
+  await repo.saveTask(task, true);
+  api.push.mockImplementationOnce(async (ops: SyncOp[]) => {
+    await repo.saveTask({ ...task, title: '送信中の追加編集', updatedAt: now + 500 }, false);
+    return { results: ops.map((o) => ({ opId: o.opId, status: 'conflict', version: 1, serverRecord: { ...task, title: '古いサーバー応答' } })) };
+  });
+  await engine.syncNow();
+  expect((await database.tasks.get(task.id))?.title).toBe('送信中の追加編集');
+  expect(await database.recovery.count()).toBeGreaterThan(0);
+  engine.stop();
+});

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Group } from '../../components/Controls';
 import { useUI } from '../../app/ui';
 import { db, ownerOf } from '../../data/db';
@@ -7,6 +7,7 @@ import { syncEngine } from '../../sync/engine';
 
 export function DeviceTransferPage() {
   const { confirm, showToast } = useUI();
+  const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<{ text: string; count: number; owner: string | null } | null>(null);
   const [error, setError] = useState('');
@@ -52,7 +53,8 @@ export function DeviceTransferPage() {
   return <>
     <Group header="端末データの移行" footer="GitHub Pages版で書き出してファイルに保存し、Cloudflare版で同じファイルを選択してください。元のデータは残ります。アカウントのデータは同じGoogleアカウントにだけ取り込めます。">
       <button type="button" className="row row-button center tint" disabled={busy} onClick={() => void download()} data-testid="export-device">移行ファイルを書き出す</button>
-      <label className="row"><span className="row-label">移行ファイルを選ぶ</span><input aria-label="移行ファイル" type="file" accept=".json,application/json" disabled={busy} onChange={(e) => void select(e.target.files?.[0])} /></label>
+      <button type="button" className="row row-button center tint" disabled={busy} onClick={() => input.current?.click()}>移行ファイルを選ぶ</button>
+      <input ref={input} hidden aria-label="移行ファイル" type="file" accept=".json,application/json" disabled={busy} onChange={(e) => void select(e.target.files?.[0])} />
       {file && <button type="button" className="row row-button center tint" disabled={busy} onClick={() => void restore()} data-testid="import-device">{file.count}件を取り込む</button>}
       {error && <div className="row" role="alert">{error}</div>}
     </Group>
