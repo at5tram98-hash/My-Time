@@ -1,4 +1,4 @@
-import { activeDbName, ownerOf } from '../data/db';
+import { db, ownerOf } from '../data/db';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 
 /** API がない配信先（例：GitHub Pages の旧版）では 'unavailable' を返し、機能を「未設定」と表示する */
@@ -68,7 +68,7 @@ export interface RestoreSession {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const account = ownerOf(activeDbName());
+  const account = ownerOf(db.name);
   const scoped = !['/config', '/me', '/auth/logout'].includes(path);
   if (scoped && !account) throw new ApiError('アカウントの保存領域に切り替えてから操作してください', 409);
   let res: Response;
