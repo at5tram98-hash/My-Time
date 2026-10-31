@@ -53,4 +53,5 @@ jobs:
         run: npx wrangler d1 migrations apply DB --remote
       - name: 公開
         working-directory: apps/api
-        run: npx wrangler deploy --var APP_ORIGIN:${{ vars.APP_ORIGIN }}
+        # 期限削除は GitHub の Variables「RETENTION_MODE」で切り替える（未設定なら off＝停止）
+        run: npx wrangler deploy --var APP_ORIGIN:${{ vars.APP_ORIGIN }} --var RETENTION_MODE:${{ vars.RETENTION_MODE || 'off' }}

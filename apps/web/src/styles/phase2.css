@@ -139,3 +139,27 @@
 .ob-choice { height: 88px; border-radius: 14px; background: var(--bg-elev); font-weight: 600; box-shadow: 0 0 0 1px var(--hairline); }
 .ob-choice.on { box-shadow: 0 0 0 2.5px var(--blue); color: var(--blue); }
 .ob-guide { padding-left: 18px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* ---- ログイン時のデータ移行の確認（iOS のアラートに合わせた見た目） ---- */
+.alert-backdrop { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; background: var(--dim); padding: 16px; }
+.account-choice {
+  width: min(320px, 100%); border-radius: 14px; overflow: hidden; text-align: center;
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px);
+}
+.ac-title { font-size: 1.06rem; font-weight: 600; padding: 19px 16px 0; line-height: 1.35; }
+.ac-body { font-size: 0.82rem; color: var(--label-2); padding: 6px 16px 0; }
+.ac-counts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 12px 16px 0; margin: 0; }
+.ac-count { display: flex; gap: 4px; align-items: baseline; padding: 4px 10px; border-radius: 12px; background: var(--fill); font-size: 0.82rem; }
+.ac-count dt { color: var(--label-2); }
+.ac-count dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ac-target { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px 0; }
+.ac-target-label { font-size: 0.72rem; color: var(--label-2); }
+.ac-target-value { font-size: 0.92rem; font-weight: 600; word-break: break-all; }
+.ac-note { font-size: 0.74rem; color: var(--label-2); padding: 10px 16px 14px; line-height: 1.45; }
+.ac-actions { display: flex; flex-direction: column; border-top: 0.5px solid var(--separator); }
+.ac-btn { min-height: 44px; padding: 10px 16px; font-size: 1rem; color: var(--blue); background: transparent; }
+.ac-btn.primary { font-weight: 600; }
+.ac-btn + .ac-btn { border-top: 0.5px solid var(--separator); }
+.ac-btn:active { background: var(--fill); }
+.ac-btn:disabled { opacity: 0.5; }

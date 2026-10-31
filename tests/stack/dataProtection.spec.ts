@@ -27,6 +27,9 @@ async function login(browser: Browser) {
   await page.getByTestId('tab-other').click();
   await page.getByTestId('login').click();
   await page.waitForURL(/login=ok/);
+  // 初回は「ログインしていない間の領域」から、このアカウントの領域へ切り替わる（再読み込み）
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('mytime:activeDb')), { timeout: 15_000 }).toMatch(/^my-time@/);
+  await expect(page.getByTestId('home-screen')).toBeVisible();
   await page.getByTestId('tab-other').click();
   await expect(page.getByTestId('account-row')).toContainText('yuki', { timeout: 15_000 });
   return page;
@@ -53,9 +56,12 @@ async function skipOnboarding(page: Page) {
 }
 
 async function taskTitles(page: Page): Promise<string[]> {
+  await page.waitForLoadState('domcontentloaded');
   return page.evaluate(async () => {
+    // 表示中の保存領域（ログイン中はアカウントごとの領域）
+    const name = localStorage.getItem('mytime:activeDb') ?? 'my-time';
     const db: IDBDatabase = await new Promise((res) => {
-      const r = indexedDB.open('my-time');
+      const r = indexedDB.open(name);
       r.onsuccess = () => res(r.result);
     });
     const rows = await new Promise<{ title: string }[]>((res) => {
@@ -183,4 +189,96 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   }
   const after = (await (await fetch(`${FAKE}/__files`)).json()) as { name: string }[];
   expect(after.filter((f) => /archive/i.test(f.name)).length).toBe(files.filter((f) => /archive/i.test(f.name)).length);
+});
+
+/** すでに開いているページで（同じブラウザのまま）Google ログインする */
+async function loginOnPage(page: Page) {
+  await page.getByTestId('tab-other').click();
+  if (await page.getByTestId('back').isVisible()) await page.getByTestId('back').click();
+  await page.getByTestId('login').click();
+  await page.waitForURL(/login=ok/);
+}
+
+/** 表示中の保存領域。切り替え直後の再読み込み中は読めないので空文字を返し、expect.poll で待つ */
+const activeArea = (page: Page) => page.evaluate(() => localStorage.getItem('mytime:activeDb') ?? 'my-time').catch(() => '');
+
+test('アカウントごとの保存領域：ログイン前のデータは確認してから移す／ログアウト／別アカウントには混ざらない', async ({ browser }, info) => {
+  await fake('/__reset');
+  const tag = info.project.name;
+  await fake('/__user', { sub: `acct-a-${tag}`, email: `a-${tag}@example.com`, name: 'A' });
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await skipOnboarding(page);
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  // ログインせずに作ったデータ
+  await addTask(page, 'ログイン前のメモ', `${ymd}T21:00`, `${ymd}T21:30`);
+  expect(await activeArea(page)).toBe('my-time');
+
+  // Aでログイン → 件数と移行先を示して確認。選ぶまで何も送らない
+  await loginOnPage(page);
+  const dlg = page.getByTestId('account-choice');
+  await expect(dlg).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('ac-counts')).toContainText('タスク1件');
+  await expect(page.getByTestId('ac-target')).toHaveText(`a-${tag}@example.com`);
+  if (tag === 'stack-chromium') await page.screenshot({ path: 'docs/screenshots/p2-14-account-migrate.png' });
+  const serverBefore = await (await page.request.get('/api/sync/pull?cursor=0')).json();
+  expect(serverBefore.changes).toHaveLength(0);
+  await page.getByTestId('ac-migrate').click();
+  await expect.poll(() => activeArea(page), { timeout: 15_000 }).toMatch(/^my-time@/);
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+  await expect.poll(async () => (await (await page.request.get('/api/sync/pull?cursor=0')).json()).changes.map((c: { record: { title?: string } | null }) => c.record?.title), { timeout: 20_000 }).toContain('ログイン前のメモ');
+  expect(await taskTitles(page)).toEqual(['ログイン前のメモ']);
+
+  // ログアウト → ログインしていない領域（移したので空）に戻る
+  await page.getByTestId('tab-other').click();
+  await page.getByTestId('logout').click();
+  await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+  expect(await taskTitles(page)).toEqual([]);
+
+  // 同じブラウザで別のアカウント B にログイン → A のデータは表示も送信もされない
+  await fake('/__user', { sub: `acct-b-${tag}`, email: `b-${tag}@example.com`, name: 'B' });
+  await loginOnPage(page);
+  await expect.poll(() => activeArea(page), { timeout: 15_000 }).toMatch(/^my-time@/);
+  const areaB = await activeArea(page);
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+  await syncNow(page);
+  expect(await taskTitles(page)).toEqual([]);
+  expect((await (await page.request.get('/api/sync/pull?cursor=0')).json()).changes).toHaveLength(0);
+
+  // A で入り直すと、A のデータが戻る（B の領域とは別）
+  await page.getByTestId('tab-other').click();
+  await page.getByTestId('logout').click();
+  await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
+  await fake('/__user', { sub: `acct-a-${tag}`, email: `a-${tag}@example.com`, name: 'A' });
+  await loginOnPage(page);
+  await expect.poll(() => activeArea(page), { timeout: 15_000 }).toMatch(/^my-time@/);
+  expect(await activeArea(page)).not.toBe(areaB);
+  await expect.poll(() => taskTitles(page), { timeout: 20_000 }).toEqual(['ログイン前のメモ']);
+  await ctx.close();
+});
+
+test('ログイン CSRF：ログインを始めていないブラウザで callback を開いてもログインされない', async ({ browser }) => {
+  await fake('/__reset');
+  await fake('/__user', { sub: 'csrf-attacker', email: 'attacker@example.com', name: 'X' });
+  // 攻撃者のブラウザで同意まで進め、callback URL を取り出す（リダイレクトを追わない）
+  const attacker = await browser.newContext();
+  const start = await attacker.request.get('/api/auth/login', { maxRedirects: 0 });
+  const google = await attacker.request.get(start.headers()['location']!, { maxRedirects: 0 });
+  const callbackUrl = google.headers()['location']!;
+  // 被害者のブラウザで開かせる
+  const victim = await browser.newContext();
+  const page = await victim.newPage();
+  await page.goto('/');
+  await skipOnboarding(page);
+  await page.goto(callbackUrl);
+  await page.waitForURL(/login=error/);
+  const cookies = await victim.cookies();
+  expect(cookies.some((c) => c.name === 'mt_session')).toBe(false);
+  expect((await page.request.get('/api/me')).status()).toBe(401);
+  await attacker.close();
+  await victim.close();
 });

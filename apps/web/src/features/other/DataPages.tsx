@@ -37,6 +37,7 @@ export function BackupsPage() {
   const { confirm, showToast } = useUI();
   const [items, setItems] = useState<BackupItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [drilling, setDrilling] = useState<string | null>(null);
   const load = useCallback(() => {
     if (!sync.me) return;
     api.backups().then((r) => setItems(r.items)).catch((e: Error) => showToast(e.message));
@@ -59,6 +60,24 @@ export function BackupsPage() {
     }
   };
 
+  /** 復元試験：Drive から読み戻して、復元したら現在のデータと一致するかを確かめる（データは変えない） */
+  const drill = async (b: BackupItem) => {
+    setDrilling(b.id);
+    try {
+      const r = await api.restoreDrill(b.id);
+      const diff = r.missingNow.length + r.extraNow.length + r.changed.length;
+      showToast(
+        r.ok
+          ? `復元試験OK：${r.matched}件すべて一致${r.kind === 'daily' ? `（設定${r.extras.settings}・操作ログ${r.extras.operationLog}・削除の印${r.extras.tombstones}件も保存済み）` : ''}`
+          : `読み戻し・検証はOK。バックアップ後の変更 ${diff}件（一致 ${r.matched}件）`,
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '復元試験に失敗しました');
+    } finally {
+      setDrilling(null);
+    }
+  };
+
   const remove = async (b: BackupItem) => {
     if (!(await confirm({ title: 'このバックアップを削除しますか？', message: 'Googleドライブからも削除します。', confirmLabel: '削除', destructive: true }))) return;
     try {
@@ -72,6 +91,10 @@ export function BackupsPage() {
   return (
     <>
       <Group footer={`毎日22時ごろ（日本時間）に、Googleドライブの「My Time Backup」フォルダーへ自動保存します。保存後に読み戻して件数とハッシュを確認できたものだけを成功として扱います。${sync.me.drive.connected ? '' : ' 現在ドライブの権限がありません。もう一度ログインしてください。'}`}>
+        <div className="row" data-testid="retention-mode">
+          <span className="row-label">30日後の期限削除</span>
+          <span className={`row-value ${sync.config?.retentionMode === 'on' ? '' : 'muted'}`}>{sync.config?.retentionMode === 'on' ? '有効' : sync.config?.retentionMode === 'dry-run' ? '試運転（削除しない）' : '停止中'}</span>
+        </div>
         <button type="button" className="row row-button center tint bold" disabled={busy || !sync.me.drive.connected} onClick={() => void run()} data-testid="run-backup">
           {busy ? '保存中…' : '今すぐバックアップ'}
         </button>
@@ -88,6 +111,11 @@ export function BackupsPage() {
                 {b.kind === 'daily' ? '日次' : 'アーカイブ'} · {formatFull(b.created_at)}
                 <span className="sub-label">{b.status === 'failed' ? `失敗：${backupErrorLabel(b.error)}` : `予定${counts.event ?? 0}・タスク${counts.task ?? 0} ${kb(b.bytes)}`}</span>
               </span>
+              {b.status === 'verified' && (
+                <button type="button" className="pill-btn small" disabled={drilling != null} onClick={() => void drill(b)} data-testid="drill-backup">
+                  {drilling === b.id ? '確認中…' : '復元試験'}
+                </button>
+              )}
               {b.kind === 'daily' && b.id !== latestVerified && (
                 <button type="button" className="icon-btn subtle" aria-label="削除" onClick={() => void remove(b)}>
                   <Icon name="trash" size={16} />

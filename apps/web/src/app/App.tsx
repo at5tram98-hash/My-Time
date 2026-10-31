@@ -6,6 +6,8 @@ import { repo } from '../data/repo';
 import { api } from '../sync/api';
 import { syncEngine } from '../sync/engine';
 import { Onboarding } from '../features/onboarding/Onboarding';
+import { AccountChoice } from '../features/onboarding/AccountChoice';
+import { takeFlash } from '../data/db';
 import { DataProvider, useAttention, useData, useSync } from './data';
 import { UIProvider, useUI, type TabId } from './ui';
 import { SheetHost } from './SheetHost';
@@ -66,6 +68,11 @@ function Background() {
     void syncEngine.start();
     return () => syncEngine.stop();
   }, []);
+  // アカウントの切り替え・ログアウト後に一度だけ出す案内
+  useEffect(() => {
+    const f = takeFlash();
+    if (f) showToast(f);
+  }, [showToast]);
   useEffect(() => {
     void repo.applyAutoReservations();
   }, [now]);
@@ -176,6 +183,7 @@ function Shell() {
       </nav>
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>
+      {ready && <AccountChoice />}
       <AlertHost />
       <ToastHost />
     </div>

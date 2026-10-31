@@ -22,6 +22,9 @@ crons = ["0 13 * * *", "*/5 * * * *"]
 [vars]
 APP_ORIGIN = "http://localhost:8787"
 APP_TIME_ZONE = "Asia/Tokyo"
+# 期限削除（30日）：off＝停止／dry-run＝件数の記録だけ／on＝実行。
+# 本番は off で公開し、本物の Drive でバックアップと「復元試験」を確認してから on にする
+RETENTION_MODE = "off"
 GOOGLE_AUTH_BASE = "https://accounts.google.com"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"

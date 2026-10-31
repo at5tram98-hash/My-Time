@@ -148,7 +148,18 @@ export type SyncOp = z.infer<typeof syncOpSchema>;
 export const pushRequestSchema = z.object({ ops: z.array(syncOpSchema).max(500) });
 
 export interface PushResult {
-  results: { opId: string; status: 'applied' | 'duplicate' | 'conflict' | 'rejected'; version: number; serverRecord?: Record<string, unknown> | null; reason?: string }[];
+  results: {
+    opId: string;
+    status: 'applied' | 'duplicate' | 'conflict' | 'rejected' | 'retry';
+    version: number;
+    /** conflict のときのサーバーの最新（削除済みなら null） */
+    serverRecord?: Record<string, unknown> | null;
+    /** conflict のとき：サーバーでは削除済み（tombstone）。端末の変更より常に優先される */
+    serverDeleted?: boolean;
+    /** 削除済みの理由（serverDeleted のとき） */
+    deleteReason?: 'user' | 'purge' | 'restore-end' | null;
+    reason?: string;
+  }[];
 }
 
 export interface PullChange {
