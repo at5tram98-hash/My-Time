@@ -85,13 +85,20 @@ async function uploadVerified(env: Env, drive: Drive, userId: string, kind: 'dai
  * 削除済みの印があれば「消したはずのデータ」を復元時に誤って戻さない。
  */
 async function dailyTables(env: Env, userId: string): Promise<Record<string, Record<string, unknown>[]>> {
-  const rows = await allRows(env.DB, userId);
+  // D1 batch reads share one transaction: records, settings, logs and tombstones
+  // must represent the same point in time even while another device is syncing.
+  const [live, settings, logs, dead] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM records WHERE user_id = ? AND deleted = 0 AND restored_session_id IS NULL').bind(userId),
+    env.DB.prepare('SELECT data, updated_at FROM user_settings WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT seq, at, entity, entity_id, action, detail FROM operation_log WHERE user_id = ? ORDER BY seq').bind(userId),
+    env.DB.prepare('SELECT entity, id, version, delete_reason AS reason, updated_at FROM records WHERE user_id = ? AND deleted = 1 ORDER BY server_seq').bind(userId),
+  ]);
   const tables: Record<string, Record<string, unknown>[]> = Object.fromEntries(ENTITIES.map((e) => [e, []]));
-  for (const r of rows) tables[r.entity]!.push({ ...(JSON.parse(r.data!) as Record<string, unknown>), __version: r.version });
-  const st = await env.DB.prepare('SELECT data, updated_at FROM user_settings WHERE user_id = ?').bind(userId).first<{ data: string; updated_at: number }>();
+  for (const r of live!.results as unknown as RecordRow[]) tables[r.entity]!.push({ ...(JSON.parse(r.data!) as Record<string, unknown>), __version: r.version });
+  const st = settings!.results[0] as { data: string; updated_at: number } | undefined;
   tables.settings = st ? [{ key: 'app', ...(JSON.parse(st.data) as Record<string, unknown>), __updatedAt: st.updated_at }] : [];
-  tables.operationLog = (await env.DB.prepare('SELECT seq, at, entity, entity_id, action, detail FROM operation_log WHERE user_id = ? ORDER BY seq').bind(userId).all<Record<string, unknown>>()).results;
-  tables.tombstones = (await env.DB.prepare('SELECT entity, id, version, delete_reason AS reason, updated_at FROM records WHERE user_id = ? AND deleted = 1 ORDER BY server_seq').bind(userId).all<Record<string, unknown>>()).results;
+  tables.operationLog = logs!.results;
+  tables.tombstones = dead!.results;
   return tables;
 }
 
@@ -242,7 +249,7 @@ export async function startRestore(env: Env, userId: string, from: number, to: n
   for (const m of entries) {
     const text = await drive.download(m.file_id);
     const v = await verifySnapshot(text, { schemaVersion: m.schema_version, kind: 'archive', createdAt: m.created_at, counts: JSON.parse(m.counts) as Record<string, number>, sha256: m.sha256, bytes: m.bytes, range: { from: null, to: null } });
-    if (!v.ok || !v.body) throw new Error(`アーカイブの検証に失敗しました（${v.reason}）`);
+    if (!v.ok || !v.body || v.body.userId !== userId) throw new Error(`アーカイブの検証に失敗しました（${v.reason}）`);
     const stmts: D1PreparedStatement[] = [];
     for (const [entity, list] of Object.entries(v.body.tables)) {
       for (const raw of list) {
@@ -258,13 +265,15 @@ export async function startRestore(env: Env, userId: string, from: number, to: n
         stmts.push(
           env.DB.prepare(
             `INSERT INTO records (user_id, entity, id, version, data, deleted, delete_reason, updated_at, server_seq, restored_session_id) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, ?6, ?7, ?8)
-             ON CONFLICT(user_id, entity, id) DO UPDATE SET version = ?4, data = ?5, deleted = 0, delete_reason = NULL, updated_at = ?6, server_seq = ?7, restored_session_id = ?8`,
-          ).bind(userId, target, id, (cur?.version ?? 0) + 1, JSON.stringify(record), (record.updatedAt as number) ?? now, seq, sessionId),
+             ON CONFLICT(user_id, entity, id) DO UPDATE SET version = ?4, data = ?5, deleted = 0, delete_reason = NULL, updated_at = ?6, server_seq = ?7, restored_session_id = ?8 WHERE records.deleted = 1 AND records.version = ?9 RETURNING id`,
+          ).bind(userId, target, id, (cur?.version ?? 0) + 1, JSON.stringify(record), (record.updatedAt as number) ?? now, seq, sessionId, cur?.version ?? 0),
         );
-        restored += 1;
       }
     }
-    if (stmts.length) await env.DB.batch(stmts);
+    if (stmts.length) {
+      const results = await env.DB.batch(stmts);
+      restored += results.reduce((n, r) => n + r.results.length, 0);
+    }
   }
   await env.DB.batch([
     env.DB.prepare('UPDATE restoration_sessions SET restored_count = ? WHERE id = ?').bind(restored, sessionId),
@@ -310,7 +319,7 @@ export async function restoreDrill(env: Env, userId: string, manifestId: string,
   if (!drive) throw new Error('Googleドライブに接続できません');
   const text = await drive.download(m.drive_file_id);
   const v = await verifySnapshot(text, { schemaVersion: m.schema_version, kind: m.kind, createdAt: m.created_at, counts: JSON.parse(m.counts) as Record<string, number>, sha256: m.sha256, bytes: m.bytes, range: { from: m.range_from, to: m.range_to } });
-  if (!v.ok || !v.body) throw new Error(`読み戻したファイルの検証に失敗しました（${v.reason}）`);
+  if (!v.ok || !v.body || v.body.userId !== userId) throw new Error(`読み戻したファイルの検証に失敗しました（${v.reason}）`);
   const restored = snapshotRecords(v.body);
   const current = new Map<string, { version: number | null; json: string }>();
   if (m.kind === 'daily') {

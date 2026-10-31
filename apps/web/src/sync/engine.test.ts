@@ -278,7 +278,7 @@ describe('アカウントごとの保存領域', () => {
     const target = hooks.open(accountDbName(userId));
     expect((await target.tasks.toArray()).map((t) => t.title).sort()).toEqual(['もう1件', 'ログイン前に作成']);
     expect(await target.outbox.where('synced').equals(0).count()).toBe(5);
-    expect(await local.tasks.count()).toBe(0);
+    expect(await local.tasks.count()).toBe(2); // 復旧用の原本を残す
     // 移行先の領域で起動し直すと送信される
     const { engine: e2, api: api2 } = setup(target);
     await e2.checkAccount();

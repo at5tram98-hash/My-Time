@@ -68,9 +68,12 @@ export async function readDevice(text: string): Promise<DeviceTransfer> {
 
 /** Add only, with account ownership checks and a single atomic transaction. Never clears source data. */
 export async function importDevice(db: MyTimeDB, text: string, now = Date.now()): Promise<number> {
-  const { body } = await readDevice(text);
+  const { body, sha256 } = await readDevice(text);
   if (body.owner !== ownerOf(db.name)) throw new Error(body.owner ? '元と同じGoogleアカウントで取り込んでください' : 'ログアウトして「この端末」の領域へ取り込んでください');
   return db.transaction('rw', db.tables, async () => {
+    const receiptId = `device-import:${sha256}`;
+    if (await db.operationLog.where('id').equals(receiptId).count()) return 0;
+    const initialArea = (await db.tasks.count()) + (await db.events.count()) + (await db.subtasks.count()) + (await db.subjects.count()) + (await db.employers.count()) === 0;
     let added = 0;
     for (const entity of ENTITY_NAMES) {
       const dst = table(db, DATA_TABLES[entity]);
@@ -102,11 +105,11 @@ export async function importDevice(db: MyTimeDB, text: string, now = Date.now())
     }
     for (const raw of body.tables.recovery ?? []) if (typeof raw.key === 'string') await db.recovery.put(raw as never);
     const settings = body.tables.settings?.find((r) => r.key === 'app');
-    if (settings && !(await db.settings.get('app'))?.onboarded) await db.settings.put({ ...DEFAULT_SETTINGS, ...settings, key: 'app', onboarded: true } as never);
+    if (settings && initialArea) await db.settings.put({ ...DEFAULT_SETTINGS, ...settings, key: 'app', onboarded: true } as never);
     // A full pull is necessary even when the target has already advanced its cursor.
     const st = await db.syncState.get('sync');
     if (st) await db.syncState.put({ ...st, cursor: 0 });
-    await db.operationLog.add({ id: newId(), at: now, entity: 'task', entityId: 'device-transfer', action: 'import-device', detail: { origin: body.origin, added } });
+    await db.operationLog.add({ id: receiptId, at: now, entity: 'task', entityId: 'device-transfer', action: 'import-device', detail: { origin: body.origin, added } });
     return added;
   });
 }

@@ -189,7 +189,7 @@ export class SyncEngine {
     const p = this.status.pendingMigration;
     if (!p) return 0;
     if (!migrate) return this.switchToAccount(p.me, `この端末のデータ（${summaryText(p.summary)}）は移さずに残しました。ログアウトすると表示されます。`);
-    return this.switchToAccount(p.me, `${summaryText(p.summary)}を ${p.me.user.email} に移しました。同期を始めます。`, true);
+    return this.switchToAccount(p.me, `${summaryText(p.summary)}を ${p.me.user.email} にコピーしました。元のデータはこの端末に残しています。同期を始めます。`, true);
   }
 
   /** ログアウト：ログインしていない間の領域に戻る。アカウントのデータ（未送信を含む）は端末に残す */
@@ -291,7 +291,7 @@ export class SyncEngine {
       if (resultById.size !== ops.length || ops.some((o) => !resultById.has(o.opId))) throw new Error('同期の受領確認が不完全です。再送します');
       // すべて「再送」なら今回はここまで（サーバーの同時処理が落ち着いてから、バックオフで再試行）
       if (res.results.every((r) => r.status === 'retry')) throw new Error('サーバーで同時に更新中のため、少し待ってから再送します');
-      await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.notices, this.database.recovery, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
+      await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.notices, this.database.recovery, this.database.syncState, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
         for (const [i, g] of batch.entries()) {
           const r = resultById.get(g.lastOpId)!;
           const key = `${g.entity}:${g.id}`;
@@ -300,6 +300,12 @@ export class SyncEngine {
           if (r.status === 'retry') continue;
           const local = await table.get(g.id);
           const newer = await this.database.outbox.where('[entity+entityId]').equals([g.entity, g.id]).filter((o) => o.synced === 0 && !g.opIds.includes(o.opId)).count();
+          if (r.status === 'conflict') await this.database.syncState.put({ ...(await this.state()), cursor: 0 });
+          const known = await this.database.meta.get(key);
+          if (known && known.version > r.version && r.status !== 'rejected') {
+            await this.database.outbox.where('opId').anyOf(g.opIds).modify({ synced: 1 });
+            continue;
+          }
           if (r.status === 'conflict' || r.status === 'rejected') {
             if (local) await this.database.recovery.put({ key: `${key}:${g.lastOpId}`, entity: g.entity, id: g.id, at: this.clock(), reason: r.serverDeleted ? `tombstone:${r.deleteReason}` : r.status, record: local });
           }
