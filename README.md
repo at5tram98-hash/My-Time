@@ -12,7 +12,7 @@ pnpm dev            # http://localhost:5173（同じWi-FiのiPhoneからは表�
 pnpm build && pnpm preview   # 本番ビルドの確認（http://localhost:4173）
 ```
 
-公開URL：https://at5tram98-hash.github.io/my-time/ （main への push で自動デプロイ。各フェーズ完了時に更新）
+公開URL：https://at5tram98-hash.github.io/My-Time/ （main への push で自動デプロイ。各フェーズ完了時に更新）
 iPhone では Safari で開き、共有メニュー →「ホーム画面に追加」。
 
 ## 検証コマンド

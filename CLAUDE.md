@@ -5,4 +5,4 @@
 最初の作業ではPhase 1を実装します。完了後に変更点・テスト・スクリーンショット・未対応項目を出してレビューを受けてください。説明だけで終わらず、実際のコードと実動する画面を作ってください。Apple純正アプリらしいシンプルで滑らかなUIを最重要品質とします。
 
 ## 公開ルール（ユーザー指示 2026-10-31）
-各フェーズの完了時に GitHub（at5tram98-hash/my-time）の main へ push して公開する。push すると `.github/workflows/deploy.yml` がテストに合格したビルドだけを GitHub Pages（https://at5tram98-hash.github.io/my-time/）へ自動デプロイする。
+各フェーズの完了時に GitHub（at5tram98-hash/My-Time）の main へ push して公開する。push すると `.github/workflows/deploy.yml` がテストに合格したビルドだけを GitHub Pages（https://at5tram98-hash.github.io/My-Time/）へ自動デプロイする。
