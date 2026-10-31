@@ -245,16 +245,20 @@ test('アカウントごとの保存領域：ログイン前のデータは確�
   await expect.poll(async () => (await (await page.request.get('/api/sync/pull?cursor=0')).json()).changes.map((c: { record: { title?: string } | null }) => c.record?.title), { timeout: 20_000 }).toContain('ログイン前のメモ');
   expect(await taskTitles(page)).toEqual(['ログイン前のメモ']);
 
-  // ログアウト → ログインしていない領域（移したので空）に戻る
+  // ログアウト → ログインしていない領域に戻る（移行はコピー：元のデータは復旧用にこの端末に残る）
   await page.getByTestId('tab-other').click();
   await page.getByTestId('logout').click();
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
   await expect(page.getByTestId('home-screen')).toBeVisible();
-  expect(await taskTitles(page)).toEqual([]);
+  expect(await taskTitles(page)).toEqual(['ログイン前のメモ']);
 
-  // 同じブラウザで別のアカウント B にログイン → A のデータは表示も送信もされない
+  // 同じブラウザで別のアカウント B にログイン → 端末のデータは確認画面で「移さない」を選ぶまで送られない
   await fake('/__user', { sub: `acct-b-${tag}`, email: `b-${tag}@example.com`, name: 'B' });
   await loginOnPage(page);
+  await expect(page.getByTestId('account-choice')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('ac-target')).toHaveText(`b-${tag}@example.com`);
+  expect((await (await page.request.get('/api/sync/pull?cursor=0')).json()).changes).toHaveLength(0);
+  await page.getByTestId('ac-keep').click();
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toMatch(/^my-time@/);
   const areaB = await activeArea(page);
   await expect(page.getByTestId('home-screen')).toBeVisible();
@@ -268,6 +272,8 @@ test('アカウントごとの保存領域：ログイン前のデータは確�
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
   await fake('/__user', { sub: `acct-a-${tag}`, email: `a-${tag}@example.com`, name: 'A' });
   await loginOnPage(page);
+  await expect(page.getByTestId('account-choice')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('ac-keep').click();
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toMatch(/^my-time@/);
   expect(await activeArea(page)).not.toBe(areaB);
   await expect.poll(() => taskTitles(page), { timeout: 20_000 }).toEqual(['ログイン前のメモ']);
