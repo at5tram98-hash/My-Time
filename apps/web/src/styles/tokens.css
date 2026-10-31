@@ -1,0 +1,103 @@
+/* My Time デザイントークン（iOS システムカラー準拠、ブルー基調・トグルはグリーン） */
+:root {
+  color-scheme: light;
+  --blue: #007aff;
+  --green: #34c759;
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --indigo: #5856d6;
+  --gray: #8e8e93;
+
+  --bg: #f2f2f7;            /* systemGroupedBackground */
+  --bg-elev: #ffffff;       /* secondarySystemGroupedBackground */
+  --bg-plain: #ffffff;      /* systemBackground（時間軸） */
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-strong: rgba(120, 120, 128, 0.2);
+  --label: #000000;
+  --label-2: rgba(60, 60, 67, 0.6);
+  --label-3: rgba(60, 60, 67, 0.3);
+  --separator: rgba(60, 60, 67, 0.18);
+  --hairline: rgba(60, 60, 67, 0.12);
+  --bar-bg: rgba(249, 249, 249, 0.86);
+  --shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --dim: rgba(0, 0, 0, 0.32);
+
+  --progress-track: #fbfbfd;
+  --progress-border: #d1d1d6;
+  --progress-from: #b8f4a6;
+  --progress-to: #6fe25a;
+  --ring-ideal: rgba(0, 122, 255, 0.85);
+  --ring-track: rgba(120, 120, 128, 0.18);
+
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+  --font-rounded: ui-rounded, 'SF Pro Rounded', -apple-system, 'Hiragino Maru Gothic ProN', system-ui, sans-serif;
+
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: 300ms;
+  --radius-card: 12px;
+  --tabbar-h: 50px;
+  --nav-h: 52px;
+}
+
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --blue: #0a84ff;
+  --green: #30d158;
+  --red: #ff453a;
+  --orange: #ff9f0a;
+  --indigo: #5e5ce6;
+  --bg: #000000;
+  --bg-elev: #1c1c1e;
+  --bg-plain: #000000;
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-strong: rgba(118, 118, 128, 0.36);
+  --label: #ffffff;
+  --label-2: rgba(235, 235, 245, 0.6);
+  --label-3: rgba(235, 235, 245, 0.3);
+  --separator: rgba(84, 84, 88, 0.6);
+  --hairline: rgba(84, 84, 88, 0.4);
+  --bar-bg: rgba(22, 22, 24, 0.88);
+  --shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --dim: rgba(0, 0, 0, 0.5);
+  --progress-track: #1c1c1e;
+  --progress-border: #3a3a3c;
+  --progress-from: #5fc755;
+  --progress-to: #2fb84a;
+  --ring-ideal: rgba(10, 132, 255, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --blue: #0a84ff;
+    --green: #30d158;
+    --red: #ff453a;
+    --orange: #ff9f0a;
+    --indigo: #5e5ce6;
+    --bg: #000000;
+    --bg-elev: #1c1c1e;
+    --bg-plain: #000000;
+    --fill: rgba(118, 118, 128, 0.24);
+    --fill-strong: rgba(118, 118, 128, 0.36);
+    --label: #ffffff;
+    --label-2: rgba(235, 235, 245, 0.6);
+    --label-3: rgba(235, 235, 245, 0.3);
+    --separator: rgba(84, 84, 88, 0.6);
+    --hairline: rgba(84, 84, 88, 0.4);
+    --bar-bg: rgba(22, 22, 24, 0.88);
+    --shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --dim: rgba(0, 0, 0, 0.5);
+    --progress-track: #1c1c1e;
+    --progress-border: #3a3a3c;
+    --progress-from: #5fc755;
+    --progress-to: #2fb84a;
+    --ring-ideal: rgba(10, 132, 255, 0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 1ms;
+  }
+}
