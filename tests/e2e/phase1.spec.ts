@@ -133,11 +133,13 @@ test.describe('作成・編集・永続化・日付', () => {
     const row = page.locator('[data-task-title="統計の宿題"]');
     await expect(row).toBeVisible();
     await expect(row).toContainText('14:00');
+    await expect(page.getByTestId('task-title-input')).toHaveCount(0); // 閉じるアニメーションの完了を待つ
 
     await row.locator('.task-row-main').click();
     await page.getByRole('button', { name: '編集' }).click();
     await page.getByTestId('task-title-input').fill('統計の宿題（第3章）');
     await page.getByTestId('save-task').click();
+    await expect(page.getByRole('dialog').getByRole('heading', { name: '統計の宿題（第3章）' })).toBeVisible();
     await page.keyboard.press('Escape');
 
     await page.reload();

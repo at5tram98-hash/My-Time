@@ -79,7 +79,7 @@ export function AlertHost() {
 export function ExitSafeLayer({ className, children, style }: { className: string; children: ReactNode; style?: CSSProperties }) {
   const present = useIsPresent();
   return (
-    <div className={className} style={{ ...style, pointerEvents: present ? undefined : 'none' }}>
+    <div className={className} style={{ ...style, pointerEvents: present ? undefined : 'none' }} {...(present ? {} : { inert: '', 'aria-hidden': true })}>
       {children}
     </div>
   );
