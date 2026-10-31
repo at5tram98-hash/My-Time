@@ -231,7 +231,15 @@ test.describe('4. カレンダー', () => {
     await page.getByTestId('tab-calendar').click();
     await page.getByTestId('view-menu').click();
     await page.getByRole('menuitemradio', { name: '週' }).click();
-    const col = (await page.locator('[data-testid="cal-timeline"] [data-testid="tl-col-1"]').boundingBox())!;
+    // 2日→週の切り替えが終わって列幅が落ち着いてから測る（遅い環境で切り替え途中の幅を測ると数日ずれる）
+    await expect(page.locator('[data-testid="cal-timeline"] [data-testid="tl-col-6"]')).toBeVisible();
+    const colLoc = page.locator('[data-testid="cal-timeline"] [data-testid="tl-col-1"]');
+    await expect.poll(async () => {
+      const a = (await colLoc.boundingBox())!.width;
+      await page.waitForTimeout(150);
+      return Math.abs((await colLoc.boundingBox())!.width - a) < 0.5 && a < 393 / 5;
+    }).toBe(true);
+    const col = (await colLoc.boundingBox())!;
     const block = page.locator('[data-testid="cal-timeline"] [data-testid="tl-event:m"]');
     await block.scrollIntoViewIfNeeded();
     const c = await center(block);
