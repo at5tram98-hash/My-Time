@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { addDays, eventsForDay, isSameDay, startOfDay, tasksForDay } from '@my-time/domain';
+import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
 import { useUI } from '../../app/ui';
 import { useNow } from '../../app/useNow';
@@ -81,9 +81,13 @@ export function CalendarScreen() {
   );
 }
 
+const ROW_H = 17; // 1段の高さ(px)
+const MAX_ROWS = 4; // 1日に表示する段数（超えた分は +N）
+
+/**
+ * 月表示。日付をまたぐ予定は週の中で途切れない1本のバーとして描き、週をまたぐときは端を角張らせて「続き」を示す。
+ */
 function MonthView({ month, now, onPick, onPage }: { month: number; now: number; onPick: (d: number) => void; onPage: (dir: 1 | -1) => void }) {
-  const { tasks, calendarById } = useData();
-  const events = useVisibleEvents();
   const reduce = useReducedMotion() ?? false;
   const x = useMotionValue(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -93,8 +97,7 @@ function MonthView({ month, now, onPick, onPage }: { month: number; now: number;
   first.setDate(1);
   const firstDay = startOfDay(first.getTime());
   const gridStart = weekStart(firstDay);
-  const cells = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStart]);
-  const m = first.getMonth();
+  const weeks = useMemo(() => Array.from({ length: 6 }, (_, i) => addDays(gridStart, i * 7)), [gridStart]);
 
   return (
     <div className="month" ref={ref} data-testid="month-view">
@@ -103,25 +106,73 @@ function MonthView({ month, now, onPick, onPage }: { month: number; now: number;
           <span key={w}>{w}</span>
         ))}
       </div>
-      <motion.div className="month-grid" style={{ x }} role="grid" aria-label={formatMonth(firstDay)}>
-        {cells.map((d) => {
-          const evs = eventsForDay(events, d);
-          const ts = tasksForDay(tasks, d);
-          const items = [...evs.map((e) => ({ id: e.id, title: e.title, color: calendarById.get(e.calendarId)?.color ?? 'var(--blue)' })), ...ts.map((t) => ({ id: t.id, title: `${t.icon}${t.title}`, color: 'var(--blue)' }))];
-          const inMonth = new Date(d).getMonth() === m;
-          return (
-            <button key={d} type="button" role="gridcell" className={`month-cell ${inMonth ? '' : 'out'} ${isSameDay(d, now) ? 'today' : ''}`} onClick={() => onPick(d)} aria-label={`${new Date(d).getMonth() + 1}月${new Date(d).getDate()}日 ${items.length}件`} data-testid={`month-cell-${new Date(d).getDate()}-${inMonth ? 'in' : 'out'}`}>
-              <span className="month-num">{new Date(d).getDate()}</span>
-              <span className="month-items">
-                {items.slice(0, 3).map((it) => (
-                  <span key={it.id} className="month-item" style={{ ['--c' as string]: it.color }}>{it.title}</span>
-                ))}
-                {items.length > 3 && <span className="month-more">+{items.length - 3}</span>}
-              </span>
-            </button>
-          );
-        })}
+      <motion.div className="month-weeks" style={{ x }} role="grid" aria-label={formatMonth(firstDay)}>
+        {weeks.map((ws) => (
+          <MonthWeek key={ws} weekStart={ws} month={first.getMonth()} now={now} onPick={onPick} />
+        ))}
       </motion.div>
+    </div>
+  );
+}
+
+function MonthWeek({ weekStart: ws, month, now, onPick }: { weekStart: number; month: number; now: number; onPick: (d: number) => void }) {
+  const { tasks, calendarById } = useData();
+  const events = useVisibleEvents();
+  const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
+  const colorOf = (calId: string) => calendarById.get(calId)?.color ?? 'var(--blue)';
+  const bars = layoutWeekBars(events, ws);
+  const lanesAt = (col: number) => bars.filter((b) => col >= b.col && col < b.col + b.span).reduce((m, b) => Math.max(m, b.lane + 1), 0);
+
+  return (
+    <div className="month-week" role="row">
+      {days.map((d, i) => {
+        const singles = [
+          ...eventsForDay(events, d).filter((e) => !isMultiDay(e)).map((e) => ({ id: `e-${e.id}`, title: e.title, color: colorOf(e.calendarId) })),
+          ...tasksForDay(tasks, d).map((t) => ({ id: `t-${t.id}`, title: `${t.icon}${t.title}`, color: 'var(--blue)' })),
+        ];
+        const used = lanesAt(i);
+        const room = Math.max(0, MAX_ROWS - used);
+        const shown = singles.length > room ? singles.slice(0, Math.max(0, room - 1)) : singles;
+        const hidden = singles.length - shown.length + bars.filter((b) => b.lane >= MAX_ROWS && i >= b.col && i < b.col + b.span).length;
+        const total = singles.length + bars.filter((b) => i >= b.col && i < b.col + b.span).length;
+        const inMonth = new Date(d).getMonth() === month;
+        return (
+          <button
+            key={d}
+            type="button"
+            role="gridcell"
+            className={`month-cell ${inMonth ? '' : 'out'} ${isSameDay(d, now) ? 'today' : ''}`}
+            style={{ gridColumn: i + 1 }}
+            onClick={() => onPick(d)}
+            aria-label={`${new Date(d).getMonth() + 1}月${new Date(d).getDate()}日 ${total}件`}
+            data-testid={`month-cell-${new Date(d).getDate()}-${inMonth ? 'in' : 'out'}`}
+          >
+            <span className="month-num">{new Date(d).getDate()}</span>
+            <span className="month-items" style={{ paddingTop: Math.min(used, MAX_ROWS) * ROW_H }}>
+              {shown.map((it) => (
+                <span key={it.id} className="month-item" style={{ ['--c' as string]: it.color }}>{it.title}</span>
+              ))}
+              {hidden > 0 && <span className="month-more">+{hidden}</span>}
+            </span>
+          </button>
+        );
+      })}
+      <div className="month-bars" aria-hidden>
+        {bars
+          .filter((b) => b.lane < MAX_ROWS)
+          .map((b) => (
+            <span
+              key={`${b.item.id}-${ws}`}
+              className={`month-bar ${b.continuesBefore ? 'cont-before' : ''} ${b.continuesAfter ? 'cont-after' : ''}`}
+              style={{ left: `calc(${(b.col / 7) * 100}% + ${b.continuesBefore ? 0 : 2}px)`, width: `calc(${(b.span / 7) * 100}% - ${(b.continuesBefore ? 0 : 2) + (b.continuesAfter ? 0 : 2)}px)`, top: b.lane * ROW_H, ['--c' as string]: colorOf(b.item.calendarId) }}
+              data-testid={`month-bar-${b.item.id}`}
+              data-col={b.col}
+              data-span={b.span}
+            >
+              {b.item.title}
+            </span>
+          ))}
+      </div>
     </div>
   );
 }

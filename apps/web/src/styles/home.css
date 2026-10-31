@@ -1,16 +1,19 @@
 /* ---- Home ---- */
-.home-nav { padding-left: max(12px, env(safe-area-inset-left)); }
+.home { background: var(--bg-plain); }
+.home-nav { padding-left: max(12px, env(safe-area-inset-left)); background: var(--bg-plain); }
 .nav-date { font-size: 1.65rem; font-weight: 700; letter-spacing: 0.01em; display: inline-flex; align-items: baseline; gap: 8px; min-height: 44px; align-items: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .nav-date-today { font-size: 0.82rem; font-weight: 600; color: var(--blue); background: var(--fill); padding: 3px 9px; border-radius: 12px; }
 .home-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
-.task-pane { position: relative; flex: none; overflow: hidden; background: var(--bg); }
+.task-pane { position: relative; flex: none; overflow: hidden; background: var(--bg-plain); }
 .task-list-wrap, .cards-wrap { position: absolute; inset: 0; }
 .task-list { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; padding: 0 0 8px; }
 .list-heading { display: flex; align-items: baseline; justify-content: space-between; padding: 2px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left)); font-size: 0.88rem; font-weight: 600; color: var(--label-2); }
 .list-count { font-variant-numeric: tabular-nums; font-weight: 500; }
 .rows { position: relative; }
-.home .rows { background: var(--bg-elev); margin: 0 10px; border-radius: 12px; }
+/* iOS リマインダーと同じく、カードにせず画面幅いっぱいのリスト */
+.home .rows { background: transparent; }
+.home .task-row-main { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
 
 /* ---- Task row ---- */
 .task-row { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -36,8 +39,12 @@
 @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
 /* 長押しでセルが軽く浮き、緑のカプセル型バーへ変形 */
-.task-row.scrubbing { z-index: 5; }
-.task-row.scrubbing .task-row-main { transform: scale(1.015); opacity: 0; }
+.task-row { transition: transform 260ms var(--spring), box-shadow 260ms var(--spring), background-color 200ms; }
+/* 長押しでセルが持ち上がって浮き、中身が緑のカプセルへ変形する */
+.task-row.scrubbing { z-index: 5; transform: scale(1.02); background: var(--bg-elev); box-shadow: var(--shadow-lift); border-radius: 16px; }
+.task-row.scrubbing::before { opacity: 0; }
+.task-row.scrubbing + .task-row::before { opacity: 0; }
+.task-row.scrubbing .task-row-main { opacity: 0; }
 .scrubber {
   position: absolute; left: 12px; right: 12px; top: 50%; height: 50px; margin-top: -25px;
   border-radius: 25px; background: var(--progress-track); box-shadow: inset 0 0 0 1px var(--progress-border), var(--shadow-lift);
@@ -53,7 +60,7 @@
 .scrub-num.outside { position: absolute; top: 50%; transform: translateY(-50%); color: var(--progress-to); text-shadow: none; }
 
 /* ---- Split handle ---- */
-.split-handle { flex: none; position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: row-resize; background: var(--bg); z-index: 3; }
+.split-handle { flex: none; position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: row-resize; background: var(--bg-plain); z-index: 3; }
 .split-handle::before { content: ''; position: absolute; left: 0; right: 0; top: -11px; bottom: -11px; } /* 44pt相当のタッチ領域 */
 .split-grip { width: 36px; height: 5px; border-radius: 3px; background: var(--label-3); transition: background 150ms, width 200ms var(--spring); }
 .split-handle:active .split-grip { background: var(--label-2); width: 44px; }

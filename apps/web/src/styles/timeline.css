@@ -1,4 +1,4 @@
-.timeline { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-plain); --gutter: 46px; }
+.timeline { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-plain); --gutter: 42px; }
 .tl-head { flex: none; display: flex; border-bottom: 0.5px solid var(--separator); background: var(--bg-plain); overflow: hidden; }
 .tl-gutter-head { width: var(--gutter); flex: none; }
 .tl-head-cols { flex: 1; display: flex; min-width: 0; }
@@ -65,11 +65,24 @@
 .calendar-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .month { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-plain); touch-action: pan-y; overflow: hidden; }
 .month-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 0.7rem; color: var(--label-2); text-align: center; padding: 4px 0; border-bottom: 0.5px solid var(--separator); }
-.month-grid { flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); }
-.month-cell { border-bottom: 0.5px solid var(--hairline); padding: 3px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.month-weeks { flex: 1; display: grid; grid-template-rows: repeat(6, minmax(0, 1fr)); min-height: 0; }
+.month-week { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 0.5px solid var(--hairline); min-height: 0; overflow: hidden; }
+.month-cell { padding: 3px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; overflow: hidden; grid-row: 1; }
 .month-cell.out { opacity: 0.4; }
-.month-num { font-size: 0.82rem; font-weight: 500; width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.month-cell:active { background: var(--fill); }
+.month-num { font-size: 0.82rem; font-weight: 500; width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; font-variant-numeric: tabular-nums; flex: none; }
 .month-cell.today .month-num { background: var(--red); color: #fff; font-weight: 700; }
-.month-items { width: 100%; display: flex; flex-direction: column; gap: 1px; }
-.month-item { font-size: 0.6rem; line-height: 1.35; padding: 0 3px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: clip; background: color-mix(in srgb, var(--c) 18%, transparent); color: color-mix(in srgb, var(--c) 75%, var(--label)); }
+.month-items { width: 100%; display: flex; flex-direction: column; gap: 1px; padding: 0 2px; }
+.month-item { height: 16px; font-size: 0.6rem; line-height: 16px; padding: 0 3px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: clip; background: color-mix(in srgb, var(--c) 18%, transparent); color: color-mix(in srgb, var(--c) 75%, var(--label)); }
 .month-more { font-size: 0.58rem; color: var(--label-2); padding-left: 3px; }
+/* 日付をまたぐ予定：途切れない1本のバー */
+.month-bars { position: absolute; left: 0; right: 0; top: 30px; pointer-events: none; }
+.month-bar { position: absolute; height: 16px; line-height: 16px; font-size: 0.6rem; font-weight: 600; padding: 0 5px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: color-mix(in srgb, var(--c) 30%, var(--bg-plain)); color: color-mix(in srgb, var(--c) 70%, var(--label)); border-left: 3px solid var(--c); }
+.month-bar.cont-before { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; }
+.month-bar.cont-after { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+/* 移動先の仮表示：重なりがあればオレンジの輪郭、確認待ちは控えめに脈打つ */
+.tl-block.lifted.conflict { box-shadow: var(--shadow-lift), 0 0 0 2px var(--orange); }
+.tl-block.lifted.pending { transform: none; animation: ghostpulse 1.4s ease-in-out infinite; }
+@keyframes ghostpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.timeline.pinching .tl-block, .timeline.pinching .tl-hour { transition: none; }

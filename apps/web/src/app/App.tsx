@@ -30,6 +30,23 @@ function AppearanceSync() {
     else root.style.setProperty('--base-size', TEXT_SIZE_PX[settings.textSize]);
     root.dataset.textSize = settings.textSize;
   }, [settings.theme, settings.textSize]);
+
+  // iOS のソフトウェアキーボード表示中は、その高さだけシートを持ち上げて入力欄・保存ボタンを隠さない
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb', `${Math.round(kb)}px`);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
   return null;
 }
 

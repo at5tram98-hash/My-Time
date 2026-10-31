@@ -92,3 +92,32 @@ export async function mouseLongPressDrag(page: Page, from: { x: number; y: numbe
     await page.waitForTimeout(16);
   }
 }
+
+/** CDP の生タッチ入力（Chromium のみ）。複数指・touchCancel を再現する */
+export async function rawTouch(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  const pts = (ps: { x: number; y: number }[]) => ps.map((p, i) => ({ x: p.x, y: p.y, id: i + 1, radiusX: 4, radiusY: 4, force: 1 }));
+  return {
+    start: (ps: { x: number; y: number }[]) => cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(ps) }),
+    move: (ps: { x: number; y: number }[]) => cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(ps) }),
+    end: () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+    cancel: () => cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] }),
+    detach: () => cdp.detach(),
+  };
+}
+
+/** 生の IndexedDB から1ストアを読む（アプリのコードを使わない） */
+export async function readStore(page: Page, store: string): Promise<Record<string, unknown>[]> {
+  return page.evaluate(async (name) => {
+    const db: IDBDatabase = await new Promise((res) => {
+      const r = indexedDB.open('my-time');
+      r.onsuccess = () => res(r.result);
+    });
+    const rows = await new Promise<Record<string, unknown>[]>((res) => {
+      const g = db.transaction(name).objectStore(name).getAll();
+      g.onsuccess = () => res(g.result as Record<string, unknown>[]);
+    });
+    db.close();
+    return rows;
+  }, store);
+}

@@ -5,3 +5,5 @@ export * from './taskMachine';
 export * from './layout';
 export * from './factories';
 export * from './agenda';
+export * from './placement';
+export * from './month';

@@ -1,15 +1,17 @@
 import { useId, useMemo, useState } from 'react';
-import { findConflicts, formatHm, HOUR, makeEvent, startOfDay, suggestFreeSlot, type CalEvent } from '@my-time/domain';
+import { checkPlacement, formatHm, HOUR, makeEvent, placementItems, type CalEvent } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
 import { useData } from '../../app/data';
+import { usePlacementGuard } from '../../app/usePlacementGuard';
 import { useUI } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { repo } from '../../data/repo';
 import { defaultStartFor } from '../tasks/TaskEditorSheet';
 
 export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: string; defaults?: Partial<CalEvent>; depth: number }) {
-  const { events, calendars } = useData();
+  const { events, tasks, calendars } = useData();
+  const guard = usePlacementGuard();
   const { closeSheet, calDate, tab, homeDate, confirm, showToast } = useUI();
   const existing = eventId ? events.find((e) => e.id === eventId) : undefined;
   const isNew = !existing;
@@ -25,9 +27,12 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
 
   const ps = fromLocalInput(start);
   const pe = fromLocalInput(end);
-  const target = ps != null && pe != null && pe > ps ? { id: existing?.id ?? '__new', start: ps, end: pe } : null;
-  const conflicts = useMemo(() => (target ? findConflicts(target, events) : []), [target?.start, target?.end, events]); // eslint-disable-line react-hooks/exhaustive-deps
-  const suggestion = target && conflicts.length ? suggestFreeSlot(target, events, startOfDay(target.start)) : null;
+  const target = ps != null && pe != null && pe > ps ? { id: `event:${existing?.id ?? '__new'}`, start: ps, end: pe } : null;
+  // 入力中も重なりを表示（保存時には改めてアラートで確認する）
+  const { conflicts, suggestion } = useMemo(
+    () => (target ? checkPlacement(target, placementItems(events, tasks)) : { conflicts: [], suggestion: null }),
+    [target?.start, target?.end, events, tasks], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const onStartChange = (v: string) => {
     const ns = fromLocalInput(v);
@@ -39,9 +44,15 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
     setError(null);
     if (!title.trim()) return setError('タイトルを入力してください');
     if (!target) return setError('終了は開始より後にしてください');
+    let { start: s0, end: e0 } = target;
+    if (isNew || existing.start !== s0 || existing.end !== e0) {
+      const decision = await guard(target, '保存');
+      if (!decision) return; // キャンセル：何も保存しない（編集画面に戻る）
+      ({ start: s0, end: e0 } = decision);
+    }
     try {
-      if (isNew) await repo.saveEvent(makeEvent({ title: title.trim(), calendarId, start: target.start, end: target.end, notes }, Date.now()), true);
-      else await repo.saveEvent({ ...existing, title: title.trim(), calendarId, start: target.start, end: target.end, notes }, false);
+      if (isNew) await repo.saveEvent(makeEvent({ title: title.trim(), calendarId, start: s0, end: e0, notes }, Date.now()), true);
+      else await repo.saveEvent({ ...existing, title: title.trim(), calendarId, start: s0, end: e0, notes }, false);
       showToast(isNew ? '予定を追加しました' : '保存しました');
       closeSheet();
     } catch (e) {
@@ -87,7 +98,7 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
             <div className="conflict" role="status" data-testid="conflict-warning">
               <Icon name="info" size={18} />
               <div>
-                <div>「{conflicts[0]!.title}」{conflicts.length > 1 ? `など${conflicts.length}件` : ''}と時間が重なっています。</div>
+                <div>「{conflicts[0]!.title}」{conflicts.length > 1 ? `など${conflicts.length}件` : ''}と時間が重なっています。保存前に確認します。</div>
                 {suggestion && (
                   <button type="button" className="link-btn" onClick={() => { setStart(toLocalInput(suggestion.start)); setEnd(toLocalInput(suggestion.end)); }}>
                     {formatHm(suggestion.start)}〜{formatHm(suggestion.end)} に変更する

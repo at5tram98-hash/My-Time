@@ -34,11 +34,6 @@ export function FloatingCards({ tasks, subtasksByTask, now }: { tasks: Task[]; s
           <span className="fcard-time">{next.plannedStart != null && next.plannedStart > now ? `${formatHm(next.plannedStart)} 開始` : next.plannedEnd != null ? `${formatHm(next.plannedEnd)} 終了` : ''}</span>
         </button>
       )}
-      {running.length === 0 && !next && (
-        <div className="fcard empty" data-testid="fcard-empty">
-          実行中・予定のタスクはありません
-        </div>
-      )}
     </div>
   );
 }

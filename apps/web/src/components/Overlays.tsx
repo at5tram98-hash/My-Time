@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useUI } from '../app/ui';
 
@@ -10,7 +10,7 @@ export function AlertHost() {
     <AnimatePresence>
       {alert && (
         <ExitSafeLayer className="alert-layer" key={alert.id}>
-          <motion.div className="sheet-dim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => alert.resolve(null)} />
+          <motion.div className="sheet-dim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => alert.variant === 'sheet' && alert.resolve(null)} />
           {alert.variant === 'alert' ? (
             <motion.div
               className="alert"
@@ -76,10 +76,10 @@ export function AlertHost() {
 }
 
 /** 閉じるアニメーション中は操作を受け付けない（次のタップを透過させる） */
-export function ExitSafeLayer({ className, children, style }: { className: string; children: ReactNode; style?: CSSProperties }) {
+export function ExitSafeLayer({ className, children, style, onPointerDown }: { className: string; children: ReactNode; style?: CSSProperties; onPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void }) {
   const present = useIsPresent();
   return (
-    <div className={className} style={{ ...style, pointerEvents: present ? undefined : 'none' }} {...(present ? {} : { inert: '', 'aria-hidden': true })}>
+    <div className={className} onPointerDown={onPointerDown} style={{ ...style, pointerEvents: present ? undefined : 'none' }} {...(present ? {} : { inert: '', 'aria-hidden': true })}>
       {children}
     </div>
   );

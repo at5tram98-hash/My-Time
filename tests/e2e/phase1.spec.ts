@@ -168,6 +168,8 @@ test.describe('作成・編集・永続化・日付', () => {
     await page.getByTestId('event-end').fill('2026-10-12T14:00');
     await expect(page.getByTestId('conflict-warning')).toContainText('授業A');
     await page.getByTestId('save-event').click();
+    await expect(page.getByRole('alertdialog')).toContainText('時間が重なっています');
+    await page.getByRole('alertdialog').getByRole('button', { name: '重ねて保存' }).click();
     await expect(page.getByTestId('event-title-input')).toHaveCount(0); // 保存完了（シートが閉じる）を待ってから再起動
     await page.reload();
     await expect(page.getByRole('button', { name: /予定 面談/ })).toBeVisible();

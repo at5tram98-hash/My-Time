@@ -3,6 +3,7 @@ import { HOUR, makeTask, previewConversion, startOfDay, type Task, type TaskKind
 import { Sheet } from '../../components/Sheet';
 import { Segmented, Toggle } from '../../components/Controls';
 import { useData } from '../../app/data';
+import { usePlacementGuard } from '../../app/usePlacementGuard';
 import { useUI } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { db } from '../../data/db';
@@ -25,6 +26,7 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
   const isNew = !existing;
   const init = existing ?? ({ ...defaults } as Partial<Task>);
   const fid = useId();
+  const guard = usePlacementGuard();
 
   const startDefault = defaultStartFor(homeDate, Date.now());
   const [title, setTitle] = useState(init.title ?? '');
@@ -57,13 +59,20 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
     const ps = kind === 'do' && timed ? fromLocalInput(start) : null;
     const pe = kind === 'do' && timed ? fromLocalInput(end) : null;
     if (kind === 'do' && timed && (ps == null || pe == null || pe <= ps)) return setError('終了は開始より後にしてください');
+    // 時刻を新しく決めた／変えたときは保存前に重複を確認（キャンセルなら何も保存しない）
+    let [ps2, pe2] = [ps, pe];
+    if (ps != null && pe != null && (isNew || existing.plannedStart !== ps || existing.plannedEnd !== pe)) {
+      const decision = await guard({ id: `task:${existing?.id ?? '__new'}`, start: ps, end: pe }, '保存');
+      if (!decision) return;
+      [ps2, pe2] = [decision.start, decision.end];
+    }
     const fields: Partial<Task> = {
       title: title.trim(),
       icon,
       calendarId: calendarId || null,
       category: category.trim() || null,
       notes,
-      ...(kind === 'do' ? { plannedStart: ps, plannedEnd: pe } : { checkAt: checkTimed ? fromLocalInput(checkAt) : null }),
+      ...(kind === 'do' ? { plannedStart: ps2, plannedEnd: pe2 } : { checkAt: checkTimed ? fromLocalInput(checkAt) : null }),
     };
     try {
       if (isNew) {

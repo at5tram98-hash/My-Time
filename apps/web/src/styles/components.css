@@ -1,6 +1,7 @@
 /* ---- Sheet ---- */
 .sheet-layer, .alert-layer { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; }
 .alert-layer { z-index: 100; align-items: center; }
+.sheet-layer { bottom: var(--kb, 0px); transition: bottom 250ms var(--spring); }
 .sheet-dim { position: absolute; inset: 0; background: var(--dim); }
 .sheet {
   position: relative;
@@ -8,6 +9,7 @@
   max-width: 640px;
   max-height: calc(100% - env(safe-area-inset-top) - 12px);
   height: calc(100% - env(safe-area-inset-top) - 12px);
+  /* キーボード表示中は下端のセーフエリア余白を詰める */
   background: var(--bg);
   border-radius: 12px 12px 0 0;
   display: flex;
@@ -23,7 +25,7 @@
 .sheet-title { font-weight: 600; font-size: 1.06rem; text-align: center; }
 .sheet-body {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
-  padding: 0 16px calc(28px + env(safe-area-inset-bottom));
+  padding: 0 16px calc(28px + max(0px, env(safe-area-inset-bottom) - var(--kb, 0px)));
   -webkit-user-select: none; user-select: none;
 }
 

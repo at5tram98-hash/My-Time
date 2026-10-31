@@ -38,6 +38,8 @@ interface UIContextValue {
   alert: AlertState | null;
   confirm: (o: { title: string; message?: string; confirmLabel?: string; cancelLabel?: string; destructive?: boolean }) => Promise<boolean>;
   choose: <T>(o: { title: string; message?: string; actions: AlertButton<T>[] }) => Promise<T | null>;
+  /** 中央のiOS風アラートで複数の選択肢を出す（3つ以上は縦並び） */
+  ask: <T>(o: { title: string; message?: string; buttons: AlertButton<T>[] }) => Promise<T | null>;
   toast: string | null;
   showToast: (msg: string) => void;
 }
@@ -89,6 +91,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const choose = useCallback(<T,>(o: { title: string; message?: string; actions: AlertButton<T>[] }) => present<T>('sheet', o.title, o.message, o.actions), [present]);
 
+  const ask = useCallback(<T,>(o: { title: string; message?: string; buttons: AlertButton<T>[] }) => present<T>('alert', o.title, o.message, o.buttons), [present]);
+
   const showToast = useCallback((msg: string) => {
     window.clearTimeout(toastTimer.current);
     setToast(msg);
@@ -96,8 +100,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, toast, showToast }),
-    [tab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, toast, showToast],
+    () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast }),
+    [tab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

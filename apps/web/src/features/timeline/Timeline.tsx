@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
 import {
   addDays, formatHm, isSameDay, layoutDay, MINUTE, overlaps, snapToStep, startOfDay, taskBlock, weekdayJa,
@@ -21,8 +21,10 @@ interface Props {
   onPage: (dir: 1 | -1) => void;
   onOpenEvent: (id: string) => void;
   onOpenTask: (id: string) => void;
-  onMove: (kind: 'event' | 'task', id: string, newStart: number) => void;
-  onItemMenu: (kind: 'event' | 'task', id: string) => void;
+  /** 移動の確定要求。重複確認などが終わるまで仮位置を表示し続ける。 */
+  onMove: (kind: 'event' | 'task', id: string, newStart: number) => Promise<void>;
+  /** 予定の静止長押し（タスクでは呼ばない：タスクの編集・削除はタップ後の詳細シートから） */
+  onEventMenu: (id: string) => void;
   onTapDay?: (day: number) => void;
   testId?: string;
 }
@@ -36,51 +38,79 @@ interface DragState {
   pointerId: number;
   startX: number;
   startY: number;
+  /** 長押しを開始した列（日付またぎ予定の2日目を掴んだ場合にも正しく動かすため） */
+  grabCol: number;
   active: boolean;
   moved: boolean;
   deltaMin: number;
   deltaDays: number;
 }
 
+/** ドラッグ中または確認待ちの仮位置 */
+interface Ghost {
+  item: Item;
+  start: number;
+  pending: boolean;
+}
+
 const MIN_H = 22;
 const MAX_H = 160;
+const DEFAULT_H = 52;
 const LONG_PRESS_MS = 420;
 const SNAP_MIN = 15;
 
+/** 分 → CSS の長さ（時間軸の倍率は CSS 変数 --hour だけで変える） */
+const mins = (m: number) => `calc(var(--hour) * ${(m / 60).toFixed(5)})`;
+
+const itemDuration = (it: Item) => (it.kind === 'task' ? it.block.plannedEnd : it.end) - it.start;
+const realId = (it: Item) => (it.kind === 'event' ? it.event.id : it.task.id);
+
 /** Appleカレンダー風の時間軸。縦スクロール／ピンチ倍率はこの領域内だけで処理する。 */
 export function Timeline(props: Props) {
-  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onItemMenu, onTapDay, testId } = props;
-  const [hourH, setHourH] = useState(52);
+  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onEventMenu, onTapDay, testId } = props;
+  /** 確定済みの倍率（文字の出し分けなどに使う）。ピンチ中は CSS 変数だけを毎フレーム更新する。 */
+  const [hourH, setHourH] = useState(DEFAULT_H);
+  const liveHour = useRef(DEFAULT_H);
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const colsRef = useRef<HTMLDivElement>(null);
   const pagerRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion() ?? false;
   const x = useMotionValue(0);
-  const pendingScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const [pending, setPending] = useState<Ghost | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
   const suppressClick = useRef(false);
-  const pxPerMin = hourH / 60;
-  const hourRef = useRef(hourH);
-  hourRef.current = hourH;
 
-  usePager(pagerRef, { x, onPage, reduceMotion: reduce });
+  usePager(pagerRef, { x, onPage, enabled: !pending, reduceMotion: reduce });
+
+  const applyHour = (h: number) => {
+    liveHour.current = h;
+    rootRef.current?.style.setProperty('--hour', `${h}px`);
+  };
 
   // 初回は現在時刻（なければ8時）付近へ。ユーザーが触るまでは、画面サイズが落ち着く（ホームの上下分割が確定する）たびに合わせ直す
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let anchored = true;
+    let lastSet = -1;
     const anchor = () => {
       if (!anchored) return;
       const d = new Date(now);
       const minutes = isSameDay(now, startDay) || days > 1 ? d.getHours() * 60 + d.getMinutes() : 8 * 60;
-      el.scrollTop = Math.max(0, (minutes * hourRef.current) / 60 - el.clientHeight * 0.35);
+      el.scrollTop = Math.max(0, (minutes * liveHour.current) / 60 - el.clientHeight * 0.35);
+      lastSet = el.scrollTop;
     };
     const release = () => {
       anchored = false;
     };
+    // 自分で合わせた位置以外へスクロールされたら（ユーザー操作・プログラムによる移動とも）以後は合わせ直さない
+    const onScroll = () => {
+      if (Math.abs(el.scrollTop - lastSet) > 2) anchored = false;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
     anchor();
     const ro = new ResizeObserver(anchor);
     ro.observe(el);
@@ -89,6 +119,7 @@ export function Timeline(props: Props) {
     el.addEventListener('wheel', release, { passive: true });
     return () => {
       ro.disconnect();
+      el.removeEventListener('scroll', onScroll);
       el.removeEventListener('pointerdown', release);
       el.removeEventListener('touchstart', release);
       el.removeEventListener('wheel', release);
@@ -96,61 +127,77 @@ export function Timeline(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useLayoutEffect(() => {
-    if (pendingScroll.current != null && scrollRef.current) {
-      scrollRef.current.scrollTop = pendingScroll.current;
-      pendingScroll.current = null;
-    }
-  }, [hourH]);
-
-  // ピンチ／トラックパッドで時間軸だけを拡大縮小（ページ全体のズームを起こさない）
+  // ピンチ／トラックパッドで時間軸だけを拡大縮小（ページ全体のズームを起こさない）。
+  // 再描画せず CSS 変数とスクロール位置だけを毎フレーム更新し、指の間の時刻を固定したまま滑らかに伸縮する。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let pinch: { d0: number; h0: number; focalMin: number; focalY: number } | null = null;
+    let raf = 0;
+    let commitTimer = 0;
+    let next: { h: number; focalMin: number; focalY: number } | null = null;
     const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
-    const zoomTo = (h: number, focalMin: number, focalY: number) => {
-      const nh = Math.min(MAX_H, Math.max(MIN_H, h));
-      pendingScroll.current = (focalMin * nh) / 60 - focalY;
-      setHourH(nh);
+    const flush = () => {
+      raf = 0;
+      if (!next) return;
+      const h = Math.min(MAX_H, Math.max(MIN_H, next.h));
+      applyHour(h);
+      el.scrollTop = (next.focalMin * h) / 60 - next.focalY;
+      next = null;
     };
+    const schedule = (h: number, focalMin: number, focalY: number) => {
+      next = { h, focalMin, focalY };
+      if (!raf) raf = requestAnimationFrame(flush);
+    };
+    const commit = () => setHourH(Math.round(liveHour.current * 10) / 10);
     const ts = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         const rect = el.getBoundingClientRect();
         const focalY = (e.touches[0]!.clientY + e.touches[1]!.clientY) / 2 - rect.top;
-        const h = hourRef.current;
+        const h = liveHour.current;
         pinch = { d0: dist(e.touches), h0: h, focalY, focalMin: ((el.scrollTop + focalY) / h) * 60 };
+        rootRef.current?.classList.add('pinching');
       }
     };
     const tm = (e: TouchEvent) => {
       if (pinch && e.touches.length === 2) {
         if (e.cancelable) e.preventDefault();
-        zoomTo(pinch.h0 * (dist(e.touches) / pinch.d0), pinch.focalMin, pinch.focalY);
+        schedule(pinch.h0 * (dist(e.touches) / pinch.d0), pinch.focalMin, pinch.focalY);
       }
     };
     const te = (e: TouchEvent) => {
-      if (e.touches.length < 2) pinch = null;
+      if (pinch && e.touches.length < 2) {
+        pinch = null;
+        rootRef.current?.classList.remove('pinching');
+        commit();
+      }
     };
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const focalY = e.clientY - rect.top;
-      const h = hourRef.current;
-      zoomTo(h * Math.exp(-e.deltaY / 120), ((el.scrollTop + focalY) / h) * 60, focalY);
+      const h = next?.h ?? liveHour.current;
+      schedule(h * Math.exp(-e.deltaY / 120), ((el.scrollTop + focalY) / liveHour.current) * 60, focalY);
+      window.clearTimeout(commitTimer);
+      commitTimer = window.setTimeout(commit, 160);
     };
     const gesture = (e: Event) => e.preventDefault(); // Safari のページピンチ
     el.addEventListener('touchstart', ts, { passive: true });
     el.addEventListener('touchmove', tm, { passive: false });
     el.addEventListener('touchend', te);
+    el.addEventListener('touchcancel', te);
     el.addEventListener('wheel', wheel, { passive: false });
     el.addEventListener('gesturestart', gesture);
     el.addEventListener('gesturechange', gesture);
     const unblock = blockTouchScrollWhile(el, () => dragRef.current?.active === true);
     return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(commitTimer);
       el.removeEventListener('touchstart', ts);
       el.removeEventListener('touchmove', tm);
       el.removeEventListener('touchend', te);
+      el.removeEventListener('touchcancel', te);
       el.removeEventListener('wheel', wheel);
       el.removeEventListener('gesturestart', gesture);
       el.removeEventListener('gesturechange', gesture);
@@ -169,17 +216,17 @@ export function Timeline(props: Props) {
     return out;
   }, [events, tasks, subtasksByTask, now]);
 
-  // ---- 予定ブロックの長押しドラッグ（15分スナップ） ----
+  // ---- 予定・タスクの長押しドラッグ（15分スナップ。確定は onMove 側の確認後） ----
   const setDragBoth = (d: DragState | null) => {
     dragRef.current = d;
     setDrag(d);
   };
-  const sourceIndex = (t: number) => Math.max(0, dayStarts.findIndex((d) => t >= d && t < addDays(d, 1)));
   const colWidth = () => (colsRef.current?.clientWidth ?? 300) / days;
+  const ghostStart = (d: DragState) => snapToStep(addDays(d.item.start, d.deltaDays) + d.deltaMin * MINUTE, SNAP_MIN);
 
-  const onItemPointerDown = (e: RPointerEvent, item: Item) => {
-    if (e.button !== 0 || dragRef.current) return;
-    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, active: false, moved: false, deltaMin: 0, deltaDays: 0 };
+  const onItemPointerDown = (e: RPointerEvent, item: Item, col: number) => {
+    if (e.button !== 0 || dragRef.current || pending) return;
+    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, grabCol: col, active: false, moved: false, deltaMin: 0, deltaDays: 0 };
     dragRef.current = d;
     const target = e.currentTarget as HTMLElement;
     window.clearTimeout(timerRef.current);
@@ -209,12 +256,10 @@ export function Timeline(props: Props) {
       }
       return;
     }
-    const deltaMin = Math.round(dy / pxPerMin / SNAP_MIN) * SNAP_MIN;
-    const src = sourceIndex(d.item.start);
-    const deltaDays = days > 1 ? Math.min(days - 1 - src, Math.max(-src, Math.round(dx / colWidth()))) : 0;
-    if (deltaMin !== d.deltaMin || deltaDays !== d.deltaDays || (!d.moved && Math.hypot(dx, dy) > 6)) {
-      setDragBoth({ ...d, deltaMin, deltaDays, moved: d.moved || Math.hypot(dx, dy) > 6 });
-    }
+    const deltaMin = Math.round(dy / (liveHour.current / 60) / SNAP_MIN) * SNAP_MIN;
+    const deltaDays = days > 1 ? Math.min(days - 1 - d.grabCol, Math.max(-d.grabCol, Math.round(dx / colWidth()))) : 0;
+    const moved = d.moved || Math.hypot(dx, dy) > 6;
+    if (deltaMin !== d.deltaMin || deltaDays !== d.deltaDays || moved !== d.moved) setDragBoth({ ...d, deltaMin, deltaDays, moved });
   };
 
   const finishDrag = (commit: boolean) => {
@@ -225,14 +270,15 @@ export function Timeline(props: Props) {
     if (!d || !d.active) return;
     suppressClick.current = true;
     window.setTimeout(() => (suppressClick.current = false), 50);
-    const realId = d.item.kind === 'event' ? d.item.event.id : d.item.task.id;
-    if (!commit) return;
+    if (!commit) return; // pointercancel では何も変えない
     if (d.moved && (d.deltaMin !== 0 || d.deltaDays !== 0)) {
-      const newStart = snapToStep(addDays(d.item.start, d.deltaDays) + d.deltaMin * MINUTE, SNAP_MIN);
-      onMove(d.item.kind, realId, newStart);
-    } else if (!d.moved) {
-      onItemMenu(d.item.kind, realId);
+      const start = ghostStart(d);
+      setPending({ item: d.item, start, pending: true });
+      void onMove(d.item.kind, realId(d.item), start).finally(() => setPending(null));
+    } else if (!d.moved && d.item.kind === 'event') {
+      onEventMenu(d.item.event.id);
     }
+    // タスクの静止長押しは何もしない（持ち上げを戻すだけ）
   };
 
   const onItemClick = (item: Item) => {
@@ -241,96 +287,110 @@ export function Timeline(props: Props) {
     else onOpenTask(item.task.id);
   };
 
-  const renderColumn = useCallback(
-    (dayStart: number, colIndex: number) => {
-      const dayItems = items.filter((it) => it.start < addDays(dayStart, 1) && it.end > dayStart);
-      const delayedTasks = dayItems.filter((it): it is Extract<Item, { kind: 'task' }> => it.kind === 'task' && it.block.delayed);
-      const normal = dayItems.filter((it) => !(it.kind === 'task' && it.block.delayed));
-      const placed = layoutDay(normal, dayStart);
-      const placedDelayed = layoutDay(delayedTasks, dayStart);
-      const extensionWindows = delayedTasks.map((t) => ({ start: t.block.plannedEnd, end: Math.max(t.block.end, t.block.eta ?? 0) }));
-      const isToday = isSameDay(dayStart, now);
-      const nowMin = (now - startOfDay(now)) / MINUTE;
+  const ghost: Ghost | null = drag?.active && drag.moved ? { item: drag.item, start: ghostStart(drag), pending: false } : pending;
+  const ghostConflict = ghost
+    ? items.some((o) => o.id !== ghost.item.id && !(o.kind === 'task' && o.task.status === 'done') && overlaps({ start: ghost.start, end: ghost.start + itemDuration(ghost.item) }, o))
+    : false;
+  const hiddenId = drag?.active ? drag.item.id : pending?.item.id;
 
-      const renderBlock = (p: (typeof placed)[number], overlay: boolean) => {
-        const it = p.item;
-        const dragging = drag?.active && drag.item.id === it.id;
-        const greyed = !overlay && it.kind === 'event' && extensionWindows.some((w) => overlaps(w, it));
-        const cal = it.kind === 'event' ? calendarById.get(it.event.calendarId) : it.task.calendarId ? calendarById.get(it.task.calendarId) : undefined;
-        const color = it.kind === 'task' ? 'var(--blue)' : cal?.color ?? 'var(--blue)';
-        const leftPct = overlay ? 0 : (p.column / p.columns) * 100;
-        const widthPct = overlay ? 100 : 100 / p.columns;
-        const title = it.kind === 'event' ? it.event.title : it.task.title;
-        const timeText = `${formatHm(it.start)}〜${formatHm(it.kind === 'task' ? it.block.plannedEnd : it.end)}`;
-        const heightPx = p.height * pxPerMin;
-        const planEndOffset = it.kind === 'task' && it.block.delayed ? ((it.block.plannedEnd - Math.max(it.start, dayStart)) / MINUTE) * pxPerMin : null;
-        const etaAt = it.kind === 'task' ? it.block.eta : null;
-        const etaPx = etaAt != null && etaAt > it.end ? ((Math.min(etaAt, addDays(dayStart, 1)) - it.end) / MINUTE) * pxPerMin : 0;
-        return (
-          <button
-            key={it.id}
-            type="button"
-            className={`tl-block ${it.kind} ${greyed ? 'greyed' : ''} ${overlay ? 'overlay' : ''} ${dragging ? 'lifted-ghost' : ''} ${it.kind === 'task' ? `st-${it.task.status}` : ''} ${p.clippedStart ? 'clip-start' : ''} ${p.clippedEnd ? 'clip-end' : ''}`}
-            style={{
-              top: p.top * pxPerMin,
-              height: Math.max(18, heightPx - 2),
-              left: `calc(${leftPct}% + 1px)`,
-              width: `calc(${widthPct}% - 3px)`,
-              ['--c' as string]: color,
-            }}
-            aria-label={`${it.kind === 'task' ? 'タスク' : '予定'} ${title}、${timeText}${it.kind === 'task' && it.block.delayed ? '、遅延中' : ''}`}
-            data-testid={`tl-${it.id}`}
-            data-day={colIndex}
-            onPointerDown={(e) => onItemPointerDown(e, it)}
-            onPointerMove={onItemPointerMove}
-            onPointerUp={() => finishDrag(true)}
-            onPointerCancel={() => finishDrag(false)}
-            onClick={() => onItemClick(it)}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {planEndOffset != null && planEndOffset < heightPx && <span className="tl-overrun" style={{ top: Math.max(0, planEndOffset) }} aria-hidden />}
-            <span className="tl-title">
-              {it.kind === 'task' && <span className="tl-ticon">{it.task.icon}</span>}
-              {title}
-            </span>
-            {heightPx > 34 && <span className="tl-time">{timeText}</span>}
-            {etaPx > 0 && etaAt != null && (
-              <span className="tl-eta" style={{ height: etaPx }} aria-label={`予測終了 ${formatHm(etaAt)}`}>
-                <span className="tl-eta-label">予測 {formatHm(etaAt)}</span>
-              </span>
-            )}
-          </button>
-        );
-      };
+  const renderColumn = (dayStart: number, colIndex: number) => {
+    const dayEnd = addDays(dayStart, 1);
+    const dayItems = items.filter((it) => it.start < dayEnd && it.end > dayStart);
+    const delayedTasks = dayItems.filter((it): it is Extract<Item, { kind: 'task' }> => it.kind === 'task' && it.block.delayed);
+    const normal = dayItems.filter((it) => !(it.kind === 'task' && it.block.delayed));
+    const placed = layoutDay(normal, dayStart);
+    const placedDelayed = layoutDay(delayedTasks, dayStart);
+    const extensionWindows = delayedTasks.map((t) => ({ start: t.block.plannedEnd, end: Math.max(t.block.end, t.block.eta ?? 0) }));
+    const isToday = isSameDay(dayStart, now);
+    const nowMin = (now - startOfDay(now)) / MINUTE;
+    const showTime = (heightMin: number) => (heightMin * hourH) / 60 > 34;
 
+    const renderBlock = (p: (typeof placed)[number], overlay: boolean) => {
+      const it = p.item;
+      const greyed = !overlay && it.kind === 'event' && extensionWindows.some((w) => overlaps(w, it));
+      const cal = it.kind === 'event' ? calendarById.get(it.event.calendarId) : it.task.calendarId ? calendarById.get(it.task.calendarId) : undefined;
+      const color = it.kind === 'task' ? 'var(--blue)' : cal?.color ?? 'var(--blue)';
+      const leftPct = overlay ? 0 : (p.column / p.columns) * 100;
+      const widthPct = overlay ? 100 : 100 / p.columns;
+      const title = it.kind === 'event' ? it.event.title : it.task.title;
+      const timeText = `${formatHm(it.start)}〜${formatHm(it.kind === 'task' ? it.block.plannedEnd : it.end)}`;
+      const planEndMin = it.kind === 'task' && it.block.delayed ? (it.block.plannedEnd - Math.max(it.start, dayStart)) / MINUTE : null;
+      const etaAt = it.kind === 'task' ? it.block.eta : null;
+      const etaMin = etaAt != null && etaAt > it.end ? (Math.min(etaAt, dayEnd) - it.end) / MINUTE : 0;
       return (
-        <div className={`tl-col ${isToday ? 'today' : ''}`} key={dayStart} data-testid={`tl-col-${colIndex}`} data-date={dayStart}>
-          {placed.map((p) => renderBlock(p, false))}
-          {placedDelayed.map((p) => renderBlock(p, true))}
-          {drag?.active && (() => {
-            const it = drag.item;
-            if (sourceIndex(it.start) + drag.deltaDays !== colIndex) return null;
-            const ns = snapToStep(addDays(it.start, drag.deltaDays) + drag.deltaMin * MINUTE, SNAP_MIN);
-            const dur = (it.kind === 'task' ? it.block.plannedEnd : it.end) - it.start;
-            const top = ((ns - dayStart) / MINUTE) * pxPerMin;
-            return (
-              <div className="tl-block lifted" style={{ top, height: Math.max(18, (dur / MINUTE) * pxPerMin - 2), left: 1, width: 'calc(100% - 3px)', ['--c' as string]: it.kind === 'task' ? 'var(--blue)' : calendarById.get(it.event.calendarId)?.color ?? 'var(--blue)' }} aria-hidden>
-                <span className="tl-title">{it.kind === 'event' ? it.event.title : it.task.title}</span>
-                <span className="tl-time">{formatHm(ns)}〜{formatHm(ns + dur)}</span>
-              </div>
-            );
-          })()}
-          {isToday && (
-            <div className="tl-now" style={{ top: nowMin * pxPerMin }} data-testid="now-line" aria-hidden>
-              <span className="tl-now-dot" />
-            </div>
+        <button
+          key={it.id}
+          type="button"
+          className={`tl-block ${it.kind} ${greyed ? 'greyed' : ''} ${overlay ? 'overlay' : ''} ${hiddenId === it.id ? 'lifted-ghost' : ''} ${it.kind === 'task' ? `st-${it.task.status}` : ''} ${p.clippedStart ? 'clip-start' : ''} ${p.clippedEnd ? 'clip-end' : ''}`}
+          style={{
+            top: mins(p.top),
+            height: `max(18px, calc(${mins(p.height)} - 2px))`,
+            left: `calc(${leftPct}% + 1px)`,
+            width: `calc(${widthPct}% - 3px)`,
+            ['--c' as string]: color,
+          }}
+          aria-label={`${it.kind === 'task' ? 'タスク' : '予定'} ${title}、${timeText}${it.kind === 'task' && it.block.delayed ? '、遅延中' : ''}`}
+          data-testid={`tl-${it.id}`}
+          data-day={colIndex}
+          onPointerDown={(e) => onItemPointerDown(e, it, colIndex)}
+          onPointerMove={onItemPointerMove}
+          onPointerUp={() => finishDrag(true)}
+          onPointerCancel={() => finishDrag(false)}
+          onClick={() => onItemClick(it)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {planEndMin != null && planEndMin < p.height && <span className="tl-overrun" style={{ top: mins(Math.max(0, planEndMin)) }} aria-hidden />}
+          <span className="tl-title">
+            {it.kind === 'task' && <span className="tl-ticon">{it.task.icon}</span>}
+            {title}
+          </span>
+          {showTime(p.height) && <span className="tl-time">{timeText}</span>}
+          {etaMin > 0 && etaAt != null && (
+            <span className="tl-eta" style={{ height: mins(etaMin) }} aria-label={`予測終了 ${formatHm(etaAt)}`}>
+              <span className="tl-eta-label">予測 {formatHm(etaAt)}</span>
+            </span>
           )}
-        </div>
+        </button>
       );
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, now, pxPerMin, drag, calendarById, dayStarts],
-  );
+    };
+
+    // 仮位置：日付をまたぐ場合も、重なる各列に切り分けて表示する
+    let ghostEl = null;
+    if (ghost) {
+      const dur = itemDuration(ghost.item);
+      const gs = ghost.start;
+      const ge = gs + dur;
+      if (gs < dayEnd && ge > dayStart) {
+        const s = Math.max(gs, dayStart);
+        const e = Math.min(ge, dayEnd);
+        const c = ghost.item.kind === 'task' ? 'var(--blue)' : calendarById.get(ghost.item.event.calendarId)?.color ?? 'var(--blue)';
+        ghostEl = (
+          <div
+            className={`tl-block lifted ${ghostConflict ? 'conflict' : ''} ${ghost.pending ? 'pending' : ''} ${gs < dayStart ? 'clip-start' : ''} ${ge > dayEnd ? 'clip-end' : ''}`}
+            style={{ top: mins((s - dayStart) / MINUTE), height: `max(18px, calc(${mins((e - s) / MINUTE)} - 2px))`, left: 1, width: 'calc(100% - 3px)', ['--c' as string]: c }}
+            data-testid="tl-ghost"
+            aria-hidden
+          >
+            <span className="tl-title">{ghost.item.kind === 'event' ? ghost.item.event.title : ghost.item.task.title}</span>
+            <span className="tl-time">{formatHm(gs)}〜{formatHm(ge)}</span>
+          </div>
+        );
+      }
+    }
+
+    return (
+      <div className={`tl-col ${isToday ? 'today' : ''}`} key={dayStart} data-testid={`tl-col-${colIndex}`} data-date={dayStart}>
+        {placed.map((p) => renderBlock(p, false))}
+        {placedDelayed.map((p) => renderBlock(p, true))}
+        {ghostEl}
+        {isToday && (
+          <div className="tl-now" style={{ top: mins(nowMin) }} data-testid="now-line" aria-hidden>
+            <span className="tl-now-dot" />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const todayIdx = dayStarts.findIndex((d) => isSameDay(d, now));
   const nowMin = (now - startOfDay(now)) / MINUTE;
@@ -338,7 +398,7 @@ export function Timeline(props: Props) {
   const gridClass = hourH >= 110 ? 'q' : hourH >= 70 ? 'h' : '';
 
   return (
-    <div className="timeline" data-testid={testId} style={{ ['--hour' as string]: `${hourH}px` }}>
+    <div className="timeline" ref={rootRef} data-testid={testId} data-hour={hourH} style={{ ['--hour' as string]: `${liveHour.current}px` }}>
       {dayLabels !== 'none' && !(dayLabels === 'afterFirst' && days === 1) && (
         <div className="tl-head">
           <div className="tl-gutter-head" />
@@ -360,18 +420,18 @@ export function Timeline(props: Props) {
         </div>
       )}
       <div className="tl-scroll" ref={scrollRef} data-testid={testId ? `${testId}-scroll` : undefined}>
-        <div className="tl-canvas" style={{ height: 24 * hourH }}>
+        <div className="tl-canvas" style={{ height: mins(24 * 60) }}>
           <div className="tl-gutter" aria-hidden>
             {hours.map((h) => {
-              const nearNow = todayIdx >= 0 && Math.abs(nowMin - h * 60) * pxPerMin < 14;
+              const nearNow = todayIdx >= 0 && (Math.abs(nowMin - h * 60) * hourH) / 60 < 14;
               return (
-                <span key={h} className={`tl-hour ${nearNow ? 'faded' : ''}`} style={{ top: h * hourH }}>
+                <span key={h} className={`tl-hour ${nearNow ? 'faded' : ''}`} style={{ top: mins(h * 60) }}>
                   {h === 24 ? '' : `${h}:00`}
                 </span>
               );
             })}
             {todayIdx >= 0 && (
-              <span className="tl-now-label" style={{ top: nowMin * pxPerMin }} data-testid="now-label">
+              <span className="tl-now-label" style={{ top: mins(nowMin) }} data-testid="now-label">
                 {formatHm(now)}
               </span>
             )}

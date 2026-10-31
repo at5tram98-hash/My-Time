@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Icon, type IconName } from './Icon';
+import { ExitSafeLayer } from './Overlays';
 
 export interface MenuItem {
   label: string;
@@ -50,7 +51,7 @@ export function MenuButton({ label, items, children, className = 'nav-icon-btn',
       {createPortal(
         <AnimatePresence>
           {open && (
-            <div className="menu-layer" onPointerDown={(e) => e.target === e.currentTarget && setOpen(false)}>
+            <ExitSafeLayer className="menu-layer" onPointerDown={(e) => e.target === e.currentTarget && setOpen(false)}>
               <motion.div
                 role="menu"
                 aria-label={label}
@@ -84,7 +85,7 @@ export function MenuButton({ label, items, children, className = 'nav-icon-btn',
                   ),
                 )}
               </motion.div>
-            </div>
+            </ExitSafeLayer>
           )}
         </AnimatePresence>,
         document.body,

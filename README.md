@@ -2,7 +2,7 @@
 
 iPhone 15 Pro を主な対象にした、ホーム画面に追加して使う予定・タスク管理 PWA。
 正本仕様：[`docs/My_Time_Claude_Code_3_Phases_Spec_v1.2.md`](docs/My_Time_Claude_Code_3_Phases_Spec_v1.2.md)
-現在の段階：**Phase 1（アプリ本体・端末内保存）** — 詳細は [`docs/phase1-report.md`](docs/phase1-report.md)
+現在の段階：**Phase 1（アプリ本体・端末内保存）再レビュー待ち** — [`docs/phase1-report.md`](docs/phase1-report.md)・差し戻し対応 [`docs/phase1-review-fixes.md`](docs/phase1-review-fixes.md)
 
 ## 起動
 

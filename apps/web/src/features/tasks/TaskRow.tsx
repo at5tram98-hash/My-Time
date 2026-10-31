@@ -24,6 +24,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
   const { openSheet, confirm, showToast } = useUI();
   const reduce = useReducedMotion();
   const rowRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'idle' });
   const modeRef = useRef<Mode>(mode);
   const press = useRef<{ x: number; y: number; id: number; timer: number } | null>(null);
@@ -66,8 +67,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
       /* noop */
     }
     navigator.vibrate?.(10);
-    // 初期値：実績入力があれば実績、なければ理想進捗
-    const init = ap.value ?? idealProgress(task, now) ?? 0;
+    // 初期値は理想進捗率（仕様 §2）。予定時刻がないタスクだけ、既存の実績（なければ0%）から始める
+    const init = idealProgress(task, now) ?? ap.value ?? 0;
     suppressClick.current = true;
     setModeBoth({ kind: 'scrub', value: init, initial: init, dragged: false });
   };
@@ -92,7 +93,11 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
       }
       return;
     }
-    const width = (rowRef.current?.clientWidth ?? 320) * 0.85;
+    // 指の横移動量をバーの幅に対して1:1で反映（充填の端が指と同じ距離だけ動く）
+    // 浮いたセルの拡大率（scale）も含めた、画面上の実際のバー幅で割る
+    const row = rowRef.current;
+    const rowScale = row && row.clientWidth > 0 ? row.getBoundingClientRect().width / row.clientWidth : 1;
+    const width = (barRef.current?.clientWidth ?? Math.max(1, (row?.clientWidth ?? 320) - 24)) * rowScale;
     const v = Math.min(1, Math.max(0, m.initial + dx / width));
     const dragged = m.dragged || Math.abs(dx) > 4;
     if ((v >= 1 && m.value < 1) || (v <= 0 && m.value > 0)) navigator.vibrate?.(6);
@@ -193,12 +198,14 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
       </button>
       {scrubbing && (
         <motion.div
+          ref={barRef}
           className="scrubber"
           role="slider"
           aria-label={`${task.title}の実績進捗`}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct}
+          data-value={scrubbing ? mode.value.toFixed(4) : undefined}
           data-testid="progress-scrubber"
           initial={reduce ? { opacity: 0 } : { opacity: 0, scaleX: 0.55, scaleY: 0.8 }}
           animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}

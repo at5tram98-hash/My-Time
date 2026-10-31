@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'motion/react';
-import { addDays, formatDayLabel, isSameDay, startOfDay, tasksForDay } from '@my-time/domain';
+import { addDays, formatDayLabel, isSameDay, runningAndNext, startOfDay, tasksForDay } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
 import { useUI } from '../../app/ui';
 import { useNow } from '../../app/useNow';
@@ -32,12 +32,14 @@ export function HomeScreen() {
   const [expanded, setExpanded] = useState(false);
   const expandedRef = useRef(false);
   const paneH = useMotionValue(0);
-  const handleDrag = useRef<{ y: number; h: number; id: number; t: number; moved: boolean } | null>(null);
+  const handleDrag = useRef<{ y: number; h: number; id: number; moved: boolean; samples: { y: number; t: number }[] } | null>(null);
   const listX = useMotionValue(0);
 
   // 通常状態のタスク領域は利用可能高さの約38%（35〜42%の範囲）
   const normalH = Math.round(Math.min(Math.max(bodyH * 0.38, 168), bodyH - 220));
-  const collapsedH = CARDS_H;
+  // 拡張時に残すカードがないときは帯そのものを出さない（空のカードは表示しない）
+  const { running, next } = useMemo(() => runningAndNext(tasks, now), [tasks, now]);
+  const collapsedH = running.length > 0 || next ? CARDS_H : 0;
 
   useLayoutEffect(() => {
     const el = bodyRef.current;
@@ -75,8 +77,7 @@ export function HomeScreen() {
   const onHandleDown = (e: RPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || !gestureLock.acquire('split')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const t = performance.now();
-    handleDrag.current = { y: e.clientY, h: paneH.get(), id: e.pointerId, t, moved: false };
+    handleDrag.current = { y: e.clientY, h: paneH.get(), id: e.pointerId, moved: false, samples: [{ y: e.clientY, t: performance.now() }] };
     paneH.stop();
   };
   const onHandleMove = (e: RPointerEvent<HTMLDivElement>) => {
@@ -84,6 +85,8 @@ export function HomeScreen() {
     if (!d || d.id !== e.pointerId) return;
     const dy = e.clientY - d.y;
     if (Math.abs(dy) > 3) d.moved = true;
+    d.samples.push({ y: e.clientY, t: performance.now() });
+    if (d.samples.length > 6) d.samples.shift();
     let h = d.h + dy;
     // 範囲外はゴムのように抵抗
     if (h < collapsedH) h = collapsedH - Math.sqrt(collapsedH - h) * 2;
@@ -99,14 +102,24 @@ export function HomeScreen() {
       settle(expandedRef.current); // タップは何もしない（元の状態に戻すだけ）
       return;
     }
-    const dt = Math.max(1, performance.now() - d.t);
-    const v = (e.clientY - d.y) / dt; // px/ms（負＝上方向）
+    // 指を離す直前（約100ms）の速度で判定し、遅ければ位置で判定
+    const nowT = performance.now();
+    const recent = d.samples.filter((p) => nowT - p.t < 100);
+    const first = recent[0] ?? d.samples[0]!;
+    const v = (e.clientY - first.y) / Math.max(16, nowT - first.t); // px/ms（負＝上方向）
     const h = paneH.get();
     let toExpanded: boolean;
     if (v < -0.35) toExpanded = true;
     else if (v > 0.35) toExpanded = false;
     else toExpanded = h < (collapsedH + normalH) / 2;
     settle(toExpanded);
+  };
+  /** pointercancel（OSのジェスチャー・着信など）では開閉を確定せず、元の状態へ戻す */
+  const onHandleCancel = (e: RPointerEvent<HTMLDivElement>) => {
+    const d = handleDrag.current;
+    handleDrag.current = null;
+    gestureLock.release('split');
+    if (d && d.id === e.pointerId) settle(expandedRef.current);
   };
 
   const days = expanded ? Math.min(7, Math.max(1, settings.expandedDays)) : settings.homeDays;
@@ -211,7 +224,7 @@ export function HomeScreen() {
           onPointerDown={onHandleDown}
           onPointerMove={onHandleMove}
           onPointerUp={onHandleUp}
-          onPointerCancel={onHandleUp}
+          onPointerCancel={onHandleCancel}
           onKeyDown={(e) => {
             if (e.key === 'ArrowUp') settle(true);
             if (e.key === 'ArrowDown') settle(false);
