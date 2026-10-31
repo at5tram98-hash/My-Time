@@ -23,6 +23,9 @@ jobs:
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm e2e --grep-invert 画面キャプチャ
+      - run: pnpm e2e:stack
+        env:
+          WRANGLER_SEND_METRICS: 'false'
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

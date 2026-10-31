@@ -13,7 +13,8 @@
     "test": "vitest run && pnpm --filter @my-time/api test",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "test:api": "pnpm --filter @my-time/api test"
+    "test:api": "pnpm --filter @my-time/api test",
+    "e2e:stack": "playwright test -c playwright.stack.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

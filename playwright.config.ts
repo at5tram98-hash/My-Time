@@ -32,7 +32,7 @@ export default defineConfig({
     // WebKit（Safari のエンジン）。Linux 版 WebKit は isMobile 非対応のため画面サイズのみ合わせる。
     {
       name: 'webkit',
-      testIgnore: /screens\.spec/,
+      testIgnore: /screens.*\.spec/,
       use: { browserName: 'webkit', viewport: iPhone15Pro.viewport, deviceScaleFactor: 3, hasTouch: true },
     },
   ],

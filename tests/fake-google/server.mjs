@@ -1,5 +1,5 @@
 // E2E 用の模擬 Google（OAuth 認可・トークン・JWKS・Drive）。本物と同じ URL 形式で応答する。
-// 管理用：POST /__fail {upload,corruptDownload,revoked,quotaUsage} / GET /__files / POST /__reset
+// 管理用：POST /__user {sub,email,name} / POST /__fail {upload,corruptDownload,revoked,quotaUsage} / GET /__files / POST /__reset
 import http from 'node:http';
 import crypto from 'node:crypto';
 
@@ -30,6 +30,7 @@ http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === '/__reset') { reset(); return json(res, 200, { ok: true }); }
+    if (p === '/__user') { state.user = { ...state.user, ...JSON.parse(await body(req) || '{}') }; return json(res, 200, state.user); }
     if (p === '/__fail') { state.fail = JSON.parse(await body(req) || '{}'); return json(res, 200, state.fail); }
     if (p === '/__files') return json(res, 200, [...state.files.entries()].map(([id, f]) => ({ id, name: f.name, mimeType: f.mimeType, size: f.content.length, content: url.searchParams.get('content') ? f.content : undefined })));
     // 同意画面は自動で許可し、redirect_uri に戻す

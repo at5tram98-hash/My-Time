@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { makeEmployer, makeSubject } from '@my-time/domain';
 import { useData, useSync } from '../../app/data';
 import { repo } from '../../data/repo';
 import { api } from '../../sync/api';
-import { type ThemePref } from '../../data/db';
+import { db, type ThemePref } from '../../data/db';
 
 type Step = 'welcome' | 'account' | 'calendars' | 'places' | 'notify' | 'appearance' | 'guide';
 const STEPS: Step[] = ['welcome', 'account', 'calendars', 'places', 'notify', 'appearance', 'guide'];
@@ -21,13 +21,32 @@ export function Onboarding() {
   const [subjects, setSubjects] = useState('');
   const [employers, setEmployers] = useState('');
   const step = STEPS[i]!;
-  const next = () => (i < STEPS.length - 1 ? setI(i + 1) : void repo.updateSettings({ onboarded: true }));
+  // 切り替え直後（約0.4秒）のタップは無視する：連打で次のカードのボタンまで押され、手順が飛ぶのを防ぐ
+  const changedAt = useRef(0);
+  const next = () => {
+    const t = performance.now();
+    if (t - changedAt.current < 400) return;
+    changedAt.current = t;
+    if (i < STEPS.length - 1) setI(i + 1);
+    else void repo.updateSettings({ onboarded: true });
+  };
 
+  // 二度押し・戻って再入力しても同じ名前を重複登録しない
+  const saving = useRef(false);
   const savePlaces = async () => {
-    const now = Date.now();
-    for (const n of subjects.split(/[\n,、]/).map((x) => x.trim()).filter(Boolean)) await repo.saveSubject(makeSubject(n, now), true);
-    for (const n of employers.split(/[\n,、]/).map((x) => x.trim()).filter(Boolean)) await repo.saveEmployer(makeEmployer(n, now, settings.defaultJobReminderHours), true);
-    next();
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      const now = Date.now();
+      const split = (v: string) => [...new Set(v.split(/[\n,、]/).map((x) => x.trim()).filter(Boolean))];
+      const haveS = new Set((await db.subjects.toArray()).map((x) => x.name));
+      for (const n of split(subjects)) if (!haveS.has(n)) await repo.saveSubject(makeSubject(n, now), true);
+      const haveE = new Set((await db.employers.toArray()).map((x) => x.name));
+      for (const n of split(employers)) if (!haveE.has(n)) await repo.saveEmployer(makeEmployer(n, now, settings.defaultJobReminderHours), true);
+      next();
+    } finally {
+      saving.current = false;
+    }
   };
 
   const card = (title: string, body: React.ReactNode, actions: React.ReactNode) => (
