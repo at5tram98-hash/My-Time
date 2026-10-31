@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { HOUR, makeTask, previewConversion, startOfDay, type Task, type TaskKind } from '@my-time/domain';
+import { HOUR, makeTask, previewConversion, startOfDay, type RecurrenceFreq, type SpecialKind, type Task, type TaskKind } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Segmented, Toggle } from '../../components/Controls';
 import { useData } from '../../app/data';
@@ -20,7 +20,7 @@ export function defaultStartFor(day: number, now: number): number {
 }
 
 export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; defaults?: Partial<Task>; depth: number }) {
-  const { tasks, calendars } = useData();
+  const { tasks, calendars, subjects, settings } = useData();
   const { closeSheet, homeDate, confirm, showToast } = useUI();
   const existing = taskId ? tasks.find((t) => t.id === taskId) : undefined;
   const isNew = !existing;
@@ -40,6 +40,22 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
   const [checkTimed, setCheckTimed] = useState(isNew ? true : init.checkAt != null);
   const [checkAt, setCheckAt] = useState(toLocalInput(init.checkAt ?? startDefault));
   const [notes, setNotes] = useState(init.notes ?? '');
+  const [special, setSpecial] = useState<SpecialKind>(init.special ?? 'normal');
+  const [asgContent, setAsgContent] = useState(init.assignment?.content ?? '');
+  const [asgMethod, setAsgMethod] = useState(init.assignment?.submitMethod ?? '');
+  const [asgTo, setAsgTo] = useState(init.assignment?.submitTo ?? '');
+  const [asgDeadline, setAsgDeadline] = useState(init.assignment?.deadline != null ? toLocalInput(init.assignment.deadline) : '');
+  const [examOn, setExamOn] = useState(init.testPrep?.examAt != null);
+  const [examAt, setExamAt] = useState(toLocalInput(init.testPrep?.examAt ?? startDefault + 7 * 86_400_000));
+  const [prepSubject, setPrepSubject] = useState(init.testPrep?.subjectName ?? '');
+  const [estimate, setEstimate] = useState(init.estimateMinutes != null ? String(init.estimateMinutes) : '');
+  const [priority, setPriority] = useState<0 | 1 | 2 | 3>(init.priority ?? 0);
+  const [tagsText, setTagsText] = useState((init.tags ?? []).join(' '));
+  const [flagged, setFlagged] = useState(init.flagged ?? false);
+  const [notify, setNotify] = useState<string>(init.notifyMinutesBefore != null ? String(init.notifyMinutesBefore) : isNew && settings.defaultNotifyMinutes != null ? String(settings.defaultNotifyMinutes) : '');
+  const [locOn, setLocOn] = useState(init.location != null);
+  const [location, setLocation] = useState(init.location ?? '');
+  const [repeat, setRepeat] = useState<RecurrenceFreq | 'none'>(init.repeat?.freq ?? 'none');
   const [error, setError] = useState<string | null>(null);
 
   const categories = useMemo(() => [...new Set(tasks.map((t) => t.category).filter((c): c is string => !!c))], [tasks]);
@@ -72,6 +88,16 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
       calendarId: calendarId || null,
       category: category.trim() || null,
       notes,
+      special,
+      assignment: special === 'assignment' ? { content: asgContent.trim(), submitMethod: asgMethod.trim(), submitTo: asgTo.trim(), deadline: fromLocalInput(asgDeadline) } : null,
+      testPrep: special === 'testPrep' ? { examAt: examOn ? fromLocalInput(examAt) : null, subjectId: subjects.find((x) => x.name === prepSubject.trim())?.id ?? null, subjectName: prepSubject.trim() } : null,
+      estimateMinutes: estimate.trim() ? Math.max(1, Math.min(10_000, Math.round(Number(estimate)))) || null : null,
+      priority,
+      tags: [...new Set(tagsText.split(/[\s,、]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean))].slice(0, 30),
+      flagged,
+      notifyMinutesBefore: notify === '' ? null : Number(notify),
+      location: locOn && location.trim() ? location.trim() : null,
+      repeat: repeat === 'none' ? null : { freq: repeat, interval: 1 },
       ...(kind === 'do' ? { plannedStart: ps2, plannedEnd: pe2 } : { checkAt: checkTimed ? fromLocalInput(checkAt) : null }),
     };
     try {
@@ -196,6 +222,109 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
                 ))}
               </datalist>
             </div>
+          </div>
+        </div>
+        {kind === 'do' && (
+          <div className="group">
+            <div className="group-header">種類</div>
+            <div className="group-body padded">
+              <Segmented label="特別なタスク" value={special} onChange={setSpecial} options={[{ value: 'normal', label: '通常' }, { value: 'assignment', label: '課題' }, { value: 'testPrep', label: 'テスト対策' }]} />
+            </div>
+            {special !== 'normal' && (
+              <div className="group-body" data-testid={`special-${special}`}>
+                {special === 'assignment' ? (
+                  <>
+                    <input className="row-input" value={asgContent} onChange={(e) => setAsgContent(e.target.value)} placeholder="課題の内容" aria-label="課題の内容" />
+                    <div className="row">
+                      <input className="row-input small half" value={asgMethod} onChange={(e) => setAsgMethod(e.target.value)} placeholder="提出方法" aria-label="提出方法" />
+                      <input className="row-input small half" value={asgTo} onChange={(e) => setAsgTo(e.target.value)} placeholder="提出先" aria-label="提出先" />
+                    </div>
+                    <div className="row">
+                      <label className="row-label" htmlFor={`${fid}-dl`}>提出期限</label>
+                      <input id={`${fid}-dl`} type="datetime-local" className="dt-input" value={asgDeadline} onChange={(e) => setAsgDeadline(e.target.value)} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="row">
+                      <label className="row-label" htmlFor={`${fid}-subj`}>科目</label>
+                      <input id={`${fid}-subj`} className="row-input right" list={`${fid}-subjects`} value={prepSubject} onChange={(e) => setPrepSubject(e.target.value)} placeholder="授業を選ぶか入力" />
+                      <datalist id={`${fid}-subjects`}>
+                        {subjects.map((x) => (
+                          <option key={x.id} value={x.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="row">
+                      <label className="row-label" htmlFor={`${fid}-ex`}>試験日時</label>
+                      <Toggle id={`${fid}-ex`} label="試験日時" checked={examOn} onChange={setExamOn} />
+                    </div>
+                    {examOn && (
+                      <div className="row">
+                        <label className="row-label" htmlFor={`${fid}-exat`}>日時</label>
+                        <input id={`${fid}-exat`} type="datetime-local" className="dt-input" value={examAt} onChange={(e) => setExamAt(e.target.value)} />
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="row">
+                  <label className="row-label" htmlFor={`${fid}-est`}>作業時間</label>
+                  <span className="row-value">
+                    <input id={`${fid}-est`} type="number" inputMode="numeric" min={1} className="num-input" value={estimate} onChange={(e) => setEstimate(e.target.value)} placeholder="未入力" />分
+                  </span>
+                </div>
+              </div>
+            )}
+            {special !== 'normal' && <div className="group-footer">日時と作業時間が未入力の間は「未設定」に表示し、1日1回だけ入力をお知らせします。</div>}
+          </div>
+        )}
+
+        <div className="group">
+          <div className="group-header">詳細</div>
+          <div className="group-body">
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-ntf`}>通知</label>
+              <select id={`${fid}-ntf`} className="select-input" value={notify} onChange={(e) => setNotify(e.target.value)}>
+                <option value="">なし</option>
+                <option value="0">{kind === 'check' ? '確認日時' : '開始時刻'}</option>
+                <option value="5">5分前</option>
+                <option value="10">10分前</option>
+                <option value="30">30分前</option>
+                <option value="60">1時間前</option>
+                <option value="1440">1日前</option>
+              </select>
+            </div>
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-rep`}>繰り返し</label>
+              <select id={`${fid}-rep`} className="select-input" value={repeat} onChange={(e) => setRepeat(e.target.value as RecurrenceFreq | 'none')}>
+                <option value="none">しない</option>
+                <option value="daily">毎日</option>
+                <option value="weekly">毎週</option>
+                <option value="monthly">毎月</option>
+              </select>
+            </div>
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-pri`}>優先度</label>
+              <select id={`${fid}-pri`} className="select-input" value={priority} onChange={(e) => setPriority(Number(e.target.value) as 0 | 1 | 2 | 3)}>
+                <option value={0}>なし</option>
+                <option value={1}>低</option>
+                <option value={2}>中</option>
+                <option value={3}>高</option>
+              </select>
+            </div>
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-flag`}>フラグ</label>
+              <Toggle id={`${fid}-flag`} label="フラグ" checked={flagged} onChange={setFlagged} />
+            </div>
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-tags`}>タグ</label>
+              <input id={`${fid}-tags`} className="row-input right" value={tagsText} onChange={(e) => setTagsText(e.target.value)} placeholder="#ゼミ #レポート" />
+            </div>
+            <div className="row">
+              <label className="row-label" htmlFor={`${fid}-loc`}>場所</label>
+              <Toggle id={`${fid}-loc`} label="場所" checked={locOn} onChange={setLocOn} />
+            </div>
+            {locOn && <input className="row-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="場所" aria-label="場所の名前" />}
           </div>
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}

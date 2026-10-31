@@ -6,6 +6,7 @@ import './styles/base.css';
 import './styles/components.css';
 import './styles/timeline.css';
 import './styles/home.css';
+import './styles/phase2.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

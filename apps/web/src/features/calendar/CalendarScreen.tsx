@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay } from '@my-time/domain';
+import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay, weekday, type CalEvent } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
 import { useUI } from '../../app/ui';
 import { useNow } from '../../app/useNow';
@@ -17,12 +17,11 @@ const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '日', '2day': '2日
 
 export function weekStart(t: number): number {
   const d = startOfDay(t);
-  return addDays(d, -new Date(d).getDay());
+  return addDays(d, -weekday(d));
 }
 
 export function CalendarScreen() {
   const { tasks, subtasksByTask, calendarById, settings } = useData();
-  const events = useVisibleEvents();
   const { calDate, setCalDate, openSheet } = useUI();
   const now = useNow();
   const actions = useTimelineActions();
@@ -31,6 +30,7 @@ export function CalendarScreen() {
 
   const days = view === 'day' ? 1 : view === '2day' ? 2 : 7;
   const startDay = view === 'week' ? weekStart(calDate) : calDate;
+  const events = useVisibleEvents(addDays(startDay, -1), addDays(startDay, days + 1), now);
   const step = days;
 
   const viewItems: MenuItem[] = (['day', '2day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
@@ -98,6 +98,7 @@ function MonthView({ month, now, onPick, onPage }: { month: number; now: number;
   const firstDay = startOfDay(first.getTime());
   const gridStart = weekStart(firstDay);
   const weeks = useMemo(() => Array.from({ length: 6 }, (_, i) => addDays(gridStart, i * 7)), [gridStart]);
+  const events = useVisibleEvents(addDays(gridStart, -1), addDays(gridStart, 43), now);
 
   return (
     <div className="month" ref={ref} data-testid="month-view">
@@ -108,16 +109,15 @@ function MonthView({ month, now, onPick, onPage }: { month: number; now: number;
       </div>
       <motion.div className="month-weeks" style={{ x }} role="grid" aria-label={formatMonth(firstDay)}>
         {weeks.map((ws) => (
-          <MonthWeek key={ws} weekStart={ws} month={first.getMonth()} now={now} onPick={onPick} />
+          <MonthWeek key={ws} weekStart={ws} month={first.getMonth()} now={now} onPick={onPick} events={events} />
         ))}
       </motion.div>
     </div>
   );
 }
 
-function MonthWeek({ weekStart: ws, month, now, onPick }: { weekStart: number; month: number; now: number; onPick: (d: number) => void }) {
+function MonthWeek({ weekStart: ws, month, now, onPick, events }: { weekStart: number; month: number; now: number; onPick: (d: number) => void; events: CalEvent[] }) {
   const { tasks, calendarById } = useData();
-  const events = useVisibleEvents();
   const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
   const colorOf = (calId: string) => calendarById.get(calId)?.color ?? 'var(--blue)';
   const bars = layoutWeekBars(events, ws);

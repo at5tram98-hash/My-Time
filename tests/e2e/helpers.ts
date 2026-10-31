@@ -7,17 +7,38 @@ export const MIN = 60_000;
 export const DAY0 = new Date('2026-10-12T00:00:00+09:00').getTime();
 export const at = (h: number, m = 0, dayOffset = 0) => DAY0 + dayOffset * 24 * HOUR + h * HOUR + m * MIN;
 
-export async function openApp(page: Page, now = FIXED_NOW) {
+export async function openApp(page: Page, now = FIXED_NOW, opts: { onboarding?: boolean } = {}) {
   await page.clock.setFixedTime(now);
   await page.goto('/');
   await expect(page.getByTestId('home-screen')).toBeVisible();
+  if (!opts.onboarding) {
+    // 初回セットアップは専用のテストで確認する。ここでは済んだ状態にする
+    await page.evaluate(async () => {
+      const db: IDBDatabase = await new Promise((res) => {
+        const r = indexedDB.open('my-time');
+        r.onsuccess = () => res(r.result);
+      });
+      await new Promise<void>((res) => {
+        const tx = db.transaction('settings', 'readwrite');
+        const st = tx.objectStore('settings');
+        const g = st.get('app');
+        g.onsuccess = () => st.put({ ...(g.result ?? {}), key: 'app', onboarded: true });
+        tx.oncomplete = () => res();
+      });
+      db.close();
+    });
+    await page.reload();
+    await expect(page.getByTestId('home-screen')).toBeVisible();
+    await expect(page.getByTestId('onboarding')).toHaveCount(0);
+  }
 }
 
 type Rec = Record<string, unknown>;
 
 export function task(fields: Rec): Rec {
   return {
-    kind: 'do', icon: '📘', calendarId: null, category: null, eventId: null, plannedStart: null, plannedEnd: null,
+    kind: 'do', special: 'normal', assignment: null, testPrep: null, sourceEventId: null, sourceKey: null, estimateMinutes: null, priority: 0, tags: [],
+    flagged: false, notifyMinutesBefore: null, location: null, repeat: null, autoStartAt: null, autoEndAt: null, icon: '📘', calendarId: null, category: null, eventId: null, plannedStart: null, plannedEnd: null,
     timeZone: 'Asia/Tokyo', status: 'notStarted', intervals: [], actualStart: null, actualEnd: null, manualProgress: null,
     pausedEver: false, autoReserved: false, checkAt: null, checked: false, checkedAt: null, notes: '', createdAt: at(0), updatedAt: at(0),
     ...fields,
@@ -25,7 +46,7 @@ export function task(fields: Rec): Rec {
 }
 
 export function event(fields: Rec): Rec {
-  return { calendarId: 'cal-general', timeZone: 'Asia/Tokyo', notes: '', createdAt: at(0), updatedAt: at(0), ...fields };
+  return { calendarId: 'cal-general', timeZone: 'Asia/Tokyo', notes: '', recurrence: null, exceptions: [], classInfo: null, employerId: null, hideAfterEnd: false, source: null, createdAt: at(0), updatedAt: at(0), ...fields };
 }
 
 /** テスト用データを生の IndexedDB へ直接書き込み、再読み込みする（アプリのコードは使わない） */

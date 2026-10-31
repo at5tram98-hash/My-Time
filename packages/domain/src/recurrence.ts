@@ -111,7 +111,7 @@ export function cancelThisOccurrence(master: CalEvent, originalStart: EpochMs, n
  * 「この回以降すべて」変更：元のマスターはこの回の直前で打ち切り、この回からの新しいマスターを作る。
  * 過去の回（元のマスター）は保護され、変更されない。
  */
-export function splitFromOccurrence(master: CalEvent, originalStart: EpochMs, patch: Partial<Pick<CalEvent, 'title' | 'notes' | 'calendarId'>> & { start?: EpochMs; end?: EpochMs }, newId: string, now: EpochMs): { before: CalEvent | null; after: CalEvent } {
+export function splitFromOccurrence(master: CalEvent, originalStart: EpochMs, patch: Partial<Omit<CalEvent, 'id' | 'createdAt' | 'updatedAt' | 'exceptions'>>, newId: string, now: EpochMs): { before: CalEvent | null; after: CalEvent } {
   if (!master.recurrence) throw new Error('繰り返し予定ではありません');
   const dur = master.end - master.start;
   const start = patch.start ?? originalStart;
@@ -119,6 +119,7 @@ export function splitFromOccurrence(master: CalEvent, originalStart: EpochMs, pa
   const after: CalEvent = {
     ...master,
     ...patch,
+    recurrence: patch.recurrence === undefined ? master.recurrence : patch.recurrence,
     id: newId,
     start,
     end,

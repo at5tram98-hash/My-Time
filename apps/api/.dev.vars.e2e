@@ -1,0 +1,9 @@
+GOOGLE_CLIENT_ID=e2e-client
+GOOGLE_CLIENT_SECRET=e2e-secret
+SESSION_SECRET=e2e-session-secret-0123456789abcdef0123456789
+TOKEN_ENC_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+ALLOW_TEST_CLOCK=1
+GOOGLE_AUTH_BASE=http://localhost:9876
+GOOGLE_TOKEN_URL=http://localhost:9876/token
+GOOGLE_JWKS_URL=http://localhost:9876/oauth2/v3/certs
+GOOGLE_API_BASE=http://localhost:9876

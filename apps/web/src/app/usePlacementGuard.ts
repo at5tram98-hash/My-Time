@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
-import { checkPlacement, formatHm, isSameDay, placementItems } from '@my-time/domain';
-import { formatDayLabel } from '@my-time/domain';
+import { checkPlacement, expandAll, formatDayLabel, formatHm, hiddenAfterEnd, isSameDay, placementItems } from '@my-time/domain';
 import { useData } from './data';
 import { useUI } from './ui';
 
@@ -19,12 +18,14 @@ export type PlacementDecision = { start: number; end: number } | null;
  * キャンセルなら null（呼び出し側は何も保存しない＝データも操作ログも変わらない）。
  */
 export function usePlacementGuard() {
-  const { events, tasks } = useData();
+  const { events, tasks, settings } = useData();
   const { ask } = useUI();
 
   return useCallback(
     async (req: PlacementRequest, verb: '移動' | '保存'): Promise<PlacementDecision> => {
-      const { conflicts, suggestion } = checkPlacement(req, placementItems(events, tasks));
+      // 繰り返しは対象の前後2日で各回に展開して判定（候補探しで翌日も見るため）
+      const around = expandAll(events.filter((e) => !hiddenAfterEnd(e, Date.now())), req.start - 2 * 86_400_000, req.end + 3 * 86_400_000);
+      const { conflicts, suggestion } = checkPlacement(req, placementItems(around, tasks), { fromHour: settings.suggestFromHour, toHour: settings.suggestToHour, stepMin: settings.suggestStepMin });
       if (conflicts.length === 0) return { start: req.start, end: req.end };
       const names = conflicts.slice(0, 2).map((c) => `「${c.title}」`).join('');
       const more = conflicts.length > 2 ? `ほか${conflicts.length - 2}件` : '';
@@ -44,6 +45,6 @@ export function usePlacementGuard() {
       if (choice === 'keep') return { start: req.start, end: req.end };
       return null;
     },
-    [events, tasks, ask],
+    [events, tasks, settings.suggestFromHour, settings.suggestToHour, settings.suggestStepMin, ask],
   );
 }

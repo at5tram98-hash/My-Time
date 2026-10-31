@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  actualProgress, availableActions, canAddSubtask, delayInfo, ETA_REASON_JA, estimateEnd, formatDuration, formatHm, idealProgress,
+  actualProgress, availableActions, canAddSubtask, delayInfo, ETA_REASON_JA, subtaskLabel, estimateEnd, formatDuration, formatHm, idealProgress,
   workedMs, type TaskAction,
 } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
@@ -30,7 +30,7 @@ const LOG_JA: Record<string, string> = {
 };
 
 export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
-  const { tasks, calendarById } = useData();
+  const { tasks, events, calendarById } = useData();
   const { closeSheet, openSheet, confirm, showToast } = useUI();
   const now = useNow(5_000);
   const task = tasks.find((t) => t.id === id);
@@ -51,6 +51,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
   const eta = estimateEnd(task, subtasks, now);
   const delay = delayInfo(task, now);
   const cal = task.calendarId ? calendarById.get(task.calendarId) : undefined;
+  const source = task.sourceEventId ? events.find((e) => e.id === task.sourceEventId) : undefined;
 
   const run = async (a: TaskAction) => {
     try {
@@ -92,21 +93,29 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
         <TaskIcon task={task} now={now} size={56} />
         <h2 id="task-detail-title" className="detail-title">{task.title}</h2>
         <div className="detail-meta">
-          {task.kind === 'check' ? '確認タスク' : '実施タスク'}
+          {task.kind === 'check' ? '確認タスク' : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実施タスク'}
           {task.category ? ` · ${task.category}` : ''}
+          {task.flagged && <span className="flag-mark" aria-label="フラグ付き">⚑</span>}
+          {task.priority > 0 && <span className="prio-mark" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{'!'.repeat(task.priority)}</span>}
           {task.autoReserved && <span className="ar-badge">AR</span>}
         </div>
+        {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
       </div>
 
       {task.kind === 'do' && (
         <div className="action-row" data-testid="task-actions">
           {availableActions(task).map((a) => (
-            <button key={a} type="button" className={`pill-btn ${ACTION_UI[a].tone}`} onClick={() => void run(a)}>
-              <Icon name={ACTION_UI[a].icon} size={18} strokeWidth={2.2} />
-              {ACTION_UI[a].label}
-            </button>
+            <ActionButton key={a} action={a} onRun={() => void run(a)} onLongPress={a === 'start' || a === 'finish' || a === 'resume' ? () => openSheet({ kind: 'autoReserve', taskId: task.id }) : undefined} />
           ))}
         </div>
+      )}
+      {task.kind === 'do' && task.status !== 'done' && (
+        <p className="hint-line">
+          {task.autoStartAt != null || task.autoEndAt != null
+            ? `予約：${task.autoStartAt != null ? `${formatFull(task.autoStartAt)} に自動開始 ` : ''}${task.autoEndAt != null ? `${formatFull(task.autoEndAt)} に自動終了` : ''}`
+            : '開始・終了ボタンを長押しすると、自動開始・終了を予約できます。'}
+          <button type="button" className="link-btn inline" onClick={() => openSheet({ kind: 'autoReserve', taskId: task.id })} data-testid="open-ar">予約</button>
+        </p>
       )}
       {task.kind === 'check' && (
         <div className="action-row">
@@ -146,9 +155,39 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
       <div className="group">
         <div className="group-body">
           <div className="row"><span className="row-label">カレンダー</span><span className="row-value"><span className="cal-dot" style={{ background: cal?.color ?? 'var(--gray)' }} />{cal?.name ?? 'なし'}</span></div>
-          <div className="row"><span className="row-label">通知</span><span className="row-value muted">準備中（Phase 2）</span></div>
+          <div className="row"><span className="row-label">通知</span><span className="row-value">{task.notifyMinutesBefore == null ? 'なし' : task.notifyMinutesBefore === 0 ? '時刻ちょうど' : task.notifyMinutesBefore >= 60 ? `${task.notifyMinutesBefore / 60}時間前` : `${task.notifyMinutesBefore}分前`}</span></div>
+          {task.repeat && <div className="row"><span className="row-label">繰り返し</span><span className="row-value">{{ daily: '毎日', weekly: '毎週', monthly: '毎月' }[task.repeat.freq]}（完了すると次を作成）</span></div>}
+          {task.location && <div className="row"><span className="row-label">場所</span><span className="row-value">{task.location}</span></div>}
+          {source && (
+            <button type="button" className="row row-button" onClick={() => openSheet({ kind: 'editEvent', eventId: source.id })}>
+              <span className="row-label">元の授業</span>
+              <span className="row-value tint">{source.title}</span>
+            </button>
+          )}
         </div>
       </div>
+      {(task.assignment || task.testPrep || task.special !== 'normal') && (
+        <div className="group" data-testid="special-info">
+          <div className="group-header">{task.special === 'assignment' ? '課題' : 'テスト対策'}</div>
+          <div className="group-body">
+            {task.assignment && (
+              <>
+                {task.assignment.content && <div className="row"><span className="row-label">内容</span><span className="row-value">{task.assignment.content}</span></div>}
+                <div className="row"><span className="row-label">提出方法</span><span className="row-value">{task.assignment.submitMethod || '未入力'}</span></div>
+                <div className="row"><span className="row-label">提出先</span><span className="row-value">{task.assignment.submitTo || '未入力'}</span></div>
+                <div className="row"><span className="row-label">提出期限</span><span className="row-value">{task.assignment.deadline != null ? formatFull(task.assignment.deadline) : 'なし'}</span></div>
+              </>
+            )}
+            {task.testPrep && (
+              <>
+                <div className="row"><span className="row-label">科目</span><span className="row-value">{task.testPrep.subjectName || '未入力'}</span></div>
+                <div className="row"><span className="row-label">試験日時</span><span className="row-value">{task.testPrep.examAt != null ? formatFull(task.testPrep.examAt) : 'なし'}</span></div>
+              </>
+            )}
+            <div className="row"><span className="row-label">作業時間</span><span className={`row-value ${task.estimateMinutes == null ? 'late' : ''}`}>{task.estimateMinutes != null ? `${task.estimateMinutes}分` : '未入力（未設定）'}</span></div>
+          </div>
+        </div>
+      )}
 
       {task.kind === 'do' && (
         <div className="group">
@@ -163,7 +202,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
 
       {task.kind === 'do' && (
         <div className="group" data-testid="subtasks">
-          <div className="group-header">サブタスク</div>
+          <div className="group-header">{subtaskLabel(task)}</div>
           <div className="group-body">
             {subtasks.map((s) => (
               <div className="row sub-row" key={s.id}>
@@ -243,5 +282,39 @@ function ProgressLine({ label, value, tone }: { label: string; value: number | n
         <div className={`pline-fill ${tone}`} style={{ width: `${Math.round((value ?? 0) * 100)}%` }} />
       </div>
     </div>
+  );
+}
+
+/** 開始・終了ボタン。長押しで AR（自動開始・終了）の予約を開く */
+function ActionButton({ action, onRun, onLongPress }: { action: TaskAction; onRun: () => void; onLongPress: (() => void) | undefined }) {
+  const timer = useRef<number | undefined>(undefined);
+  const fired = useRef(false);
+  const start = () => {
+    fired.current = false;
+    if (!onLongPress) return;
+    timer.current = window.setTimeout(() => {
+      fired.current = true;
+      navigator.vibrate?.(10);
+      onLongPress();
+    }, 500);
+  };
+  const cancel = () => window.clearTimeout(timer.current);
+  return (
+    <button
+      type="button"
+      className={`pill-btn ${ACTION_UI[action].tone}`}
+      onPointerDown={start}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        if (fired.current) return;
+        onRun();
+      }}
+    >
+      <Icon name={ACTION_UI[action].icon} size={18} strokeWidth={2.2} />
+      {ACTION_UI[action].label}
+    </button>
   );
 }

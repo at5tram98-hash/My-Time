@@ -7,7 +7,13 @@ export type SheetState =
   | { kind: 'task'; id: string }
   | { kind: 'editTask'; taskId?: string; defaults?: Partial<Task> }
   | { kind: 'editEvent'; eventId?: string; defaults?: Partial<CalEvent> }
-  | { kind: 'search' };
+  | { kind: 'search' }
+  /** 予定を複数の日へコピー（既存の予定が見える縮小カレンダーで日付を選ぶ） */
+  | { kind: 'copyEvent'; eventId: string }
+  /** AR：自動開始・自動終了の予約 */
+  | { kind: 'autoReserve'; taskId: string }
+  /** 取り込み（TimeTree・ICS・テキスト） */
+  | { kind: 'import' };
 
 export interface AlertButton<T> {
   label: string;
