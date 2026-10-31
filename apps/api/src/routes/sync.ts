@@ -119,6 +119,7 @@ syncRoutes.get('/pull', async (c) => {
   const limit = 500;
   const rows = await c.env.DB.prepare('SELECT * FROM records WHERE user_id = ? AND server_seq > ? ORDER BY server_seq LIMIT ?').bind(c.get('userId'), cursor, limit + 1).all<RecordRow>();
   const page = rows.results.slice(0, limit);
-  const res: PullResult = { cursor: page.at(-1)?.server_seq ?? cursor, changes: page.map(toChange), hasMore: rows.results.length > limit };
+  const generation = await c.env.DB.prepare('SELECT generation FROM sync_seq WHERE user_id = ?').bind(c.get('userId')).first<{ generation: string }>();
+  const res: PullResult = { generation: generation?.generation ?? 'initial', cursor: page.at(-1)?.server_seq ?? cursor, changes: page.map(toChange), hasMore: rows.results.length > limit };
   return c.json(res);
 });

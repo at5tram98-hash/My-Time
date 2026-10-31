@@ -1,10 +1,11 @@
 /** バックアップの整合性検証に使う、キー順を固定した JSON と SHA-256 */
 
 /**
+ * 4：アカウント識別・アーカイブ索引・受領記録も含む（認証情報は除外）。
  * 3：日次バックアップにアプリ設定（settings）・操作ログ（operationLog）・削除済みの印（tombstones）を追加。
  * 復元は版 2 のアーカイブも読める（件数・ハッシュの検証は版によらない）。
  */
-export const SNAPSHOT_SCHEMA_VERSION = 3;
+export const SNAPSHOT_SCHEMA_VERSION = 4;
 
 /** 同期対象の記録の種類（バックアップの中で「データ」として復元するもの） */
 export const RECORD_TABLES = ['calendar', 'event', 'task', 'subtask', 'subject', 'employer'] as const;

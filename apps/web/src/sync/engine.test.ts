@@ -409,3 +409,19 @@ it('応答待ちの間の新しい端末編集を、古い競合応答で上書�
   expect(await database.recovery.count()).toBeGreaterThan(0);
   engine.stop();
 });
+
+
+it('サーバー全体の復旧世代が変わったら、古い高いカーソルを捨てて全件取得する', async () => {
+  const { engine, server, api } = setup();
+  await engine.checkAccount();
+  const task = makeTask({ id: 'disaster-recovered', title: 'バックアップから戻した' }, now);
+  server.serverEdit('task', task.id, { ...task });
+  const st = (await database.syncState.get('sync'))!;
+  await database.syncState.put({ ...st, cursor: 50000, generation: 'old-generation' });
+  api.pull.mockImplementationOnce(async () => ({ cursor: 50000, changes: [], hasMore: false, generation: 'new-generation' }));
+  await engine.pullAll();
+  expect(api.pull).toHaveBeenLastCalledWith(0, userId);
+  expect((await database.tasks.get(task.id))?.title).toBe('バックアップから戻した');
+  expect((await database.syncState.get('sync'))?.generation).toBe('new-generation');
+  engine.stop();
+});

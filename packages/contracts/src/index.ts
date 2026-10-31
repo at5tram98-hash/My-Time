@@ -173,6 +173,8 @@ export interface PullChange {
   restoredSessionId: string | null;
 }
 export interface PullResult {
+  /** Changes after a full server recovery require a fresh pull from zero. */
+  generation?: string;
   cursor: number;
   changes: PullChange[];
   hasMore: boolean;

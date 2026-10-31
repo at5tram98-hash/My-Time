@@ -374,6 +374,10 @@ export class SyncEngine {
     for (let page = 0; page < 50; page++) {
       const st = await this.state();
       const res = await this.apiImpl.pull(st.cursor, this.owner!);
+      if (res.generation && res.generation !== st.generation) {
+        await this.database.syncState.put({ ...(await this.state()), cursor: 0, generation: res.generation });
+        continue;
+      }
       if (!Number.isSafeInteger(res.cursor) || res.cursor < st.cursor || (res.hasMore && res.cursor === st.cursor)) throw new Error('同期カーソルが不正です');
       await this.applyRemote(res.changes, res.cursor);
       if (!res.hasMore) return;

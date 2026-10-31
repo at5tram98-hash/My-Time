@@ -37,6 +37,7 @@ export interface RecordMeta {
 
 export interface SyncState {
   key: 'sync';
+  generation?: string;
   cursor: number;
   lastSuccessAt: number | null;
   lastAttemptAt: number | null;

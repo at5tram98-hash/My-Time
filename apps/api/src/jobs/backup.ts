@@ -87,11 +87,18 @@ async function uploadVerified(env: Env, drive: Drive, userId: string, kind: 'dai
 async function dailyTables(env: Env, userId: string): Promise<Record<string, Record<string, unknown>[]>> {
   // D1 batch reads share one transaction: records, settings, logs and tombstones
   // must represent the same point in time even while another device is syncing.
-  const [live, settings, logs, dead] = await env.DB.batch<Record<string, unknown>>([
+  const [live, settings, logs, dead, account, manifests, archives, ledger, sessions, receipts, sequence] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare('SELECT * FROM records WHERE user_id = ? AND deleted = 0 AND restored_session_id IS NULL').bind(userId),
     env.DB.prepare('SELECT data, updated_at FROM user_settings WHERE user_id = ?').bind(userId),
     env.DB.prepare('SELECT seq, at, entity, entity_id, action, detail FROM operation_log WHERE user_id = ? ORDER BY seq').bind(userId),
     env.DB.prepare('SELECT entity, id, version, delete_reason AS reason, updated_at FROM records WHERE user_id = ? AND deleted = 1 ORDER BY server_seq').bind(userId),
+    env.DB.prepare('SELECT id, google_sub, email, name, created_at, updated_at FROM users WHERE id = ?').bind(userId),
+    env.DB.prepare("SELECT * FROM backup_manifests WHERE user_id = ? AND status = 'verified'").bind(userId),
+    env.DB.prepare("SELECT a.* FROM archive_entries a JOIN backup_manifests m ON m.id = a.manifest_id WHERE a.user_id = ? AND m.status = 'verified'").bind(userId),
+    env.DB.prepare('SELECT user_id, entity, record_id, version, manifest_id, reason, purged_at FROM purge_ledger WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM restoration_sessions WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM sync_receipts WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM sync_seq WHERE user_id = ?').bind(userId),
   ]);
   const tables: Record<string, Record<string, unknown>[]> = Object.fromEntries(ENTITIES.map((e) => [e, []]));
   for (const r of live!.results as unknown as RecordRow[]) tables[r.entity]!.push({ ...(JSON.parse(r.data!) as Record<string, unknown>), __version: r.version });
@@ -99,6 +106,13 @@ async function dailyTables(env: Env, userId: string): Promise<Record<string, Rec
   tables.settings = st ? [{ key: 'app', ...(JSON.parse(st.data) as Record<string, unknown>), __updatedAt: st.updated_at }] : [];
   tables.operationLog = logs!.results;
   tables.tombstones = dead!.results;
+  tables.account = account!.results;
+  tables.backupManifests = manifests!.results;
+  tables.archiveEntries = archives!.results;
+  tables.purgeLedger = ledger!.results;
+  tables.restorationSessions = sessions!.results;
+  tables.syncReceipts = receipts!.results;
+  tables.syncSequence = sequence!.results;
   return tables;
 }
 

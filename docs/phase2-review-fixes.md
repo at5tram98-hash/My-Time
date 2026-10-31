@@ -70,7 +70,7 @@
 - Web：`apps/web/src/data/db.ts`、`data/accounts.ts`（新規）、`sync/engine.ts`、`sync/api.ts`、`sync/engine.test.ts`、`features/onboarding/AccountChoice.tsx`（新規）、`features/other/OtherScreen.tsx`、`features/other/DataPages.tsx`、`app/App.tsx`、`styles/phase2.css`
 - E2E・CI・文書：`tests/stack/dataProtection.spec.ts`、`.github/workflows/deploy-cloudflare.yml`、`docs/setup-cloudflare-google.md`、`docs/adr/0002-sync-store.md`、`docs/open-questions.md`、`docs/phase2-report.md`、本書、`docs/screenshots/p2-14-account-migrate.png`
 
-## テスト結果（実測：2026-11-01）
+## 初回レビュー時のテスト結果（2026-11-01、下記Work追加修正より前）
 | コマンド | 結果 |
 |---|---|
 | `pnpm typecheck` | 成功（web / sw / api / domain / contracts、strict） |
@@ -98,3 +98,18 @@
 - GitHub Variables の `RETENTION_MODE` は**登録しない（=off）まま**初回公開する。
 - 公開後、本物の Drive で「今すぐバックアップ」→「復元試験OK」→ `RETENTION_MODE=dry-run` で1日運用し件数を確認 → `on`（手順9）。
 - 秘密値（`GOOGLE_CLIENT_ID/SECRET`、`SESSION_SECRET`、`TOKEN_ENC_KEY`、VAPID）は `wrangler secret` のみ。リポジトリには含めていない。
+
+
+## ChatGPT Workによる追加修正（2026-11-01）
+
+- GitHub Pages→CloudflareはOriginが異なるため、「その他→データの移行」で実ファイルを書き出し・取り込む。全IndexedDBストアを一つの読取トランザクションで保存し、ハッシュ、スキーマ、アカウント、重複IDを検証。取込は一つの書込トランザクションで行い、カーソルや受領済み操作IDは移さない。同じファイルの二重取込を防ぐ。元データは削除しない。
+- ログイン前領域からアカウント領域への移行も原本を保持。同一IDで異なる実データがあれば黙って捨てず、全体を中止する。初期状態のカレンダーだけは端末のカスタマイズを引き継げる。
+- tombstone拒否は理由と応答をsync_receiptsに保持し、応答喪失後も再取得可能。拒否・競合時のローカル内容はrecoveryストアに退避して移行ファイルで回収可能。応答待ち中の追加編集と古い応答、応答順の違いを処理する。
+- recordsのINSERT/UPDATEトリガーで同じトランザクション内にカーソルを採番。端末側も変更適用とカーソル更新を原子的に保存する。削除済みの版を保持して古いpullを無視し、競合時はカーソルを再取得する。
+- スナップショットv4はデータ・設定・操作ログ・tombstoneに加え、アカウント識別、過去バックアップ/アーカイブ索引、削除台帳、復元セッション、冪等受領記録を含む。OAuthトークン・セッション・Push購読・秘密鍵は含めない。日次バックアップの読取はD1 batchで同時点に固定する。
+- 空の別D1へ日次ファイルを実際に復旧し、記録・設定・ログ・索引を照合。再認可を模した後に、復旧した索引から過去アーカイブを復元する。復旧時に同期世代を更新し、旧端末の高いカーソルもゼロから取り直す。旧スナップショットv3の現役データも読めるが、v3に含まれない索引は復旧できない。
+- 新マイグレーション: 0003_sync_safety.sql、0004_recovery_generation.sql。デプロイはmainと専用D1に限定し、RETENTION_MODE=offを固定。onは実Drive検証、dry-run後の本人の明示承認が必要。
+
+ローカル検証: typecheck / lint / Web・ドメイン単体89件 / API41件 / build成功。ブラウザ本体のダウンロードとローカルサーバー起動はこのWork環境で制約があり、PlaywrightはGitHub CIを用いて検証する。先行コミット01990c9はE2E102件成功・4件スキップ、stack E2E6件成功（模擬Google）。最終コードのCI結果はPRのチェックと説明欄を参照。
+
+実Google/Drive/Web Pushと物理iPhoneは未検証。Google Cloud ConsoleはCloud Browserからアクセスできず設定保留。復旧試験は模擬Drive+実workerd/D1であり、本物のDriveで成功したとは扱わない。

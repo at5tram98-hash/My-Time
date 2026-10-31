@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { makeEvent, makeTask, type CalEvent, type Task } from '@my-time/domain';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 import { installFakeGoogle, type FakeGoogle } from './fakeGoogle';
-import { runDailyBackup, runRetention } from '../src/jobs/backup';
+import { runDailyBackup, runRetention, startRestore } from '../src/jobs/backup';
 import { recoverSnapshot } from '../src/lib/recovery';
 import { canonicalJson, type SnapshotBody } from '@my-time/domain';
 import { nextSeq } from '../src/lib/store';
@@ -458,7 +458,7 @@ describe('バックアップの安全性（設定・操作ログ・復元試験�
     expect(b.ok).toBe(true);
     const file = [...fg.files.values()].find((f) => f.name.startsWith('MyTime-daily-'))!;
     const body = JSON.parse(file.content) as { schemaVersion: number; tables: Record<string, Record<string, unknown>[]> };
-    expect(body.schemaVersion).toBe(3);
+    expect(body.schemaVersion).toBe(4);
     expect(body.tables.settings![0]).toMatchObject({ key: 'app', theme: 'dark', suggestFromHour: 8 });
     expect(body.tables.operationLog!.length).toBeGreaterThan(5);
     expect(body.tables.tombstones).toEqual([expect.objectContaining({ entity: 'task', id: 'gone', reason: 'user' })]);
@@ -678,7 +678,9 @@ describe('通信断・カーソル・全データ復旧の回帰試験', () => {
     await push(cookie, [putOp('task', gone)]);
     await push(cookie, [{ ...putOp('task', gone, 1), op: 'delete', record: null }]);
     expect((await runDailyBackup(E, userId, NOW)).ok).toBe(true);
-    const file = [...fg.files.values()].find((f) => f.name.startsWith('MyTime-daily-'))!;
+    await runRetention(E, userId, NOW);
+    expect((await runDailyBackup(E, userId, NOW + 1000)).ok).toBe(true);
+    const file = [...fg.files.values()].filter((f) => f.name.startsWith('MyTime-daily-')).at(-1)!;
     const body = JSON.parse(file.content) as SnapshotBody;
     await recoverSnapshot(env.RECOVERY_DB, userId, body);
     const source = await E.DB.prepare('SELECT entity,id,version,data,deleted,delete_reason FROM records WHERE user_id = ? ORDER BY entity,id').bind(userId).all();
@@ -689,6 +691,22 @@ describe('通信断・カーソル・全データ復旧の回帰試験', () => {
       'SELECT data,updated_at FROM user_settings WHERE user_id = ?',
       'SELECT at,entity,entity_id,action,detail FROM operation_log WHERE user_id = ? ORDER BY seq',
     ]) expect((await env.RECOVERY_DB.prepare(sql).bind(userId).all()).results).toEqual((await E.DB.prepare(sql).bind(userId).all()).results);
+    for (const table of ['backup_manifests', 'archive_entries', 'restoration_sessions', 'sync_receipts']) {
+      const sql = `SELECT * FROM ${table} WHERE user_id = ? ORDER BY 1,2,3`;
+      const recovered = (await env.RECOVERY_DB.prepare(sql).bind(userId).all()).results;
+      const original = (await E.DB.prepare(sql).bind(userId).all()).results;
+      const included = new Set((body.tables.backupManifests ?? []).map((r) => r.id));
+      expect(recovered).toEqual(table === 'backup_manifests' ? original.filter((r) => included.has(r.id)) : original);
+      if (table === 'backup_manifests') expect(recovered.length).toBe(included.size);
+    }
+    expect((await env.RECOVERY_DB.prepare('SELECT generation FROM sync_seq WHERE user_id = ?').bind(userId).first<{ generation: string }>())!.generation).not.toBe('initial');
+    expect((await env.RECOVERY_DB.prepare('SELECT COUNT(*) AS n FROM oauth_grants').first<{ n: number }>())!.n).toBe(0);
+    // Simulate fresh OAuth authorization after the restore. Recovery itself never copies grants.
+    const grant = await E.DB.prepare('SELECT * FROM oauth_grants WHERE user_id = ?').bind(userId).first<Record<string, string | number | null>>();
+    const cols = Object.keys(grant!);
+    await env.RECOVERY_DB.prepare(`INSERT INTO oauth_grants(${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).bind(...cols.map((c) => grant![c])).run();
+    const restoredArchive = await startRestore({ ...E, DB: env.RECOVERY_DB }, userId, NOW - 100 * DAY, NOW, NOW + 2000);
+    expect(restoredArchive.restored).toBeGreaterThan(0);
     expect((await env.RECOVERY_DB.prepare('SELECT COUNT(*) AS n FROM sessions').first<{ n: number }>())!.n).toBe(0);
     await expect(recoverSnapshot(env.RECOVERY_DB, userId, body)).rejects.toThrow('空');
     await expect(recoverSnapshot(env.RECOVERY_DB, 'another-account', body)).rejects.toThrow('アカウント');
