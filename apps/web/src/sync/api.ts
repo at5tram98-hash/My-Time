@@ -1,3 +1,4 @@
+import { activeDbName, ownerOf } from '../data/db';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 
 /** API がない配信先（例：GitHub Pages の旧版）では 'unavailable' を返し、機能を「未設定」と表示する */
@@ -11,7 +12,22 @@ export interface ServerConfig {
   googleConfigured: boolean;
   pushPublicKey: string | null;
   apiVersion: number;
+  /** 期限削除（30日）の動作：off＝停止／dry-run＝試運転／on＝実行 */
+  retentionMode?: 'off' | 'dry-run' | 'on';
 }
+
+export interface RestoreDrill {
+  ok: boolean;
+  matched: number;
+  missingNow: string[];
+  extraNow: string[];
+  changed: string[];
+  kind: 'daily' | 'archive';
+  extras: { settings: number; operationLog: number; tombstones: number };
+}
+
+/** 送受信のときに付ける「どのアカウントの保存領域か」。サーバーはログイン中のアカウントと違えば拒否する */
+const acct = (account: string) => ({ 'x-mytime-account': account });
 
 export interface Me {
   user: { id: string; email: string; name: string };
@@ -52,12 +68,15 @@ export interface RestoreSession {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const account = ownerOf(activeDbName());
+  const scoped = !['/config', '/me', '/auth/logout'].includes(path);
+  if (scoped && !account) throw new ApiError('アカウントの保存領域に切り替えてから操作してください', 409);
   let res: Response;
   try {
     res = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
       ...init,
       credentials: 'same-origin',
-      headers: { 'x-mytime': '1', ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
+      headers: { 'x-mytime': '1', ...(scoped && account ? acct(account) : {}), ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
     });
   } catch {
     throw new ApiError('オフラインです', 0);
@@ -73,8 +92,11 @@ export const api = {
   config: () => call<ServerConfig>('/config'),
   me: () => call<Me>('/me'),
   logout: () => call<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
-  push: (ops: SyncOp[]) => call<PushResult>('/sync/push', { method: 'POST', body: JSON.stringify({ ops }) }),
-  pull: (cursor: number) => call<PullResult>(`/sync/pull?cursor=${cursor}`),
+  push: (ops: SyncOp[], account: string) => call<PushResult>('/sync/push', { method: 'POST', body: JSON.stringify({ ops }), headers: acct(account) }),
+  pull: (cursor: number, account: string) => call<PullResult>(`/sync/pull?cursor=${cursor}`, { headers: acct(account) }),
+  getSettings: (account: string) => call<Record<string, unknown>>('/settings', { headers: acct(account) }),
+  putSettings: (data: Record<string, unknown>, account: string) => call<{ ok: boolean }>('/settings', { method: 'PUT', body: JSON.stringify(data), headers: acct(account) }),
+  restoreDrill: (id: string) => call<RestoreDrill>(`/backups/${id}/drill`, { method: 'POST' }),
   notices: () => call<{ items: ServerNotice[] }>('/notifications'),
   readNotice: (id: string) => call(`/notifications/${id}/read`, { method: 'POST' }),
   backups: () => call<{ items: BackupItem[]; activeRestorations: number }>('/backups'),

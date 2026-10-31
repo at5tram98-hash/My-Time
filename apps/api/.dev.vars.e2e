@@ -7,3 +7,4 @@ GOOGLE_AUTH_BASE=http://localhost:9876
 GOOGLE_TOKEN_URL=http://localhost:9876/token
 GOOGLE_JWKS_URL=http://localhost:9876/oauth2/v3/certs
 GOOGLE_API_BASE=http://localhost:9876
+RETENTION_MODE=on

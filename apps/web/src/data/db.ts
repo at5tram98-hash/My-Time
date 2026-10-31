@@ -37,11 +37,14 @@ export interface RecordMeta {
 
 export interface SyncState {
   key: 'sync';
+  generation?: string;
   cursor: number;
   lastSuccessAt: number | null;
   lastAttemptAt: number | null;
   lastError: string | null;
   attempts: number;
+  /** 最後にサーバーへ送ったアプリ設定（キー順を固定した JSON）。未送信の変更検出に使う */
+  settingsJson?: string | null;
 }
 
 /** 端末内だけのお知らせ（同期の失敗など。サーバーのお知らせと一緒に表示） */
@@ -110,6 +113,7 @@ export class MyTimeDB extends Dexie {
   syncState!: EntityTable<SyncState, 'key'>;
   notices!: EntityTable<LocalNotice, 'key'>;
   settings!: EntityTable<AppSettings, 'key'>;
+  recovery!: EntityTable<{ key: string; entity: SyncEntity; id: string; at: number; reason: string; record: Record<string, unknown> }, 'key'>;
 
   constructor(name = 'my-time') {
     super(name);
@@ -140,7 +144,61 @@ export class MyTimeDB extends Dexie {
         // 既存の設定で初めて起動した人には初回セットアップを出さない
         await tx.table('settings').toCollection().modify((s: AppSettings) => Object.assign(s, { ...DEFAULT_SETTINGS, ...s, onboarded: true }));
       });
+    this.version(3).stores({ recovery: 'key, at' });
   }
 }
 
-export const db = new MyTimeDB();
+// ---------------- アカウントごとの保存領域 ----------------
+// 端末内のデータはアカウントごとに別の IndexedDB に分ける。
+//   'my-time'            … ログインしていない間のデータ（この端末だけ。Phase 1 からのデータもここ）
+//   'my-time@<ユーザーID>' … そのアカウントのデータ（このアカウントでログイン中だけ送受信する）
+// 別のアカウントでログインしても、前のアカウントのデータ（未送信の変更を含む）は自動で送らず、そのまま残す。
+
+export const LOCAL_DB = 'my-time';
+const ACCOUNT_PREFIX = 'my-time@';
+export const ACTIVE_DB_KEY = 'mytime:activeDb';
+/** 切り替え後の画面に一度だけ出す案内 */
+export const FLASH_KEY = 'mytime:flash';
+
+export const accountDbName = (userId: string) => `${ACCOUNT_PREFIX}${userId}`;
+/** 保存領域の持ち主（ログインしていない間の領域なら null） */
+export const ownerOf = (dbName: string): string | null => (dbName.startsWith(ACCOUNT_PREFIX) ? dbName.slice(ACCOUNT_PREFIX.length) : null);
+
+function storageGet(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+
+/** いま表示する保存領域（端末に記憶。読めないときはログインしていない領域） */
+export function activeDbName(): string {
+  const v = storageGet(ACTIVE_DB_KEY);
+  return v === LOCAL_DB || (v && ownerOf(v)) ? v : LOCAL_DB;
+}
+
+/** 保存領域を切り替えて再読み込みする（画面・同期のすべてが新しい領域で始まる） */
+export function switchActiveDb(name: string, flash?: string): void {
+  try {
+    localStorage.setItem(ACTIVE_DB_KEY, name);
+    if (flash) localStorage.setItem(FLASH_KEY, flash);
+  } catch {
+    /* 保存できない環境では切り替えられない（ログインしていない領域のまま） */
+  }
+  location.reload();
+}
+
+export function takeFlash(): string | null {
+  const v = storageGet(FLASH_KEY);
+  if (v) {
+    try {
+      localStorage.removeItem(FLASH_KEY);
+    } catch {
+      /* noop */
+    }
+  }
+  return v;
+}
+
+export const db = new MyTimeDB(activeDbName());

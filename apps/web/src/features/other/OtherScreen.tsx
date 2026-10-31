@@ -13,15 +13,17 @@ import { api } from '../../sync/api';
 import { syncEngine } from '../../sync/engine';
 import { CalendarsPage, EmployersPage, SubjectsPage } from './ManagePages';
 import { BackupsPage, NoticesPage, RestorePage } from './DataPages';
+import { DeviceTransferPage } from './DeviceTransferPage';
 import { NotificationSettings } from './NotificationSettings';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
   root: 'その他',
+  transfer: 'データの移行',
   calendars: 'カレンダー',
   subjects: '授業の科目',
   employers: '勤務先',
@@ -82,6 +84,10 @@ function syncLabel(s: ReturnType<typeof useSync>, pending: number): string {
       return `オフライン · 未送信 ${pending}件`;
     case 'error':
       return `再試行待ち · 未送信 ${pending}件`;
+    case 'chooseAccount':
+      return 'データの移行を確認中';
+    case 'switching':
+      return '切り替え中…';
     case 'idle':
       return pending ? `未送信 ${pending}件` : s.lastSuccessAt ? `同期済み ${formatHm(s.lastSuccessAt)}` : '同期済み';
     default:
@@ -109,11 +115,10 @@ export function OtherScreen() {
   }, [showToast]);
 
   const logout = async () => {
-    if (outboxPending > 0 && !(await confirm({ title: 'ログアウトしますか？', message: `まだ送信していない変更が${outboxPending}件あります。この端末には残りますが、ログインし直すまでクラウドに保存されません。`, confirmLabel: 'ログアウト', destructive: true }))) return;
-    await api.logout().catch(() => undefined);
-    await syncEngine.checkAccount();
-    showToast('ログアウトしました');
+    if (outboxPending > 0 && !(await confirm({ title: 'ログアウトしますか？', message: `まだ送信していない変更が${outboxPending}件あります。この端末には残り、同じアカウントでログインし直すと送信します。`, confirmLabel: 'ログアウト', destructive: true }))) return;
+    await syncEngine.logout();
   };
+  const area = syncEngine.owner;
 
   return (
     <div className="screen other" data-testid="other-screen">
@@ -133,16 +138,22 @@ export function OtherScreen() {
               <a className="pill-btn primary small" href={api.loginUrl()} data-testid="login">Googleでログイン</a>
             )}
           </div>
+          <div className="row" data-testid="data-area">
+            <SettingIcon name="stack" color="#5AC8FA" />
+            <span className="row-label">表示中のデータ</span>
+            <span className="row-value muted">{area ? (loggedIn ? 'このアカウント' : 'アカウント（再ログインが必要）') : 'この端末（ログインなし）'}</span>
+          </div>
           <button type="button" className="row row-button" onClick={() => void syncEngine.syncNow()} disabled={!loggedIn} data-testid="sync-row">
             <SettingIcon name="cloud" color="#34C759" />
             <span className="row-label">同期</span>
             <span className="row-value muted" data-testid="sync-status">{syncLabel(sync, outboxPending)}</span>
           </button>
           <NavRow icon="stack" color="#FF9500" label="Driveバックアップ" value={loggedIn ? (sync.me!.drive.connected ? '毎日22時' : '未接続') : '—'} onClick={() => setPage('backups')} testId="nav-backups" />
+          <NavRow icon="stack" color="#30B0C7" label="データの移行" onClick={() => setPage('transfer')} testId="nav-transfer" />
           <NavRow icon="undo" color="#5856D6" label="期間指定の復元" onClick={() => setPage('restore')} testId="nav-restore" />
           <NavRow icon="bell" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
           {loggedIn && (
-            <button type="button" className="row row-button destructive" onClick={() => void logout()}>
+            <button type="button" className="row row-button destructive" onClick={() => void logout()} data-testid="logout">
               <span className="row-label">ログアウト</span>
             </button>
           )}
@@ -251,6 +262,7 @@ export function OtherScreen() {
             {page === 'backups' && <BackupsPage />}
             {page === 'restore' && <RestorePage />}
             {page === 'notices' && <NoticesPage />}
+            {page === 'transfer' && <DeviceTransferPage />}
             {page === 'notifications' && <NotificationSettings />}
           </SubPage>
         )}

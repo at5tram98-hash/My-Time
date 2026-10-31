@@ -14,7 +14,8 @@ export default defineWorkersConfig(async () => {
           isolatedStorage: true,
           wrangler: { configPath: './wrangler.toml' },
           miniflare: {
-            bindings: { TEST_MIGRATIONS: migrations, SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef', TOKEN_ENC_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=', GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', ALLOW_TEST_CLOCK: '1' },
+            d1Databases: ['RECOVERY_DB'],
+            bindings: { TEST_MIGRATIONS: migrations, SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef', TOKEN_ENC_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=', GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', ALLOW_TEST_CLOCK: '1', RETENTION_MODE: 'on' },
           },
         },
       },

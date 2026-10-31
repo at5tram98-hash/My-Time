@@ -1,9 +1,9 @@
 import {
-  buildSnapshot, dueOccurrences, eventRetention, isDue, SNAPSHOT_SCHEMA_VERSION, taskRetention, verifySnapshot,
-  type CalEvent, type SnapshotManifest, type Subtask, type Task,
+  buildSnapshot, canonicalJson, compareRestore, dueOccurrences, eventRetention, isDue, snapshotRecords, SNAPSHOT_SCHEMA_VERSION, taskRetention, verifySnapshot,
+  type CalEvent, type RestoreDiff, type SnapshotManifest, type Subtask, type Task,
 } from '@my-time/domain';
 import type { EntityName } from '@my-time/contracts';
-import { applyUserZone, type Env } from '../env';
+import { applyUserZone, retentionMode, type Env } from '../env';
 import { decryptSecret, newId } from '../lib/crypto';
 import { Drive, GoogleError, refreshAccess } from '../lib/google';
 import { logStmt, nextSeq, notify, resolveNotice, type RecordRow } from '../lib/store';
@@ -79,13 +79,48 @@ async function uploadVerified(env: Env, drive: Drive, userId: string, kind: 'dai
   }
 }
 
+/**
+ * 日次バックアップの中身：同期データ（現役のもの）＋ アプリ設定 ＋ 操作ログ ＋ 削除済みの印。
+ * 設定と操作ログがあれば、新しい端末・新しいアカウントでも使い方ごと元に戻せ、
+ * 削除済みの印があれば「消したはずのデータ」を復元時に誤って戻さない。
+ */
+async function dailyTables(env: Env, userId: string): Promise<Record<string, Record<string, unknown>[]>> {
+  // D1 batch reads share one transaction: records, settings, logs and tombstones
+  // must represent the same point in time even while another device is syncing.
+  const [live, settings, logs, dead, account, manifests, archives, ledger, sessions, receipts, sequence] = await env.DB.batch<Record<string, unknown>>([
+    env.DB.prepare('SELECT * FROM records WHERE user_id = ? AND deleted = 0 AND restored_session_id IS NULL').bind(userId),
+    env.DB.prepare('SELECT data, updated_at FROM user_settings WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT seq, at, entity, entity_id, action, detail FROM operation_log WHERE user_id = ? ORDER BY seq').bind(userId),
+    env.DB.prepare('SELECT entity, id, version, delete_reason AS reason, updated_at FROM records WHERE user_id = ? AND deleted = 1 ORDER BY server_seq').bind(userId),
+    env.DB.prepare('SELECT id, google_sub, email, name, created_at, updated_at FROM users WHERE id = ?').bind(userId),
+    env.DB.prepare("SELECT * FROM backup_manifests WHERE user_id = ? AND status = 'verified'").bind(userId),
+    env.DB.prepare("SELECT a.* FROM archive_entries a JOIN backup_manifests m ON m.id = a.manifest_id WHERE a.user_id = ? AND m.status = 'verified'").bind(userId),
+    env.DB.prepare('SELECT user_id, entity, record_id, version, manifest_id, reason, purged_at FROM purge_ledger WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM restoration_sessions WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM sync_receipts WHERE user_id = ?').bind(userId),
+    env.DB.prepare('SELECT * FROM sync_seq WHERE user_id = ?').bind(userId),
+  ]);
+  const tables: Record<string, Record<string, unknown>[]> = Object.fromEntries(ENTITIES.map((e) => [e, []]));
+  for (const r of live!.results as unknown as RecordRow[]) tables[r.entity]!.push({ ...(JSON.parse(r.data!) as Record<string, unknown>), __version: r.version });
+  const st = settings!.results[0] as { data: string; updated_at: number } | undefined;
+  tables.settings = st ? [{ key: 'app', ...(JSON.parse(st.data) as Record<string, unknown>), __updatedAt: st.updated_at }] : [];
+  tables.operationLog = logs!.results;
+  tables.tombstones = dead!.results;
+  tables.account = account!.results;
+  tables.backupManifests = manifests!.results;
+  tables.archiveEntries = archives!.results;
+  tables.purgeLedger = ledger!.results;
+  tables.restorationSessions = sessions!.results;
+  tables.syncReceipts = receipts!.results;
+  tables.syncSequence = sequence!.results;
+  return tables;
+}
+
 export async function runDailyBackup(env: Env, userId: string, now: number): Promise<{ ok: boolean; manifestId?: string; error?: string }> {
   const drive = await driveFor(env, userId, now);
   if (!drive) return { ok: false, error: 'Drive 未接続' };
   try {
-    const rows = await allRows(env.DB, userId);
-    const tables: Record<string, Record<string, unknown>[]> = Object.fromEntries(ENTITIES.map((e) => [e, []]));
-    for (const r of rows) tables[r.entity]!.push({ ...(JSON.parse(r.data!) as Record<string, unknown>), __version: r.version });
+    const tables = await dailyTables(env, userId);
     const { manifestId } = await uploadVerified(env, drive, userId, 'daily', tables, now);
     await resolveNotice(env.DB, userId, 'backup:failed', now);
     try {
@@ -117,10 +152,13 @@ export interface RetentionResult {
 /**
  * 30日削除と日付またぎ特則の物理削除。
  * 不変条件：検証済みの日次バックアップが新しいこと → 削除対象だけのアーカイブを Drive に保存し読み戻し検証 → その後に削除。
- * 途中で失敗したら1件も削除しない。復元閲覧中のデータ・提出期限のみの課題は対象外。
+ * 途中で失敗したら1件も削除しない。復元閲覧中のデータは対象外。RETENTION_MODE が on 以外なら削除しない（dry-run は件数の記録のみ）。
  */
 export async function runRetention(env: Env, userId: string, now: number): Promise<RetentionResult> {
   applyUserZone(env);
+  // 本番の初期設定は「停止」。本物の Drive でバックアップと復元試験を確認してから on にする（docs/setup-cloudflare-google.md）
+  const mode = retentionMode(env);
+  if (mode === 'off') return { purged: 0, occurrences: 0, skipped: '期限削除は停止中（RETENTION_MODE=off）' };
   const latest = await env.DB.prepare("SELECT verified_at FROM backup_manifests WHERE user_id = ? AND kind = 'daily' AND status = 'verified' ORDER BY verified_at DESC LIMIT 1").bind(userId).first<{ verified_at: number }>();
   if (!latest || now - latest.verified_at > DAILY_FRESHNESS) return { purged: 0, occurrences: 0, skipped: '検証済みの新しいバックアップがありません' };
 
@@ -146,6 +184,13 @@ export async function runRetention(env: Env, userId: string, now: number): Promi
   }
   for (const r of rows) if (r.entity === 'subtask' && dueTaskIds.has((parse(r) as unknown as Subtask).taskId)) dueRows.push(r);
   if (dueRows.length === 0 && masters.length === 0) return { purged: 0, occurrences: 0 };
+  if (mode === 'dry-run') {
+    // 試運転：何も保存・削除せず、対象の件数だけを記録して知らせる
+    const occCount = masters.reduce((n, m) => n + m.starts.length, 0);
+    await logStmt(env.DB, userId, now, 'retention', 'dry-run', 'dry-run', { candidates: dueRows.length, occurrences: occCount, ids: dueRows.slice(0, 50).map((r) => `${r.entity}:${r.id}`) }).run();
+    await notify(env.DB, userId, { level: 'info', kind: 'purge', key: 'purge:dry-run', title: '期限削除の試運転', body: `有効にすると ${dueRows.length}件（繰り返しの${occCount}回）をアーカイブしてから削除します。現在は何も削除していません。` }, now);
+    return { purged: 0, occurrences: 0, skipped: `試運転（対象 ${dueRows.length}件・繰り返し${occCount}回）` };
+  }
 
   const drive = await driveFor(env, userId, now);
   if (!drive) return { purged: 0, occurrences: 0, skipped: 'Drive 未接続' };
@@ -185,7 +230,7 @@ export async function runRetention(env: Env, userId: string, now: number): Promi
   for (const r of dueRows) {
     seq += 1;
     del.push(
-      env.DB.prepare("UPDATE records SET deleted = 1, delete_reason = 'purge', data = NULL, version = version + 1, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0 AND restored_session_id IS NULL").bind(seq, userId, r.entity, r.id, r.version),
+      env.DB.prepare("UPDATE records SET deleted = 1, delete_reason = 'purge', data = NULL, version = version + 1, server_seq = ? WHERE user_id = ? AND entity = ? AND id = ? AND version = ? AND deleted = 0 AND restored_session_id IS NULL RETURNING id").bind(seq, userId, r.entity, r.id, r.version),
       env.DB.prepare('INSERT INTO purge_ledger (user_id, entity, record_id, version, manifest_id, reason, purged_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() > 0').bind(userId, r.entity, r.id, r.version, up.manifestId, '期限到来', now),
     );
   }
@@ -198,7 +243,7 @@ export async function runRetention(env: Env, userId: string, now: number): Promi
   }
   del.push(logStmt(env.DB, userId, now, 'retention', up.manifestId, 'purge', { candidates: dueRows.length, occurrences: occ }));
   const res = await env.DB.batch(del);
-  for (let i = 0; i < dueRows.length; i++) purged += res[i * 2]!.meta.changes ?? 0;
+  for (let i = 0; i < dueRows.length; i++) purged += res[i * 2]!.results.length;
   return { purged, occurrences: occ, manifestId: up.manifestId };
 }
 
@@ -218,7 +263,7 @@ export async function startRestore(env: Env, userId: string, from: number, to: n
   for (const m of entries) {
     const text = await drive.download(m.file_id);
     const v = await verifySnapshot(text, { schemaVersion: m.schema_version, kind: 'archive', createdAt: m.created_at, counts: JSON.parse(m.counts) as Record<string, number>, sha256: m.sha256, bytes: m.bytes, range: { from: null, to: null } });
-    if (!v.ok || !v.body) throw new Error(`アーカイブの検証に失敗しました（${v.reason}）`);
+    if (!v.ok || !v.body || v.body.userId !== userId) throw new Error(`アーカイブの検証に失敗しました（${v.reason}）`);
     const stmts: D1PreparedStatement[] = [];
     for (const [entity, list] of Object.entries(v.body.tables)) {
       for (const raw of list) {
@@ -234,13 +279,15 @@ export async function startRestore(env: Env, userId: string, from: number, to: n
         stmts.push(
           env.DB.prepare(
             `INSERT INTO records (user_id, entity, id, version, data, deleted, delete_reason, updated_at, server_seq, restored_session_id) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, ?6, ?7, ?8)
-             ON CONFLICT(user_id, entity, id) DO UPDATE SET version = ?4, data = ?5, deleted = 0, delete_reason = NULL, updated_at = ?6, server_seq = ?7, restored_session_id = ?8`,
-          ).bind(userId, target, id, (cur?.version ?? 0) + 1, JSON.stringify(record), (record.updatedAt as number) ?? now, seq, sessionId),
+             ON CONFLICT(user_id, entity, id) DO UPDATE SET version = ?4, data = ?5, deleted = 0, delete_reason = NULL, updated_at = ?6, server_seq = ?7, restored_session_id = ?8 WHERE records.deleted = 1 AND records.version = ?9 RETURNING id`,
+          ).bind(userId, target, id, (cur?.version ?? 0) + 1, JSON.stringify(record), (record.updatedAt as number) ?? now, seq, sessionId, cur?.version ?? 0),
         );
-        restored += 1;
       }
     }
-    if (stmts.length) await env.DB.batch(stmts);
+    if (stmts.length) {
+      const results = await env.DB.batch(stmts);
+      restored += results.reduce((n, r) => n + r.results.length, 0);
+    }
   }
   await env.DB.batch([
     env.DB.prepare('UPDATE restoration_sessions SET restored_count = ? WHERE id = ?').bind(restored, sessionId),
@@ -261,4 +308,46 @@ export async function endRestore(env: Env, userId: string, sessionId: string, no
   stmts.push(logStmt(env.DB, userId, now, 'restore', sessionId, 'end', { removed: rows.length }));
   await env.DB.batch(stmts);
   return rows.length;
+}
+
+// ---------------- 復元試験（本物の Drive で、保存したファイルから正しく戻せるかを確かめる） ----------------
+
+export interface RestoreDrillResult extends RestoreDiff {
+  manifestId: string;
+  kind: string;
+  /** バックアップに含まれる設定・操作ログ・削除済みの印の件数 */
+  extras: { settings: number; operationLog: number; tombstones: number };
+}
+
+/**
+ * 指定したバックアップを Drive から読み戻し、検証してから「復元したら得られる記録」を作り、
+ * 現在のサーバーのデータと1件ずつ比べる。データは書き換えない（読み取りだけ）。
+ * バックアップ直後なら完全一致するはず。差があれば「バックアップ後に変わった記録」として件数を返す。
+ */
+export async function restoreDrill(env: Env, userId: string, manifestId: string, now: number): Promise<RestoreDrillResult> {
+  const m = await env.DB.prepare("SELECT kind, drive_file_id, sha256, counts, schema_version, bytes, created_at, range_from, range_to FROM backup_manifests WHERE id = ? AND user_id = ? AND status = 'verified'")
+    .bind(manifestId, userId)
+    .first<{ kind: 'daily' | 'archive'; drive_file_id: string; sha256: string; counts: string; schema_version: number; bytes: number; created_at: number; range_from: number | null; range_to: number | null }>();
+  if (!m) throw new Error('検証済みのバックアップが見つかりません');
+  const drive = await driveFor(env, userId, now);
+  if (!drive) throw new Error('Googleドライブに接続できません');
+  const text = await drive.download(m.drive_file_id);
+  const v = await verifySnapshot(text, { schemaVersion: m.schema_version, kind: m.kind, createdAt: m.created_at, counts: JSON.parse(m.counts) as Record<string, number>, sha256: m.sha256, bytes: m.bytes, range: { from: m.range_from, to: m.range_to } });
+  if (!v.ok || !v.body || v.body.userId !== userId) throw new Error(`読み戻したファイルの検証に失敗しました（${v.reason}）`);
+  const restored = snapshotRecords(v.body);
+  const current = new Map<string, { version: number | null; json: string }>();
+  if (m.kind === 'daily') {
+    for (const r of await allRows(env.DB, userId)) current.set(`${r.entity}:${r.id}`, { version: r.version, json: canonicalJson(JSON.parse(r.data!)) });
+  } else {
+    // アーカイブは「削除する直前の内容」と比べる：記録した版と同じ版のまま削除されたかを確認
+    for (const k of restored.keys()) {
+      const [entity, id] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+      const a = await env.DB.prepare('SELECT version FROM archive_entries WHERE user_id = ? AND manifest_id = ? AND entity = ? AND id = ?').bind(userId, manifestId, entity, id).first<{ version: number }>();
+      if (a) current.set(k, { version: a.version, json: restored.get(k)!.json });
+    }
+  }
+  const diff = compareRestore(restored, current);
+  const extras = { settings: v.body.tables.settings?.length ?? 0, operationLog: v.body.tables.operationLog?.length ?? 0, tombstones: v.body.tables.tombstones?.length ?? 0 };
+  await logStmt(env.DB, userId, now, 'backup', manifestId, 'restore-drill', { ok: diff.ok, matched: diff.matched, missing: diff.missingNow.length, extra: diff.extraNow.length, changed: diff.changed.length }).run();
+  return { manifestId, kind: m.kind, ...diff, extras };
 }

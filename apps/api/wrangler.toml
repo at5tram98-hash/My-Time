@@ -1,4 +1,5 @@
 name = "my-time"
+workers_dev = true
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
@@ -7,12 +8,13 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
+run_worker_first = true
 not_found_handling = "single-page-application"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "my-time"
-database_id = "00000000-0000-0000-0000-000000000000" # 本番のIDはセットアップ時に置き換える（docs/setup-cloudflare-google.md）
+database_id = "d165e2a5-8de2-4bec-80d2-03fbc6650762"
 migrations_dir = "migrations"
 
 # 毎日 22:00 JST = 13:00 UTC にバックアップ・期限処理、5分ごとに通知
@@ -22,6 +24,9 @@ crons = ["0 13 * * *", "*/5 * * * *"]
 [vars]
 APP_ORIGIN = "http://localhost:8787"
 APP_TIME_ZONE = "Asia/Tokyo"
+# 期限削除（30日）：off＝停止／dry-run＝件数の記録だけ／on＝実行。
+# 本番は off で公開し、本物の Drive でバックアップと「復元試験」を確認してから on にする
+RETENTION_MODE = "off"
 GOOGLE_AUTH_BASE = "https://accounts.google.com"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"

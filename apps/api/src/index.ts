@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { googleConfigured, pushConfigured, applyUserZone, type AppBindings, type Env } from './env';
+import { googleConfigured, pushConfigured, applyUserZone, retentionMode, type AppBindings, type Env } from './env';
 import { authRoutes, requireUser } from './routes/auth';
 import { syncRoutes } from './routes/sync';
-import { endRestore, runDailyBackup, runRetention, startRestore, driveFor } from './jobs/backup';
+import { endRestore, restoreDrill, runDailyBackup, runRetention, startRestore, driveFor } from './jobs/backup';
 import { runNotifications } from './jobs/notify';
 import { newId } from './lib/crypto';
 
@@ -17,7 +17,7 @@ app.use('*', async (c, next) => {
   c.header('cache-control', 'no-store');
 });
 
-app.get('/config', (c) => c.json({ googleConfigured: googleConfigured(c.env), pushPublicKey: pushConfigured(c.env) ? c.env.VAPID_PUBLIC_KEY : null, apiVersion: 2 }));
+app.get('/config', (c) => c.json({ googleConfigured: googleConfigured(c.env), pushPublicKey: pushConfigured(c.env) ? c.env.VAPID_PUBLIC_KEY : null, apiVersion: 3, retentionMode: retentionMode(c.env) }));
 
 app.route('/auth', authRoutes);
 
@@ -65,6 +65,15 @@ api.delete('/backups/:id', async (c) => {
   }
   await c.env.DB.prepare("UPDATE backup_manifests SET status = 'deleted' WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
+});
+
+/** 復元試験：Drive から読み戻して、復元したら現在のデータと一致するかを確かめる（データは変更しない） */
+api.post('/backups/:id/drill', async (c) => {
+  try {
+    return c.json(await restoreDrill(c.env, c.get('userId'), c.req.param('id'), c.get('now')));
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '復元試験に失敗しました' }, 502);
+  }
 });
 
 api.post('/restore', async (c) => {
@@ -130,7 +139,11 @@ export async function scheduled(cron: string, env: Env, now: number): Promise<vo
 }
 
 export default {
-  fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => {
+    const path = new URL(req.url).pathname;
+    if (path === '/api' || path.startsWith('/api/')) return app.fetch(req, env, ctx);
+    return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
+  },
   scheduled: async (ev: ScheduledController, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(scheduled(ev.cron, env, ev.scheduledTime));
   },

@@ -87,7 +87,7 @@ describe('30日削除の判定（推測で広げない）', () => {
     const due = dueOccurrences(m, at(12, 0, 45));
     expect(due).toEqual([at(10), at(10, 0, 7), at(10, 0, 14)]); // 45日後：終了から30日を過ぎた3回だけ
   });
-  it('タスク：時間あり＝終了から30日、試験日あり＝試験日から30日、日時なし＝作成から30日、提出期限のみの課題は保留', () => {
+  it('タスク：時間あり＝終了から30日、試験日あり＝試験日から30日、日時なし（提出期限のみの課題も）＝作成から30日', () => {
     const timed = makeTask({ title: 't', plannedStart: at(9), plannedEnd: at(10) }, at(0));
     expect(taskRetention(timed)).toMatchObject({ state: 'due', dueAt: at(10) + 30 * DAY });
     const prep = makeTask({ title: 'p', special: 'testPrep', testPrep: { examAt: at(10, 0, 20), subjectId: null, subjectName: 'x' } }, at(0));
@@ -95,8 +95,19 @@ describe('30日削除の判定（推測で広げない）', () => {
     const bare = makeTask({ title: 'b' }, at(0));
     expect(taskRetention(bare)).toMatchObject({ dueAt: at(0) + 30 * DAY });
     const asg = makeTask({ title: 'a', special: 'assignment', assignment: { content: '', submitMethod: '', submitTo: '', deadline: at(23, 0, 3) } }, at(0));
-    expect(taskRetention(asg).state).toBe('hold');
-    expect(isDue(taskRetention(asg), at(0, 0, 400))).toBe(false);
+    // 提出期限だけの課題も無期限には残さない：作成日から30日
+    expect(taskRetention(asg)).toMatchObject({ state: 'due', dueAt: at(0) + 30 * DAY });
+    expect(isDue(taskRetention(asg), at(0) + 30 * DAY - 1)).toBe(false);
+    expect(isDue(taskRetention(asg), at(0) + 30 * DAY)).toBe(true);
+    // 試験日・作業日時のない課題専用タスク（テスト対策で試験日未設定）も作成日から
+    const prepNoExam = makeTask({ title: 'p2', special: 'testPrep', testPrep: { examAt: null, subjectId: null, subjectName: 'x' } }, at(0));
+    expect(taskRetention(prepNoExam)).toMatchObject({ dueAt: at(0) + 30 * DAY });
+    // 作業日時のある課題は作業の終了から
+    const asgTimed = makeTask({ title: 'a2', special: 'assignment', plannedStart: at(9, 0, 5), plannedEnd: at(11, 0, 5), assignment: { content: '', submitMethod: '', submitTo: '', deadline: at(23, 0, 3) } }, at(0));
+    expect(taskRetention(asgTimed)).toMatchObject({ dueAt: at(11, 0, 5) + 30 * DAY });
+    // 起点より後に実績の終了があれば、遅い方（早く消さない）
+    const late = makeTask({ title: 'l', plannedStart: at(9), plannedEnd: at(10) }, at(0));
+    expect(taskRetention({ ...late, actualEnd: at(10, 0, 2) })).toMatchObject({ dueAt: at(10, 0, 2) + 30 * DAY });
   });
 });
 

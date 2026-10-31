@@ -36,10 +36,15 @@ export default defineConfig({
       use: { browserName: 'webkit', viewport: iPhone15Pro.viewport, deviceScaleFactor: 3, hasTouch: true },
     },
   ],
-  webServer: {
+  webServer: [{
     command: 'pnpm --filter @my-time/web preview',
     url: 'http://localhost:4173',
     reuseExistingServer: true,
     timeout: 60_000,
-  },
+  }, {
+    command: 'pnpm --filter @my-time/web exec vite preview --host 127.0.0.1 --port 4174 --strictPort',
+    url: 'http://127.0.0.1:4174',
+    reuseExistingServer: true,
+    timeout: 60_000,
+  }],
 });

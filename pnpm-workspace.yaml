@@ -1,6 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: false
 onlyBuiltDependencies:
   - esbuild
   - workerd
