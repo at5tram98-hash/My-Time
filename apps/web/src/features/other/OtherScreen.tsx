@@ -15,11 +15,12 @@ import { CalendarsPage, EmployersPage, SubjectsPage } from './ManagePages';
 import { BackupsPage, NoticesPage, RestorePage } from './DataPages';
 import { DeviceTransferPage } from './DeviceTransferPage';
 import { NotificationSettings } from './NotificationSettings';
+import { LimitsPage } from './LimitsPage';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
   root: 'その他',
@@ -31,6 +32,7 @@ const PAGE_TITLE: Record<OtherPage, string> = {
   restore: '期間指定の復元',
   notices: 'お知らせ',
   notifications: '通知',
+  limits: '使える範囲と制限',
 };
 
 export function SettingIcon({ name, color }: { name: IconName; color: string }) {
@@ -245,8 +247,9 @@ export function OtherScreen() {
           <div className="row"><span className="row-label">未送信の変更</span><span className="row-value">{outboxPending}件</span></div>
         </Group>
 
-        <Group header="このアプリについて" footer="終了から30日を過ぎた予定・タスクは、Googleドライブへの保存を確認してから通常の画面から削除されます。削除したデータは「期間指定の復元」で見返せます。">
-          <div className="row"><span className="row-label">バージョン</span><span className="row-value muted">0.2.0（Phase 2）</span></div>
+        <Group header="このアプリについて">
+          <NavRow icon="info" color="#8E8E93" label="使える範囲と制限" onClick={() => setPage('limits')} testId="nav-limits" />
+          <div className="row"><span className="row-label">バージョン</span><span className="row-value muted">0.3.0</span></div>
           <button type="button" className="row row-button" onClick={() => void repo.updateSettings({ onboarded: false })}>
             <span className="row-label tint">はじめの設定をもう一度見る</span>
           </button>
@@ -264,6 +267,7 @@ export function OtherScreen() {
             {page === 'notices' && <NoticesPage />}
             {page === 'transfer' && <DeviceTransferPage />}
             {page === 'notifications' && <NotificationSettings />}
+            {page === 'limits' && <LimitsPage />}
           </SubPage>
         )}
       </AnimatePresence>
