@@ -84,25 +84,86 @@ input, textarea, select { font: inherit; color: inherit; }
 .bar-btn { color: var(--blue); font-size: 1.06rem; padding: 10px 4px; min-height: 44px; }
 .bar-btn.bold { font-weight: 600; }
 
-/* ---- Tab bar ---- */
+/* ---- Tab bar（Liquid Glass 風。Web で近似した表現で、ネイティブの光学効果の再現ではない）----
+ * 画面下に浮く帯。表示領域は --tabbar-space の1か所で確保し、スクロール領域だけが帯の下へ回り込む。
+ * 選択中は「カプセル＋太い線＋ラベルの太さ＋aria-current」で示す（色だけに頼らない）。
+ */
 .tabbar {
-  flex: none;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  padding: 0 max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
-  background: var(--bar-bg);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid var(--separator);
+  position: absolute; left: 0; right: 0; bottom: var(--tabbar-bottom);
+  display: flex; justify-content: center;
+  padding: 0 max(var(--tabbar-side), env(safe-area-inset-right)) 0 max(var(--tabbar-side), env(safe-area-inset-left));
+  pointer-events: none; /* 帯の外側の透明部分は下の内容へタップを通す */
   z-index: 20;
 }
-.tab {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  height: var(--tabbar-h); color: var(--gray); min-width: 0;
+.tabbar-glass {
+  --pad: 5px;
+  pointer-events: auto;
+  position: relative; isolation: isolate;
+  width: 100%; max-width: 460px; height: var(--tabbar-h);
+  padding: var(--pad);
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-radius: calc(var(--tabbar-h) / 2);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-edge),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 var(--glass-lowlight),
+    var(--glass-shadow);
 }
+/* 上からの柔らかな光（内側ハイライト）。ぼかしの外で描くので再計算を増やさない */
+.tabbar-glass::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: linear-gradient(180deg, var(--glass-sheen) 0%, transparent 46%);
+}
+.tab-capsule {
+  position: absolute; z-index: 0; top: var(--pad); bottom: var(--pad); left: var(--pad);
+  width: calc((100% - var(--pad) * 2) / 5);
+  border-radius: calc((var(--tabbar-h) - var(--pad) * 2) / 2);
+  background: var(--capsule-bg);
+  box-shadow: inset 0 0 0 0.5px var(--capsule-edge), inset 0 1px 0 var(--glass-highlight);
+  transform: translateX(calc(var(--tab-index, 0) * 100%));
+  transition: transform 420ms var(--spring-soft);
+  will-change: transform;
+}
+.tab {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 0; min-height: 44px; border-radius: 999px;
+  color: var(--tab-inactive);
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-icon { position: relative; display: inline-flex; transition: transform 160ms var(--spring); }
+.tab:active .tab-icon { transform: scale(0.86); }
 .tab.active { color: var(--blue); }
-.tab-label { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.01em; white-space: nowrap; }
-html[data-text-size='xlarge'] .tab-label { font-size: 0.55rem; }
+.tab-label { font-size: clamp(10px, 0.6rem, 12px); font-weight: 500; letter-spacing: 0.01em; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tab.active .tab-label { font-weight: 700; }
+.tab:focus-visible { outline-offset: -2px; border-radius: 999px; }
+
+/* ぼかしが使えない環境・透明度を下げる設定・コントラストを上げる設定：読みやすい不透明の帯へ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar-glass { background: var(--glass-solid); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .tabbar-glass { background: var(--glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .tabbar-glass { background: var(--glass-solid); box-shadow: inset 0 0 0 1px var(--label-2), var(--glass-shadow); }
+  .tab { color: var(--label); }
+  .tab.active { color: var(--blue); }
+  .tab-capsule { box-shadow: inset 0 0 0 1.5px var(--blue); }
+}
+/* 動きを減らす：カプセルは移動させず、その場で切り替える */
+@media (prefers-reduced-motion: reduce) {
+  .tab-capsule { transition: none; }
+  .tab-icon { transition: none; }
+  .tab:active .tab-icon { transform: none; }
+}
+
+/* 帯の下へ回り込むスクロール領域・固定の月表示は、最下部の内容が帯に隠れない余白を持つ */
+.app-main .scroll-body, .app-main .tl-scroll { padding-bottom: var(--tabbar-space); scroll-padding-bottom: var(--tabbar-space); }
+.app-main .month { padding-bottom: var(--tabbar-space); }
 
 .scroll-body {
   flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -119,4 +180,19 @@ html[data-text-size='xlarge'] .tab-label { font-size: 0.55rem; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* 横向き・高さの低い画面：帯を低くし、ラベルをアイコンの横に並べて内容の高さを確保 */
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --tabbar-h: 48px; }
+  .tab { flex-direction: row; gap: 6px; }
+  .tab-icon svg { width: 21px; height: 21px; }
+  .tab-label { font-size: 12px; }
+}
+
+/* 幅の狭い画面：左右の余白を詰め、ラベルは固定の小さめの大きさ（文字拡大時も5タブを1行に収める） */
+@media (max-width: 360px) {
+  :root { --tabbar-side: 8px; }
+  .tabbar-glass { --pad: 4px; }
+  .tab-label { font-size: 10px; letter-spacing: -0.02em; }
 }

@@ -9,7 +9,7 @@ import { Sheet } from '../../components/Sheet';
 import { Icon, type IconName } from '../../components/Icon';
 import { TaskIcon } from '../../components/TaskIcon';
 import { useData, useSubtasks } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { formatFull, formatRange } from '../../app/format';
 import { db } from '../../data/db';
@@ -32,7 +32,7 @@ const LOG_JA: Record<string, string> = {
 
 export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
   const { tasks, events, calendarById } = useData();
-  const { closeSheet, openSheet, confirm, showToast } = useUI();
+  const { closeSheet, openSheet, confirm, showToast } = useUIActions();
   const now = useNow(5_000);
   const task = tasks.find((t) => t.id === id);
   const subtasks = useSubtasks(id);
@@ -96,8 +96,8 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
         <div className="detail-meta">
           {task.kind === 'check' ? '確認タスク' : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実施タスク'}
           {task.category ? ` · ${task.category}` : ''}
-          {task.flagged && <span className="flag-mark" aria-label="フラグ付き">⚑</span>}
-          {task.priority > 0 && <span className="prio-mark" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{'!'.repeat(task.priority)}</span>}
+          {task.flagged && <span className="flag-mark" role="img" aria-label="フラグ付き"><Icon name="flag" size={15} strokeWidth={2.2} /></span>}
+          {task.priority > 0 && <span className="prio-mark" role="img" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{Array.from({ length: task.priority }, (_, i) => <Icon key={i} name="exclamation" size={14} strokeWidth={2.6} />)}</span>}
           {task.autoReserved && <span className="ar-badge">AR</span>}
         </div>
         {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}

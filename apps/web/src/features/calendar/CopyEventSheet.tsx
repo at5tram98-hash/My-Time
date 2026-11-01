@@ -3,14 +3,14 @@ import { addDays, checkPlacement, copyToDays, expandAll, expandEvent, isSameDay,
 import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { formatMonth } from '../../app/format';
 import { repo } from '../../data/repo';
 
 /** 予定を複数の日へコピー。既存の予定が見える縮小カレンダーで日付を選ぶ（既存の予定は動かさない） */
 export function CopyEventSheet({ eventId, depth }: { eventId: string; depth: number }) {
   const { events, tasks, calendarById } = useData();
-  const { closeSheet, confirm, showToast } = useUI();
+  const { closeSheet, confirm, showToast } = useUIActions();
   const occ = parseOccurrenceId(eventId);
   const master = events.find((e) => e.id === (occ?.masterId ?? eventId));
   const source = useMemo(() => {

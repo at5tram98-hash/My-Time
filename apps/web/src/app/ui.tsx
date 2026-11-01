@@ -38,7 +38,8 @@ interface UIContextValue {
   setHomeDate: (d: number) => void;
   calDate: number;
   setCalDate: (d: number) => void;
-  sheets: SheetState[];
+  /** 開いているシート。uid は開くたびに新しく振る（閉じるアニメーション中の古い画面の状態を使い回さない） */
+  sheets: (SheetState & { uid: number })[];
   openSheet: (s: SheetState) => void;
   closeSheet: () => void;
   alert: AlertState | null;
@@ -56,7 +57,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<TabId>('home');
   const [homeDate, setHomeDateRaw] = useState(() => startOfDay(Date.now()));
   const [calDate, setCalDateRaw] = useState(() => startOfDay(Date.now()));
-  const [sheets, setSheets] = useState<SheetState[]>([]);
+  const [sheets, setSheets] = useState<(SheetState & { uid: number })[]>([]);
+  const sheetSeq = useRef(0);
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -64,7 +66,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const setHomeDate = useCallback((d: number) => setHomeDateRaw(startOfDay(d)), []);
   const setCalDate = useCallback((d: number) => setCalDateRaw(startOfDay(d)), []);
-  const openSheet = useCallback((s: SheetState) => setSheets((st) => [...st, s]), []);
+  const openSheet = useCallback((s: SheetState) => {
+    sheetSeq.current += 1;
+    const uid = sheetSeq.current;
+    setSheets((st) => [...st, { ...s, uid }]);
+  }, []);
   const closeSheet = useCallback(() => setSheets((st) => st.slice(0, -1)), []);
 
   const present = useCallback(<T,>(variant: AlertState['variant'], title: string, message: string | undefined, buttons: AlertButton<T>[]) => {
@@ -109,7 +115,37 @@ export function UIProvider({ children }: { children: ReactNode }) {
     () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast }),
     [tab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  // 画面の大半は「操作（安定した関数）」と「日付」だけを使う。タブ・シート・トーストの変化で
+  // 隠れているタブの画面やタスク行まで再描画しないよう、文脈を分ける。
+  const actions = useMemo<UIActions>(
+    () => ({ setTab, setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast }),
+    [setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast],
+  );
+  const dates = useMemo(() => ({ homeDate, calDate }), [homeDate, calDate]);
+  return (
+    <ActionsCtx.Provider value={actions}>
+      <DatesCtx.Provider value={dates}>
+        <Ctx.Provider value={value}>{children}</Ctx.Provider>
+      </DatesCtx.Provider>
+    </ActionsCtx.Provider>
+  );
+}
+
+type UIActions = Pick<UIContextValue, 'setTab' | 'setHomeDate' | 'setCalDate' | 'openSheet' | 'closeSheet' | 'confirm' | 'choose' | 'ask' | 'showToast'>;
+const ActionsCtx = createContext<UIActions | null>(null);
+const DatesCtx = createContext<{ homeDate: number; calDate: number } | null>(null);
+
+/** 操作だけを使う（タブ・シート・トーストの変化で再描画されない） */
+export function useUIActions(): UIActions {
+  const v = useContext(ActionsCtx);
+  if (!v) throw new Error('UIProvider がありません');
+  return v;
+}
+/** ホーム・カレンダーの表示日 */
+export function useUIDates(): { homeDate: number; calDate: number } {
+  const v = useContext(DatesCtx);
+  if (!v) throw new Error('UIProvider がありません');
+  return v;
 }
 
 export function useUI(): UIContextValue {

@@ -34,7 +34,7 @@ export function planClassTasks(ev: CalEvent, existing: readonly Task[], now: Epo
         makeTask(
           {
             title,
-            icon: '📝',
+            icon: 'note',
             special: 'assignment',
             assignment: { content: a.content, submitMethod: a.submitMethod, submitTo: a.submitTo, deadline: a.deadline },
             sourceEventId: ev.id,
@@ -57,7 +57,7 @@ export function planClassTasks(ev: CalEvent, existing: readonly Task[], now: Epo
         makeTask(
           {
             title: q.title || `${subject} テスト対策`,
-            icon: '🎯',
+            icon: 'target',
             special: 'testPrep',
             testPrep: { examAt: q.at, subjectId: info.subjectId, subjectName: subject },
             sourceEventId: ev.id,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { expandAll, planNotices } from '@my-time/domain';
 import { useNow } from './useNow';
@@ -9,7 +9,7 @@ import { Onboarding } from '../features/onboarding/Onboarding';
 import { AccountChoice } from '../features/onboarding/AccountChoice';
 import { takeFlash } from '../data/db';
 import { DataProvider, useAttention, useData, useSync } from './data';
-import { UIProvider, useUI, type TabId } from './ui';
+import { UIProvider, useUI, type TabId, useUIActions } from './ui';
 import { SheetHost } from './SheetHost';
 import { AlertHost, ToastHost } from '../components/Overlays';
 import { Icon, type IconName } from '../components/Icon';
@@ -19,12 +19,19 @@ import { TasksScreen } from '../features/tasks/TasksScreen';
 import { AnalysisScreen } from '../features/analysis/AnalysisScreen';
 import { OtherScreen } from '../features/other/OtherScreen';
 
+// タブ切替でほかのタブの画面を再描画しない（各画面は自分のデータ・日付の変化でだけ描き直す）
+const Home = memo(HomeScreen);
+const Calendar = memo(CalendarScreen);
+const Tasks = memo(TasksScreen);
+const Analysis = memo(AnalysisScreen);
+const Other = memo(OtherScreen);
+
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'home', label: 'ホーム', icon: 'house' },
   { id: 'calendar', label: 'カレンダー', icon: 'calendar' },
   { id: 'tasks', label: 'タスク', icon: 'checklist' },
   { id: 'analysis', label: '分析', icon: 'chart' },
-  { id: 'other', label: 'その他', icon: 'more' },
+  { id: 'other', label: 'その他', icon: 'moreCircle' },
 ];
 
 const TEXT_SIZE_PX = { small: '15px', large: '19px', xlarge: '22px' } as const;
@@ -62,7 +69,7 @@ function AppearanceSync() {
 /** 同期の開始、AR の反映、アプリ表示中の通知、通知タップからの遷移 */
 function Background() {
   const { tasks, events, employers } = useData();
-  const { openSheet, setTab, showToast } = useUI();
+  const { openSheet, setTab, showToast } = useUIActions();
   const now = useNow(30_000);
   useEffect(() => {
     void syncEngine.start();
@@ -123,7 +130,7 @@ function sessionStorageSet(k: string, v: string) {
 function RestoreBanner() {
   const { restoredKeys } = useData();
   const sync = useSync();
-  const { confirm, showToast } = useUI();
+  const { confirm, showToast } = useUIActions();
   const [busy, setBusy] = useState(false);
   if (restoredKeys.size === 0) return null;
   const end = async () => {
@@ -160,26 +167,32 @@ function Shell() {
       <main className="app-main">
         {ready ? (
           <>
-            <div className="tab-panel" hidden={tab !== 'home'}><HomeScreen /></div>
-            <div className="tab-panel" hidden={tab !== 'calendar'}>{tab === 'calendar' && <CalendarScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'tasks'}>{tab === 'tasks' && <TasksScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'analysis'}>{tab === 'analysis' && <AnalysisScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'other'}>{tab === 'other' && <OtherScreen />}</div>
+            <div className="tab-panel" hidden={tab !== 'home'}><Home /></div>
+            <div className="tab-panel" hidden={tab !== 'calendar'}>{tab === 'calendar' && <Calendar />}</div>
+            <div className="tab-panel" hidden={tab !== 'tasks'}>{tab === 'tasks' && <Tasks />}</div>
+            <div className="tab-panel" hidden={tab !== 'analysis'}>{tab === 'analysis' && <Analysis />}</div>
+            <div className="tab-panel" hidden={tab !== 'other'}>{tab === 'other' && <Other />}</div>
           </>
         ) : (
           <div className="loading" aria-busy="true" />
         )}
       </main>
-      <nav className="tabbar" aria-label="タブ">
-        {TABS.map((t) => (
-          <button key={t.id} type="button" className={`tab ${tab === t.id ? 'active' : ''}`} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
-            <span className="tab-icon">
-              <Icon name={t.icon} size={25} strokeWidth={tab === t.id ? 2.2 : 1.8} />
-              {t.id === 'other' && attention > 0 && <span className="tab-alert" aria-label="確認が必要なお知らせがあります" data-testid="other-alert">!</span>}
-            </span>
-            <span className="tab-label">{t.label}</span>
-          </button>
-        ))}
+      <nav className="tabbar" aria-label="タブ" data-testid="tabbar">
+        <div className="tabbar-glass" style={{ ['--tab-index' as string]: Math.max(0, TABS.findIndex((t) => t.id === tab)) }}>
+          <span className="tab-capsule" aria-hidden />
+          {TABS.map((t) => {
+            const on = tab === t.id;
+            return (
+              <button key={t.id} type="button" className={`tab ${on ? 'active' : ''}`} aria-current={on ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
+                <span className="tab-icon">
+                  <Icon name={t.icon} size={24} strokeWidth={on ? 2.2 : 1.8} />
+                  {t.id === 'other' && attention > 0 && <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span>}
+                </span>
+                <span className="tab-label">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>

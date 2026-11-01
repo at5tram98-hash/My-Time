@@ -66,3 +66,16 @@ export function runningAndNext(tasks: readonly Task[], now: EpochMs): { running:
     .sort((a, b) => (a.plannedStart ?? 0) - (b.plannedStart ?? 0));
   return { running, next: upcoming[0] ?? null };
 }
+
+/**
+ * 時間軸の表示範囲 [from, to) に現れうる実施タスクだけを返す（大量データでも描画・計算を範囲内に限る）。
+ * 未完了のタスクは遅延時に現在時刻まで伸びるため、終了が過去でも now が範囲内なら含める（taskBlock の上位集合）。
+ */
+export function tasksForRange(tasks: readonly Task[], from: EpochMs, to: EpochMs, now: EpochMs): Task[] {
+  return tasks.filter((t) => {
+    if (t.kind !== 'do' || t.plannedStart == null || t.plannedEnd == null) return false;
+    if (t.plannedStart >= to) return false;
+    const end = t.status === 'done' ? t.plannedEnd : Math.max(t.plannedEnd, now);
+    return end > from;
+  });
+}

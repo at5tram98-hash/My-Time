@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { makeEmployer, makeSubject } from '@my-time/domain';
+import { defaultCalendarIcon, makeEmployer, makeSubject } from '@my-time/domain';
 import { useData, useSync } from '../../app/data';
 import { repo } from '../../data/repo';
 import { api } from '../../sync/api';
 import { db, type ThemePref } from '../../data/db';
+import { ItemIcon } from '../../components/ItemIcon';
+import { Icon } from '../../components/Icon';
 
 type Step = 'welcome' | 'account' | 'calendars' | 'places' | 'notify' | 'appearance' | 'guide';
 const STEPS: Step[] = ['welcome', 'account', 'calendars', 'places', 'notify', 'appearance', 'guide'];
@@ -76,7 +78,7 @@ export function Onboarding() {
           card(
             'My Time へようこそ',
             <>
-              <div className="ob-hero" aria-hidden>⏱️</div>
+              <img className="ob-hero" src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width={88} height={88} />
               <p>予定とタスクをひとつの画面で。やることの進み具合を、長押しのひと動作で記録できます。</p>
             </>,
             <button type="button" className="ob-primary" onClick={next} data-testid="ob-next">はじめる</button>,
@@ -86,7 +88,7 @@ export function Onboarding() {
             'Googleでログイン',
             <>
               <p>ログインすると、データをクラウドに保存し、毎晩Googleドライブの「My Time Backup」フォルダーへバックアップします。権限はこのアプリが作るファイルだけに限ります。</p>
-              {sync.me ? <p className="ob-ok">✓ {sync.me.user.email} でログイン済み</p> : null}
+              {sync.me ? <p className="ob-ok"><Icon name="check" size={18} strokeWidth={2.6} /> {sync.me.user.email} でログイン済み</p> : null}
               {(sync.phase === 'notConfigured' || sync.phase === 'unavailable') && <p className="ob-note">この配信先ではまだサーバーが設定されていません。データはこの端末に保存されます。</p>}
             </>,
             <>
@@ -100,11 +102,11 @@ export function Onboarding() {
           card(
             'カレンダー',
             <>
-              <p>用途ごとにカレンダーを分けられます。あとから「その他 › カレンダー」で追加・変更できます。</p>
+              <p>用途ごとにカレンダーを分けられます。あとから「その他」の「カレンダー」で追加・変更できます。</p>
               <ul className="ob-list">
                 {calendars.map((c) => (
                   <li key={c.id}>
-                    <span className="cal-chip" style={{ background: c.color }}>{c.icon}</span>
+                    <span className="cal-chip" style={{ background: c.color }} aria-hidden><ItemIcon value={c.icon} size={16} fallback={defaultCalendarIcon(c.kind)} /></span>
                     {c.name}
                     <span className="sub-label">{c.kind === 'class' ? '授業：科目・課題・小テスト' : c.kind === 'job' ? 'アルバイト：勤務先と勤務前の通知' : '一般'}</span>
                   </li>
@@ -134,7 +136,7 @@ export function Onboarding() {
         {step === 'notify' &&
           card(
             '通知',
-            <p>タスクの開始忘れや勤務前のお知らせを受け取れます。iPhoneではホーム画面に追加したアプリで使えます。許可はあとから「その他 › 通知」でもできます。</p>,
+            <p>タスクの開始忘れや勤務前のお知らせを受け取れます。iPhoneではホーム画面に追加したアプリで使えます。許可はあとから「その他」の「通知」でもできます。</p>,
             <>
               {'Notification' in window && Notification.permission === 'default' && (
                 <button type="button" className="ob-primary" onClick={() => void Notification.requestPermission().finally(next)}>通知を許可</button>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { useSync } from '../../app/data';
 import { summaryText } from '../../data/accounts';
 import { syncEngine } from '../../sync/engine';
@@ -11,7 +11,7 @@ import { syncEngine } from '../../sync/engine';
  */
 export function AccountChoice() {
   const sync = useSync();
-  const { showToast } = useUI();
+  const { showToast } = useUIActions();
   const reduce = useReducedMotion();
   const [busy, setBusy] = useState(false);
   const p = sync.pendingMigration;

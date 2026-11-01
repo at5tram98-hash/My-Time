@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay, weekday, type CalEvent } from '@my-time/domain';
+import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay, tasksForRange, weekday, type CalEvent } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions, useUIDates } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { formatMonth } from '../../app/format';
 import { Icon } from '../../components/Icon';
@@ -22,7 +22,8 @@ export function weekStart(t: number): number {
 
 export function CalendarScreen() {
   const { tasks, subtasksByTask, calendarById, settings } = useData();
-  const { calDate, setCalDate, openSheet } = useUI();
+  const { calDate } = useUIDates();
+  const { setCalDate, openSheet } = useUIActions();
   const now = useNow();
   const actions = useTimelineActions();
   const view = settings.calendarView;
@@ -32,6 +33,8 @@ export function CalendarScreen() {
   const startDay = view === 'week' ? weekStart(calDate) : calDate;
   const events = useVisibleEvents(addDays(startDay, -1), addDays(startDay, days + 1), now);
   const step = days;
+  // 表示中の日付の前後だけを時間軸へ渡す（大量のタスクでも描画・計算を範囲内に限る）
+  const rangeTasks = useMemo(() => tasksForRange(tasks, addDays(startDay, -1), addDays(startDay, days + 1), now), [tasks, startDay, days, now]);
 
   const viewItems: MenuItem[] = (['day', '2day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
   const isTodayVisible = view === 'month' ? new Date(calDate).getMonth() === new Date(now).getMonth() && new Date(calDate).getFullYear() === new Date(now).getFullYear() : now >= startDay && now < addDays(startDay, days);
@@ -67,7 +70,7 @@ export function CalendarScreen() {
             days={days}
             now={now}
             events={events}
-            tasks={tasks.filter((t) => t.kind === 'do')}
+            tasks={rangeTasks}
             subtasksByTask={subtasksByTask}
             calendarById={calendarById}
             dayLabels="all"
@@ -128,7 +131,7 @@ function MonthWeek({ weekStart: ws, month, now, onPick, events }: { weekStart: n
       {days.map((d, i) => {
         const singles = [
           ...eventsForDay(events, d).filter((e) => !isMultiDay(e)).map((e) => ({ id: `e-${e.id}`, title: e.title, color: colorOf(e.calendarId) })),
-          ...tasksForDay(tasks, d).map((t) => ({ id: `t-${t.id}`, title: `${t.icon}${t.title}`, color: 'var(--blue)' })),
+          ...tasksForDay(tasks, d).map((t) => ({ id: `t-${t.id}`, title: t.title, color: 'var(--blue)' })),
         ];
         const used = lanesAt(i);
         const room = Math.max(0, MAX_ROWS - used);

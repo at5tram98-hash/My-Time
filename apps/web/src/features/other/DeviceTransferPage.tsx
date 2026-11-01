@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
 import { Group } from '../../components/Controls';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { db, ownerOf } from '../../data/db';
 import { exportDevice, importDevice, readDevice } from '../../data/transfer';
 import { syncEngine } from '../../sync/engine';
 
 export function DeviceTransferPage() {
-  const { confirm, showToast } = useUI();
+  const { confirm, showToast } = useUIActions();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<{ text: string; count: number; owner: string | null } | null>(null);

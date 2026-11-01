@@ -165,7 +165,7 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
               <label className="row-label" htmlFor={`${fid}-cal`}>カレンダー</label>
               <select id={`${fid}-cal`} className="select-input" value={calendarId} onChange={(e) => setCalendarId(e.target.value)} data-testid="event-calendar">
                 {calendars.map((c) => (
-                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -335,7 +335,7 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
                     ))}
                   </select>
                 ) : (
-                  <span className="row-value muted">「その他 › カレンダー」で登録</span>
+                  <span className="row-value muted">「その他」の「カレンダー」で登録</span>
                 )}
               </div>
             </div>

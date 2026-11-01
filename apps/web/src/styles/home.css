@@ -75,7 +75,8 @@
 .fcard.empty { flex: 1; justify-content: center; color: var(--label-2); font-size: 0.86rem; }
 .fcard-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--progress-from) 70%, transparent), color-mix(in srgb, var(--progress-to) 70%, transparent)); transition: width 400ms var(--spring); }
 .fcard > span:not(.fcard-fill) { position: relative; }
-.fcard-icon { font-size: 1.1rem; }
+.fcard-icon { color: var(--label); }
+.fcard.running .fcard-icon { color: var(--blue); }
 .fcard-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .fcard-pct { font-family: var(--font-rounded); font-weight: 700; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
 .fcard-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }

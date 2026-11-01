@@ -3,9 +3,10 @@ import { classifyImport, formatDayLabel, formatHm, parseICS, parseText, type Imp
 import { Sheet } from '../../components/Sheet';
 import { Segmented } from '../../components/Controls';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { repo } from '../../data/repo';
+import { Icon } from '../../components/Icon';
 
 type Choice = 'import' | 'edit' | 'skip';
 
@@ -16,7 +17,7 @@ type Choice = 'import' | 'edit' | 'skip';
  */
 export function ImportSheet({ depth }: { depth: number }) {
   const { events, calendars } = useData();
-  const { closeSheet, showToast } = useUI();
+  const { closeSheet, showToast } = useUIActions();
   const fid = useId();
   const [mode, setMode] = useState<'text' | 'ics'>('text');
   const [text, setText] = useState('');
@@ -73,7 +74,7 @@ export function ImportSheet({ depth }: { depth: number }) {
                 <label className="row-label" htmlFor={`${fid}-cal`}>追加先</label>
                 <select id={`${fid}-cal`} className="select-input" value={calendarId} onChange={(e) => setCalendarId(e.target.value)}>
                   {calendars.map((c) => (
-                    <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
@@ -117,7 +118,7 @@ export function ImportSheet({ depth }: { depth: number }) {
             {items.map((it, i) => (
               <div className={`import-item ${it.choice}`} key={i} data-testid="import-item">
                 <div className="import-head">
-                  <span className="owner" aria-label={it.c.owner === 'partner' ? '相手の予定' : '自分の予定'}>{it.c.owner === 'partner' ? '👥' : '👤'}</span>
+                  <span className="owner" aria-label={it.c.owner === 'partner' ? '相手の予定' : '自分の予定'}><Icon name={it.c.owner === 'partner' ? 'people' : 'person'} size={18} /></span>
                   {it.choice === 'edit' ? (
                     <input className="row-input" value={it.c.title} aria-label="予定名" onChange={(e) => setItems((l) => l!.map((x, j) => (j === i ? { ...x, c: { ...x.c, title: e.target.value } } : x)))} />
                   ) : (

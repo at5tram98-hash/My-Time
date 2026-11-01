@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Sheet } from '../../components/Sheet';
 import { Toggle } from '../../components/Controls';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { repo } from '../../data/repo';
 
@@ -13,7 +13,7 @@ import { repo } from '../../data/repo';
  */
 export function AutoReserveSheet({ taskId, depth }: { taskId: string; depth: number }) {
   const { tasks } = useData();
-  const { closeSheet, showToast } = useUI();
+  const { closeSheet, showToast } = useUIActions();
   const fid = useId();
   const task = tasks.find((t) => t.id === taskId);
   const [startOn, setStartOn] = useState(task?.autoStartAt != null || task?.status === 'notStarted');

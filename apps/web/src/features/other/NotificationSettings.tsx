@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useData, useSync } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { Group } from '../../components/Controls';
 import { MenuButton } from '../../components/Menu';
 import { Icon } from '../../components/Icon';
@@ -39,7 +39,7 @@ const LABEL: Record<PushState, string> = {
 export function NotificationSettings() {
   const { settings } = useData();
   const sync = useSync();
-  const { showToast } = useUI();
+  const { showToast } = useUIActions();
   const [state, setState] = useState<PushState>('default');
   useEffect(() => {
     void currentState().then(setState);

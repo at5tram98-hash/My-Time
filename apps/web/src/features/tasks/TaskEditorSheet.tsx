@@ -1,15 +1,15 @@
 import { useId, useMemo, useState } from 'react';
-import { HOUR, makeTask, previewConversion, startOfDay, type RecurrenceFreq, type SpecialKind, type Task, type TaskKind } from '@my-time/domain';
+import { DEFAULT_TASK_ICON, HOUR, makeTask, previewConversion, type RecurrenceFreq, type SpecialKind, startOfDay, type Task, TASK_ICON_CHOICES, type TaskKind } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Segmented, Toggle } from '../../components/Controls';
 import { useData } from '../../app/data';
 import { usePlacementGuard } from '../../app/usePlacementGuard';
-import { useUI } from '../../app/ui';
+import { useUIActions, useUIDates } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { db } from '../../data/db';
 import { repo } from '../../data/repo';
+import { IconPicker } from '../../components/ItemIcon';
 
-export const TASK_ICONS = ['📘', '✏️', '💻', '📝', '📚', '🧪', '🎯', '💼', '🏃', '🧹', '🛒', '🍳', '🎧', '💬', '💡', '⭐️'];
 
 /** 次のきりのよい時刻（その日の範囲内） */
 export function defaultStartFor(day: number, now: number): number {
@@ -21,7 +21,8 @@ export function defaultStartFor(day: number, now: number): number {
 
 export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; defaults?: Partial<Task>; depth: number }) {
   const { tasks, calendars, subjects, settings } = useData();
-  const { closeSheet, homeDate, confirm, showToast } = useUI();
+  const { homeDate } = useUIDates();
+  const { closeSheet, confirm, showToast } = useUIActions();
   const existing = taskId ? tasks.find((t) => t.id === taskId) : undefined;
   const isNew = !existing;
   const init = existing ?? ({ ...defaults } as Partial<Task>);
@@ -31,7 +32,7 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
   const startDefault = defaultStartFor(homeDate, Date.now());
   const [title, setTitle] = useState(init.title ?? '');
   const [kind, setKind] = useState<TaskKind>(init.kind ?? 'do');
-  const [icon, setIcon] = useState(init.icon ?? TASK_ICONS[0]!);
+  const [icon, setIcon] = useState<string>(init.icon ?? DEFAULT_TASK_ICON);
   const [calendarId, setCalendarId] = useState<string>(init.calendarId ?? '');
   const [category, setCategory] = useState(init.category ?? '');
   const [timed, setTimed] = useState(isNew ? (defaults?.plannedStart !== null) : init.plannedStart != null);
@@ -153,13 +154,7 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
         <div className="group">
           <div className="group-header">アイコン</div>
           <div className="group-body padded">
-            <div className="icon-grid" role="radiogroup" aria-label="アイコン">
-              {TASK_ICONS.map((ic) => (
-                <button key={ic} type="button" role="radio" aria-checked={ic === icon} className={`icon-choice ${ic === icon ? 'on' : ''}`} onClick={() => setIcon(ic)}>
-                  {ic}
-                </button>
-              ))}
-            </div>
+            <IconPicker choices={TASK_ICON_CHOICES} value={icon} onChange={setIcon} />
           </div>
         </div>
 

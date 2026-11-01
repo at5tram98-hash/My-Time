@@ -13,7 +13,8 @@ export function SheetHost() {
   return (
     <AnimatePresence>
       {sheets.map((s, i) => {
-        const key = `${i}-${s.kind}`;
+        // 同じ位置・同じ種類でも開くたびに別の key（閉じかけの前のシートの入力状態を引き継がない）
+        const key = `${s.kind}-${s.uid}`;
         switch (s.kind) {
           case 'task':
             return <TaskDetailSheet key={key} id={s.id} depth={i} />;

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { openApp, readStore, seed, task } from './helpers';
 
@@ -24,7 +25,7 @@ test('別Originへの移行：書き出し→件数確認→取込→再起動�
   await target.reload();
   await target.getByTestId('tab-other').click();
   await target.getByTestId('nav-transfer').click();
-  await target.getByLabel('移行ファイル', { exact: true }).setInputFiles(path);
+  await target.getByLabel('移行ファイル', { exact: true }).setInputFiles({ name: 'device-transfer.json', mimeType: 'application/json', buffer: readFileSync(path) }); // パスに日本語を含む環境でも確実に渡す
   await target.getByTestId('import-device').click();
   await expect(target.getByRole('alertdialog')).toBeVisible();
   await target.getByRole('button', { name: '取り込む', exact: true }).click();

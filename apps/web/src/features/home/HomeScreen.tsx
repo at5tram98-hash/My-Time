@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'motion/react';
 import { addDays, formatDayLabel, isSameDay, runningAndNext, startOfDay, tasksForDay } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions, useUIDates } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { Icon } from '../../components/Icon';
 import { MenuButton, type MenuItem } from '../../components/Menu';
@@ -19,7 +19,8 @@ const SPRING = { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 } as con
 
 export function HomeScreen() {
   const { tasks, subtasksByTask, calendarById, settings } = useData();
-  const { homeDate, setHomeDate, openSheet } = useUI();
+  const { homeDate } = useUIDates();
+  const { setHomeDate, openSheet } = useUIActions();
   const now = useNow();
   const reduce = useReducedMotion() ?? false;
   const actions = useTimelineActions();
