@@ -222,7 +222,7 @@ export function NoticesPage() {
       {items.length === 0 && <div className="row"><span className="row-label muted">お知らせはありません</span></div>}
       {items.map((n) => (
         <div className={`notice-row ${n.resolved ? 'resolved' : ''}`} key={n.id} data-testid="notice-row">
-          <span className={`notice-icon ${n.level}`} aria-hidden>{n.level === 'error' ? '!' : n.level === 'warn' ? '!' : 'i'}</span>
+          <span className={`notice-icon ${n.level}`} aria-hidden><Icon name={n.level === 'info' ? 'info' : 'warning'} size={16} strokeWidth={2.2} /></span>
           <div className="notice-text">
             <div className="notice-title">{n.title}{n.resolved && <span className="sub-label"> · 解決済み</span>}</div>
             <div className="notice-body">{n.body}</div>

@@ -9,6 +9,7 @@ import { Icon } from '../../components/Icon';
 import { useUI } from '../../app/ui';
 import { repo } from '../../data/repo';
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
+import { ItemIcon } from '../../components/ItemIcon';
 
 const LONG_PRESS_MS = 380;
 
@@ -174,7 +175,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
               }
             }}
           >
-            {task.checked ? <Icon name="check" size={16} strokeWidth={3} /> : <span className="check-emoji">{task.icon}</span>}
+            {task.checked ? <Icon name="check" size={16} strokeWidth={3} /> : <ItemIcon value={task.icon} size={16} className="check-glyph" />}
           </span>
         ) : (
           <TaskIcon task={task} now={now} />

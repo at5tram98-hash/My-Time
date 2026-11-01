@@ -96,8 +96,8 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
         <div className="detail-meta">
           {task.kind === 'check' ? '確認タスク' : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実施タスク'}
           {task.category ? ` · ${task.category}` : ''}
-          {task.flagged && <span className="flag-mark" aria-label="フラグ付き">⚑</span>}
-          {task.priority > 0 && <span className="prio-mark" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{'!'.repeat(task.priority)}</span>}
+          {task.flagged && <span className="flag-mark" role="img" aria-label="フラグ付き"><Icon name="flag" size={15} strokeWidth={2.2} /></span>}
+          {task.priority > 0 && <span className="prio-mark" role="img" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{Array.from({ length: task.priority }, (_, i) => <Icon key={i} name="exclamation" size={14} strokeWidth={2.6} />)}</span>}
           {task.autoReserved && <span className="ar-badge">AR</span>}
         </div>
         {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}

@@ -1,5 +1,6 @@
 import { actualProgress, formatHm, idealProgress, runningAndNext, type Subtask, type Task } from '@my-time/domain';
 import { useUI } from '../../app/ui';
+import { ItemIcon } from '../../components/ItemIcon';
 
 export const CARDS_H = 64;
 
@@ -18,7 +19,7 @@ export function FloatingCards({ tasks, subtasksByTask, now }: { tasks: Task[]; s
         return (
           <button key={t.id} type="button" className="fcard running" onClick={() => openSheet({ kind: 'task', id: t.id })} aria-label={`実行中 ${t.title} ${Math.round(p * 100)}%（${ap.value != null ? '実績' : '理想'}）`} data-testid="fcard-running">
             <span className="fcard-fill" style={{ width: `${Math.round(p * 100)}%` }} />
-            <span className="fcard-icon">{t.icon}</span>
+            <ItemIcon value={t.icon} size={18} className="fcard-icon" />
             <span className="fcard-title">{t.title}</span>
             <span className="fcard-pct">{Math.round(p * 100)}%</span>
           </button>
@@ -26,7 +27,7 @@ export function FloatingCards({ tasks, subtasksByTask, now }: { tasks: Task[]; s
       })}
       {next && (
         <button type="button" className="fcard next" onClick={() => openSheet({ kind: 'task', id: next.id })} data-testid="fcard-next">
-          <span className="fcard-icon">{next.icon}</span>
+          <ItemIcon value={next.icon} size={18} className="fcard-icon" />
           <span className="fcard-text">
             <span className="fcard-kicker">次のタスク</span>
             <span className="fcard-title">{next.title}</span>

@@ -1,4 +1,5 @@
 import type { Calendar, CalEvent, Employer, EpochMs, Subject, Subtask, Task } from './types';
+import { DEFAULT_TASK_ICON, defaultCalendarIcon } from './icons';
 
 export function newId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
@@ -32,7 +33,7 @@ export function makeTask(fields: Partial<Task> & Pick<Task, 'title'>, now: Epoch
     repeat: null,
     autoStartAt: null,
     autoEndAt: null,
-    icon: '📘',
+    icon: DEFAULT_TASK_ICON,
     calendarId: null,
     category: null,
     eventId: null,
@@ -89,7 +90,7 @@ export function normalizeEvent(raw: Partial<CalEvent> & Pick<CalEvent, 'id' | 't
   return makeEvent({ ...raw }, raw.createdAt);
 }
 export function normalizeCalendar(raw: Partial<Calendar> & Pick<Calendar, 'id' | 'name' | 'kind' | 'createdAt'>): Calendar {
-  const icon = raw.kind === 'class' ? '🎓' : raw.kind === 'job' ? '💼' : '📅';
+  const icon = defaultCalendarIcon(raw.kind);
   return { color: '#0A84FF', visible: true, order: 0, updatedAt: raw.createdAt, icon, ...raw } as Calendar;
 }
 
@@ -100,8 +101,8 @@ export function makeSubtask(taskId: string, title: string, order: number, now: E
 /** 初回起動時に作る既定カレンダー（ユーザーデータではなく器のみ。既存があれば作らない）。 */
 export function defaultCalendars(now: EpochMs): Calendar[] {
   return [
-    { id: 'cal-general', name: '一般', color: '#0A84FF', icon: '📅', kind: 'general', visible: true, order: 0, createdAt: now, updatedAt: now },
-    { id: 'cal-class', name: '授業', color: '#5E5CE6', icon: '🎓', kind: 'class', visible: true, order: 1, createdAt: now, updatedAt: now },
-    { id: 'cal-job', name: 'アルバイト', color: '#FF9F0A', icon: '💼', kind: 'job', visible: true, order: 2, createdAt: now, updatedAt: now },
+    { id: 'cal-general', name: '一般', color: '#0A84FF', icon: 'calendar', kind: 'general', visible: true, order: 0, createdAt: now, updatedAt: now },
+    { id: 'cal-class', name: '授業', color: '#5E5CE6', icon: 'graduation', kind: 'class', visible: true, order: 1, createdAt: now, updatedAt: now },
+    { id: 'cal-job', name: 'アルバイト', color: '#FF9F0A', icon: 'briefcase', kind: 'job', visible: true, order: 2, createdAt: now, updatedAt: now },
   ];
 }

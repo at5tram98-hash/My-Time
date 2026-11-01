@@ -40,7 +40,7 @@
 .tl-block::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 5px 0 0 5px; background: var(--c); }
 .tl-block > span { position: relative; overflow: hidden; }
 .tl-title { font-size: 0.74rem; font-weight: 600; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; display: block; }
-.tl-ticon { margin-right: 3px; }
+.tl-ticon { margin-right: 3px; vertical-align: -2px; display: inline-flex; }
 .tl-time { font-size: 0.66rem; opacity: 0.85; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .tl-block.task { background: color-mix(in srgb, var(--c) 12%, var(--bg-plain)); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); }
 .tl-block.task.st-done { opacity: 0.55; }

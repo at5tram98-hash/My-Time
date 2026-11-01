@@ -14,3 +14,4 @@ export * from './analysis';
 export * from './importParse';
 export * from './ops';
 export * from './snapshot';
+export * from './icons';

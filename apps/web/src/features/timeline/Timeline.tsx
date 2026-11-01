@@ -6,6 +6,7 @@ import {
 } from '@my-time/domain';
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
 import { usePager } from '../../gestures/usePager';
+import { ItemIcon } from '../../components/ItemIcon';
 
 export type DayLabelMode = 'none' | 'afterFirst' | 'all';
 
@@ -341,7 +342,7 @@ export function Timeline(props: Props) {
         >
           {planEndMin != null && planEndMin < p.height && <span className="tl-overrun" style={{ top: mins(Math.max(0, planEndMin)) }} aria-hidden />}
           <span className="tl-title">
-            {it.kind === 'task' && <span className="tl-ticon">{it.task.icon}</span>}
+            {it.kind === 'task' && <ItemIcon value={it.task.icon} size={13} strokeWidth={2.3} className="tl-ticon" />}
             {title}
           </span>
           {showTime(p.height) && <span className="tl-time">{timeText}</span>}

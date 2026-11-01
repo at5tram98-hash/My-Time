@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { makeEmployer, makeSubject, newId, type Calendar, type CalendarKind } from '@my-time/domain';
+import { type Calendar, CALENDAR_ICON_CHOICES, type CalendarKind, defaultCalendarIcon, makeEmployer, makeSubject, newId } from '@my-time/domain';
 import { useData } from '../../app/data';
 import { useUI } from '../../app/ui';
 import { Group, Toggle } from '../../components/Controls';
 import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
+import { IconPicker, ItemIcon } from '../../components/ItemIcon';
 
 const COLORS = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF375F', '#FF453A', '#FF9F0A', '#FFD60A', '#30D158', '#64D2FF', '#8E8E93'];
-const ICONS = ['📅', '🎓', '💼', '🏠', '❤️', '🏃', '🎵', '✈️', '🍽️', '📚', '💡', '⭐️'];
 const KIND_LABEL: Record<CalendarKind, string> = { general: '一般', class: '授業', job: 'アルバイト' };
 
 function useErrorToast() {
@@ -34,7 +34,7 @@ export function CalendarsPage() {
   const startNew = () => {
     const now = Date.now();
     setIsNew(true);
-    setEditing({ id: newId(), name: '', color: COLORS[calendars.length % COLORS.length]!, icon: '📅', kind: 'general', visible: true, order: calendars.length, createdAt: now, updatedAt: now });
+    setEditing({ id: newId(), name: '', color: COLORS[calendars.length % COLORS.length]!, icon: 'calendar', kind: 'general', visible: true, order: calendars.length, createdAt: now, updatedAt: now });
   };
 
   const save = async () => {
@@ -80,13 +80,7 @@ export function CalendarsPage() {
           </div>
         </Group>
         <Group header="アイコン">
-          <div className="icon-grid" role="radiogroup" aria-label="アイコン">
-            {ICONS.map((ic) => (
-              <button key={ic} type="button" role="radio" aria-checked={editing.icon === ic} className={`icon-choice ${editing.icon === ic ? 'on' : ''}`} onClick={() => setEditing({ ...editing, icon: ic })}>
-                {ic}
-              </button>
-            ))}
-          </div>
+          <IconPicker choices={CALENDAR_ICON_CHOICES} value={editing.icon} onChange={(id) => setEditing({ ...editing, icon: id })} />
         </Group>
         <Group>
           <button type="button" className="row row-button center bold tint" onClick={() => void save()} data-testid="save-calendar">{isNew ? '追加' : '保存'}</button>
@@ -104,7 +98,7 @@ export function CalendarsPage() {
       <Group footer="スイッチで表示・非表示、矢印で並び順を変えられます。">
         {calendars.map((c, i) => (
           <div className="row" key={c.id} data-testid={`calendar-row-${c.id}`}>
-            <span className="cal-chip" style={{ background: c.color }} aria-hidden>{c.icon}</span>
+            <span className="cal-chip" style={{ background: c.color }} aria-hidden><ItemIcon value={c.icon} size={16} fallback={defaultCalendarIcon(c.kind)} /></span>
             <button type="button" className="row-label link-like" onClick={() => { setIsNew(false); setEditing(c); }}>
               {c.name}
               <span className="sub-label">{KIND_LABEL[c.kind]}</span>

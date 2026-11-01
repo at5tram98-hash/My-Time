@@ -128,7 +128,7 @@ function MonthWeek({ weekStart: ws, month, now, onPick, events }: { weekStart: n
       {days.map((d, i) => {
         const singles = [
           ...eventsForDay(events, d).filter((e) => !isMultiDay(e)).map((e) => ({ id: `e-${e.id}`, title: e.title, color: colorOf(e.calendarId) })),
-          ...tasksForDay(tasks, d).map((t) => ({ id: `t-${t.id}`, title: `${t.icon}${t.title}`, color: 'var(--blue)' })),
+          ...tasksForDay(tasks, d).map((t) => ({ id: `t-${t.id}`, title: t.title, color: 'var(--blue)' })),
         ];
         const used = lanesAt(i);
         const room = Math.max(0, MAX_ROWS - used);

@@ -370,7 +370,7 @@ describe('Phase 1 → Phase 2 のデータ移行', () => {
     v1.close();
     const v2 = new MyTimeDB(name);
     const t = (await v2.tasks.get('t1')) as Task;
-    expect(t).toMatchObject({ title: '旧タスク', status: 'done', special: 'normal', tags: [], priority: 0, autoStartAt: null });
+    expect(t).toMatchObject({ title: '旧タスク', icon: '📘', status: 'done', special: 'normal', tags: [], priority: 0, autoStartAt: null }); // 旧形式のアイコン値は書き換えない（表示時に読み替える）
     expect(await v2.events.get('e1')).toMatchObject({ title: '旧予定', recurrence: null, exceptions: [], hideAfterEnd: false });
     expect(await v2.settings.get('app')).toMatchObject({ theme: 'dark', onboarded: true, analysisIncludePaused: false });
   });

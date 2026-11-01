@@ -24,7 +24,7 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'calendar', label: 'カレンダー', icon: 'calendar' },
   { id: 'tasks', label: 'タスク', icon: 'checklist' },
   { id: 'analysis', label: '分析', icon: 'chart' },
-  { id: 'other', label: 'その他', icon: 'more' },
+  { id: 'other', label: 'その他', icon: 'moreCircle' },
 ];
 
 const TEXT_SIZE_PX = { small: '15px', large: '19px', xlarge: '22px' } as const;
@@ -170,16 +170,22 @@ function Shell() {
           <div className="loading" aria-busy="true" />
         )}
       </main>
-      <nav className="tabbar" aria-label="タブ">
-        {TABS.map((t) => (
-          <button key={t.id} type="button" className={`tab ${tab === t.id ? 'active' : ''}`} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
-            <span className="tab-icon">
-              <Icon name={t.icon} size={25} strokeWidth={tab === t.id ? 2.2 : 1.8} />
-              {t.id === 'other' && attention > 0 && <span className="tab-alert" aria-label="確認が必要なお知らせがあります" data-testid="other-alert">!</span>}
-            </span>
-            <span className="tab-label">{t.label}</span>
-          </button>
-        ))}
+      <nav className="tabbar" aria-label="タブ" data-testid="tabbar">
+        <div className="tabbar-glass" style={{ ['--tab-index' as string]: Math.max(0, TABS.findIndex((t) => t.id === tab)) }}>
+          <span className="tab-capsule" aria-hidden />
+          {TABS.map((t) => {
+            const on = tab === t.id;
+            return (
+              <button key={t.id} type="button" className={`tab ${on ? 'active' : ''}`} aria-current={on ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
+                <span className="tab-icon">
+                  <Icon name={t.icon} size={24} strokeWidth={on ? 2.2 : 1.8} />
+                  {t.id === 'other' && attention > 0 && <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span>}
+                </span>
+                <span className="tab-label">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>

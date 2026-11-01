@@ -4,6 +4,7 @@ import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
 import { useData } from '../../app/data';
 import { useUI } from '../../app/ui';
+import { ItemIcon } from '../../components/ItemIcon';
 
 export function SearchSheet({ depth }: { depth: number }) {
   const { tasks, events } = useData();
@@ -42,7 +43,7 @@ export function SearchSheet({ depth }: { depth: number }) {
                 openSheet(r.type === 'task' ? { kind: 'task', id: r.id } : { kind: 'editEvent', eventId: r.id });
               }}
             >
-              <span className="row-label">{r.type === 'task' ? `${r.icon} ` : '📅 '}{r.title}</span>
+              <span className="row-label with-icon">{r.type === 'task' ? <ItemIcon value={r.icon} size={18} className="tint" /> : <ItemIcon value="calendar" size={18} className="muted" />}{r.title}</span>
               <span className="row-value small muted">{r.at != null ? `${formatDayLabel(r.at)} ${formatHm(r.at)}` : '未設定'}</span>
             </button>
           ))}
