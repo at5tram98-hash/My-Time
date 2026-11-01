@@ -169,3 +169,56 @@ test.describe('Phase 3：時間軸ドラッグ中の端の自動スクロール'
     await expect.poll(async () => ((await readStore(page, 'events')).find((e) => e.id === 'edge1')?.start as number) - at(11)).toBeGreaterThan((pointerOnlyMin + 60) * 60_000);
   });
 });
+
+/** 操作できる要素に名前がない（支援技術で何のボタンか分からない）ものを集める */
+async function unnamedControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const visible = (el: Element) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && !el.closest('[hidden], [aria-hidden="true"], [inert]');
+    };
+    const nameOf = (el: Element): string => {
+      const label = el.getAttribute('aria-label');
+      if (label) return label;
+      const by = el.getAttribute('aria-labelledby');
+      if (by) return by.split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) {
+        if (el.labels?.length) return [...el.labels].map((l) => l.textContent).join(' ');
+        if (el.getAttribute('placeholder')) return el.getAttribute('placeholder')!;
+      }
+      return (el.textContent ?? '').trim() || el.getAttribute('title') || '';
+    };
+    return [...document.querySelectorAll('button, a[href], [role="button"], [role="radio"], [role="switch"], [role="menuitem"], [role="menuitemradio"], input:not([type="hidden"]), select, textarea, [role="separator"][tabindex]')]
+      .filter(visible)
+      .filter((el) => !nameOf(el).trim())
+      .map((el) => el.outerHTML.slice(0, 120));
+  });
+}
+
+test.describe('Phase 3：アクセシビリティ', () => {
+  test('全タブと主なシートで、操作できる要素すべてに名前がある', async ({ page }) => {
+    await openApp(page);
+    await seed(page, { tasks: [task({ id: 'a11y', title: '名前の確認', icon: '📘', plannedStart: at(13), plannedEnd: at(14) })] });
+    const problems: Record<string, string[]> = {};
+    for (const t of ['home', 'calendar', 'tasks', 'analysis', 'other'] as const) {
+      await page.getByTestId(`tab-${t}`).click();
+      await page.waitForTimeout(250);
+      const u = await unnamedControls(page);
+      if (u.length) problems[t] = u;
+    }
+    await page.getByTestId('tab-home').click();
+    await page.getByTestId('home-add').click();
+    await page.getByRole('menuitem', { name: '新規タスク' }).click();
+    await page.waitForTimeout(400);
+    const editor = await unnamedControls(page);
+    if (editor.length) problems.taskEditor = editor;
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await page.getByTestId('home-add').click();
+    await page.getByRole('menuitem', { name: '新規予定' }).click();
+    await page.waitForTimeout(400);
+    const ev = await unnamedControls(page);
+    if (ev.length) problems.eventEditor = ev;
+    expect(problems).toEqual({});
+  });
+});

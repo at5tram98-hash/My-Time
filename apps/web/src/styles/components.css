@@ -88,8 +88,8 @@
 .group-body.notes { white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
 .row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 16px; position: relative; width: 100%; }
 .row + .row, .row + form.row, form.row + .row { box-shadow: inset 16px 0.5px 0 0 var(--bg-elev), inset 0 0.5px 0 0 var(--separator); }
-.row-label { flex: 1; min-width: 0; font-size: 1rem; }
-.row-value { color: var(--label-2); text-align: right; font-size: 0.94rem; display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 65%; }
+.row-label { flex: 1; min-width: min(5.5em, 45%); font-size: 1rem; overflow-wrap: anywhere; } /* 文字拡大でも1文字ずつの縦並びにしない */
+.row-value { color: var(--label-2); text-align: right; font-size: 0.94rem; display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 65%; }
 .row-value.tint { color: var(--blue); font-weight: 600; }
 .row-value.late { color: var(--red); }
 .row-button { text-align: left; }
