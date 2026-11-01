@@ -98,7 +98,10 @@ function StudioDesigner({ initial, isNew, usage, onDone }: { initial: StudioType
 
   const addPart = (type: StudioField['type']) => {
     const p = STUDIO_PARTS.find((x) => x.type === type)!;
-    setFieldEdit({ isNew: true, f: { id: newId(), type, label: p.label, showInInfo: type !== 'note', sectionId: t.sections[0]!.id, ...(type === 'number' ? { unit: 'times', precision: 0 } : {}), ...(type === 'select' || type === 'multiselect' ? { options: ['A', 'B'] } : {}) } });
+    // 検索語が単位なら数値部品に単位と項目名を入れておく（例：「ページ」→ ページ数・単位ページ）
+    const word = q.trim();
+    const unit = type === 'number' && word ? UNITS.find((u) => u.label === word || u.id === word.toLowerCase())?.id : undefined;
+    setFieldEdit({ isNew: true, f: { id: newId(), type, label: unit ? `${word}数` : p.label, showInInfo: type !== 'note', sectionId: t.sections[0]!.id, ...(type === 'number' ? { unit: unit ?? 'times', precision: 0 } : {}), ...(type === 'select' || type === 'multiselect' ? { options: ['A', 'B'] } : {}) } });
     setQ('');
   };
   const saveField = () => {

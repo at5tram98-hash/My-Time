@@ -30,3 +30,36 @@ test.describe('画面キャプチャ v2', () => {
     });
   }
 });
+
+test('画面キャプチャ v2 Studio', async ({ page }) => {
+  await openApp(page);
+  await seed(page, demo);
+  await page.getByTestId('tab-other').click();
+  await page.getByTestId('nav-studio').click();
+  await shot(page, 'studio-list');
+  await page.getByTestId('studio-new-task').click();
+  await page.getByTestId('studio-name').fill('読書');
+  await page.getByTestId('studio-part-search').fill('ページ');
+  await shot(page, 'studio-search');
+  await page.locator('[data-testid^="part-"]').first().click();
+  await shot(page, 'studio-field');
+  await page.getByTestId('field-editor').getByRole('button', { name: '追加' }).click();
+  await page.getByTestId('studio-part-search').fill('メモ');
+  await page.locator('[data-testid^="part-"]').first().click();
+  await page.getByTestId('field-editor').getByRole('button', { name: '追加' }).click();
+  await page.getByTestId('progress-number').click();
+  await page.getByTestId('progress-target').fill('300');
+  await shot(page, 'studio-designer');
+  await page.getByTestId('studio-preview').click();
+  await shot(page, 'studio-preview');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('studio-save').click();
+  await expect(page.getByTestId('studio-card-読書')).toBeVisible();
+  await shot(page, 'studio-saved');
+  await page.getByTestId('tab-home').click();
+  await page.getByTestId('home-add').click();
+  await page.getByTestId('editor-type').click();
+  await page.locator('[data-testid^="type-studio-"]').first().click();
+  await page.getByTestId('editor-tab-special').click();
+  await shot(page, 'studio-editor-special');
+});
