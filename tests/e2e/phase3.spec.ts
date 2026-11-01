@@ -50,10 +50,14 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
     await expect(page.getByRole('radiogroup', { name: 'アイコン' }).getByRole('radio', { checked: true })).toHaveCount(0);
     await page.getByTestId('save-task').click();
     await expect.poll(async () => (await readStore(page, 'tasks')).find((t) => t.id === 'unknown')?.icon).toBe('🦄');
+    // 編集シートが閉じて詳細シートに戻ってから、詳細も閉じる（閉じきるまで待つ）
+    await expect(page.getByRole('radiogroup', { name: 'アイコン' })).toHaveCount(0);
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // 旧値は対応するアイコンが選択済みとして表示され、別のアイコンを選ぶと新しい ID を保存
     await row('legacy').getByRole('button').first().click();
+    await expect(page.getByRole('dialog')).toContainText('旧アイコンのタスク');
     await page.getByRole('button', { name: '編集', exact: true }).click();
     const group = page.getByRole('radiogroup', { name: 'アイコン' });
     await expect(group.getByRole('radio', { name: '実験' })).toHaveAttribute('aria-checked', 'true');
