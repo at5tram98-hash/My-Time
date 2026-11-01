@@ -7,6 +7,7 @@ import {
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
 import { usePager } from '../../gestures/usePager';
 import { ItemIcon } from '../../components/ItemIcon';
+import { clampScroll, edgeScrollSpeed } from './edgeScroll';
 
 export type DayLabelMode = 'none' | 'afterFirst' | 'all';
 
@@ -45,6 +46,10 @@ interface DragState {
   moved: boolean;
   deltaMin: number;
   deltaDays: number;
+  /** 長押し開始時のスクロール位置（端の自動スクロール中も指の下の時刻を保つ） */
+  startScroll: number;
+  lastX: number;
+  lastY: number;
 }
 
 /** ドラッグ中または確認待ちの仮位置 */
@@ -227,7 +232,7 @@ export function Timeline(props: Props) {
 
   const onItemPointerDown = (e: RPointerEvent, item: Item, col: number) => {
     if (e.button !== 0 || dragRef.current || pending) return;
-    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, grabCol: col, active: false, moved: false, deltaMin: 0, deltaDays: 0 };
+    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, grabCol: col, active: false, moved: false, deltaMin: 0, deltaDays: 0, startScroll: scrollRef.current?.scrollTop ?? 0, lastX: e.clientX, lastY: e.clientY };
     dragRef.current = d;
     const target = e.currentTarget as HTMLElement;
     window.clearTimeout(timerRef.current);
@@ -241,7 +246,8 @@ export function Timeline(props: Props) {
         /* noop */
       }
       navigator.vibrate?.(8);
-      setDragBoth({ ...cur, active: true });
+      setDragBoth({ ...cur, active: true, startScroll: scrollRef.current?.scrollTop ?? cur.startScroll });
+      startEdgeLoop();
     }, LONG_PRESS_MS);
   };
 
@@ -257,14 +263,46 @@ export function Timeline(props: Props) {
       }
       return;
     }
+    updateDrag(d, e.clientX, e.clientY);
+  };
+
+  /** 指の位置（とスクロール量）から仮位置を計算する。端の自動スクロール中は指が止まっていても呼ぶ */
+  const updateDrag = (d: DragState, x: number, y: number) => {
+    const scrolled = (scrollRef.current?.scrollTop ?? d.startScroll) - d.startScroll;
+    const dx = x - d.startX;
+    const dy = y - d.startY + scrolled;
     const deltaMin = Math.round(dy / (liveHour.current / 60) / SNAP_MIN) * SNAP_MIN;
     const deltaDays = days > 1 ? Math.min(days - 1 - d.grabCol, Math.max(-d.grabCol, Math.round(dx / colWidth()))) : 0;
-    const moved = d.moved || Math.hypot(dx, dy) > 6;
-    if (deltaMin !== d.deltaMin || deltaDays !== d.deltaDays || moved !== d.moved) setDragBoth({ ...d, deltaMin, deltaDays, moved });
+    const moved = d.moved || Math.hypot(x - d.startX, y - d.startY) > 6 || Math.abs(scrolled) > 6;
+    if (deltaMin !== d.deltaMin || deltaDays !== d.deltaDays || moved !== d.moved) setDragBoth({ ...d, deltaMin, deltaDays, moved, lastX: x, lastY: y });
+    else dragRef.current = { ...d, lastX: x, lastY: y };
   };
+
+  // ---- ドラッグ中、指が時間軸の上端・下端に近づいたら自動でスクロール（タブバーに隠れる部分は端に含めない） ----
+  const edgeRaf = useRef(0);
+  const startEdgeLoop = () => {
+    cancelAnimationFrame(edgeRaf.current);
+    const step = () => {
+      const d = dragRef.current;
+      const el = scrollRef.current;
+      if (!d?.active || !el) return;
+      const rect = el.getBoundingClientRect();
+      const bar = document.querySelector('.tabbar-glass')?.getBoundingClientRect();
+      const bottom = bar && bar.top < rect.bottom && bar.top > rect.top ? bar.top : rect.bottom;
+      const v = clampScroll(edgeScrollSpeed(d.lastY, rect.top, bottom), el.scrollTop, el.scrollHeight - el.clientHeight);
+      if (v !== 0) {
+        el.scrollTop += v;
+        updateDrag(d, d.lastX, d.lastY);
+      }
+      edgeRaf.current = requestAnimationFrame(step);
+    };
+    edgeRaf.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(edgeRaf.current), []);
 
   const finishDrag = (commit: boolean) => {
     window.clearTimeout(timerRef.current);
+    cancelAnimationFrame(edgeRaf.current);
     const d = dragRef.current;
     setDragBoth(null);
     gestureLock.release('timeline-drag');

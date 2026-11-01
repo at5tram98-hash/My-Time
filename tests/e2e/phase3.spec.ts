@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, openApp, readStore, seed, task } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, readStore, seed, task } from './helpers';
 
 /** 絵文字・絵文字風の記号（アプリが表示するアイコンとして出てはいけないもの） */
 const EMOJI = /[\p{Extended_Pictographic}←-⇿›✓✔]/u;
@@ -141,5 +141,31 @@ test.describe('Phase 3：タブバー', () => {
     await openApp(page);
     const dur = await page.locator('.tab-capsule').evaluate((el) => getComputedStyle(el).transitionDuration);
     expect(dur.split(',').every((d) => parseFloat(d) < 0.01)).toBe(true); // 0s、または全体設定の 0.001ms
+  });
+});
+
+test.describe('Phase 3：時間軸ドラッグ中の端の自動スクロール', () => {
+  test('予定を下端まで運んで止めると時間軸が流れ、表示外の時刻へ移動できる（タブバーの裏は端に含めない）', async ({ page }) => {
+    await openApp(page);
+    await seed(page, { events: [event({ id: 'edge1', title: '端まで運ぶ予定', start: at(11), end: at(12) })] });
+    await page.getByTestId('tab-calendar').click();
+    const block = page.locator('.tab-panel:not([hidden])').getByTestId('tl-event:edge1');
+    await block.scrollIntoViewIfNeeded();
+    const scroller = page.locator('.tab-panel:not([hidden]) .tl-scroll');
+    const before = await scroller.evaluate((el) => el.scrollTop);
+    const c = await center(block);
+    const bar = (await page.locator('.tabbar-glass').boundingBox())!;
+    // タブバーの少し上（下端の自動スクロール領域）まで運び、そのまま保持
+    await mouseLongPressDrag(page, { x: c.x, y: c.y }, { x: c.x, y: bar.y - 12 });
+    await page.waitForTimeout(900);
+    const after = await scroller.evaluate((el) => el.scrollTop);
+    expect(after).toBeGreaterThan(before + 100);
+    await page.mouse.up();
+    // 重なり確認などが出た場合は移動を確定する
+    const dlg = page.getByRole('alertdialog');
+    if (await dlg.isVisible().catch(() => false)) await dlg.getByRole('button').last().click();
+    const hourPx = 52;
+    const pointerOnlyMin = ((bar.y - 12 - c.y) / hourPx) * 60;
+    await expect.poll(async () => ((await readStore(page, 'events')).find((e) => e.id === 'edge1')?.start as number) - at(11)).toBeGreaterThan((pointerOnlyMin + 60) * 60_000);
   });
 });
