@@ -8,6 +8,7 @@ import { CopyEventSheet } from '../features/calendar/CopyEventSheet';
 import { AutoReserveSheet } from '../features/tasks/AutoReserveSheet';
 import { ImportSheet } from '../features/other/ImportSheet';
 import { EditorSheet } from '../features/editor/EditorSheet';
+import { AnalysisDetailSheet } from '../features/analysis/AnalysisDetailSheet';
 import { CalendarFilterSheet, EventInfoSheet, SyncStatusSheet } from '../features/editor/InfoSheets';
 
 export function SheetHost() {
@@ -43,7 +44,7 @@ export function SheetHost() {
           case 'syncStatus':
             return <SyncStatusSheet key={key} depth={i} />;
           case 'analysisDetail':
-            return null;
+            return <AnalysisDetailSheet key={key} depth={i} metric={s.metric} period={s.period} from={s.from} />;
         }
       })}
     </AnimatePresence>

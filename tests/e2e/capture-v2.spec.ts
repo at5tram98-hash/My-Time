@@ -63,3 +63,28 @@ test('画面キャプチャ v2 Studio', async ({ page }) => {
   await page.getByTestId('editor-tab-special').click();
   await shot(page, 'studio-editor-special');
 });
+
+test('画面キャプチャ v2 分析', async ({ page }) => {
+  await openApp(page);
+  await seed(page, demo);
+  await page.getByTestId('tab-analysis').click();
+  await shot(page, 'analysis-day');
+  await page.getByTestId('period-week').click();
+  await shot(page, 'analysis-week');
+  await page.getByTestId('analysis-chart').locator('svg').tap({ position: { x: 60, y: 80 } });
+  await shot(page, 'analysis-week-tip');
+  await page.getByTestId('period-month').click();
+  await shot(page, 'analysis-month');
+  await page.getByTestId('tile-work').click();
+  await expect(page.getByTestId('analysis-detail')).toBeVisible();
+  await shot(page, 'analysis-detail');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('analysis-goals').click();
+  await page.getByTestId('goal-weekly').fill('10');
+  await page.getByTestId('goal-rate').fill('80');
+  await page.getByTestId('goals-popup').getByRole('button', { name: '完了' }).click();
+  await shot(page, 'analysis-goals');
+  await page.getByTestId('period-year').click();
+  await page.getByTestId('next-period').click();
+  await shot(page, 'analysis-empty');
+});

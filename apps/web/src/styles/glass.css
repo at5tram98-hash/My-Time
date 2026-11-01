@@ -165,3 +165,45 @@
 .sync-chip.err { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); font-weight: 700; }
 .other .group { margin-bottom: 22px; }
 .cal-chip.small { width: 26px; height: 26px; border-radius: 7px; }
+
+/* ---- 分析 v2 ---- */
+.analysis .nav-row { display: flex; align-items: center; justify-content: space-between; }
+.seg-full { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; margin: 6px 0 4px; border-radius: 9px; background: var(--fill); }
+.seg-full button { display: inline-flex; align-items: center; justify-content: center; text-align: center; min-height: 32px; border-radius: 7px; font-weight: 600; font-size: 0.86rem; color: var(--label); transition: background 0.2s ease, box-shadow 0.2s ease; }
+.seg-full button[aria-selected='true'] { background: var(--bg-elev); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
+.week-label.plain { background: none; border: 0; color: var(--label); padding: 6px 10px; border-radius: 10px; }
+.week-label.plain:active { background: var(--fill); }
+button.tile { text-align: left; color: var(--label); font: inherit; transition: transform 0.15s ease; }
+button.tile:active { transform: scale(0.98); }
+.tile-label.indigo { color: var(--indigo); }
+.tile-label.pink { color: #ff2d55; }
+.delta { font-size: 0.74rem; font-weight: 600; display: inline-flex; gap: 2px; align-items: center; margin-top: 2px; }
+.delta.good { color: var(--green); }
+.delta.bad { color: var(--orange); }
+.empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 56px 24px 24px; color: var(--label-2); font-size: 0.9rem; line-height: 1.5; }
+.empty-state strong { color: var(--label); font-size: 1.05rem; }
+.chart-card { gap: 6px; }
+.chart { display: flex; flex-direction: column; gap: 4px; }
+.chart svg { width: 100%; display: block; cursor: crosshair; }
+.chart-tip { min-height: 22px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.chart-key::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: 1px; }
+.chart-key.bar::before { background: var(--blue); }
+.chart-key.line::before { background: var(--green); border-radius: 50%; }
+.chart-grid { stroke: var(--hairline); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.chart-bar { fill: color-mix(in srgb, var(--blue) 45%, transparent); transition: fill 0.15s ease; }
+.chart-bar.on { fill: var(--blue); }
+.chart-line { stroke: var(--green); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--bg-elev); stroke: var(--green); stroke-width: 2; }
+.chart-cursor { stroke: var(--label-3); stroke-width: 1; }
+.chart-axis { display: grid; font-size: 0.66rem; color: var(--label-2); text-align: center; font-variant-numeric: tabular-nums; }
+.chart-axis span { overflow: visible; white-space: nowrap; }
+.chart-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { padding: 6px 4px; border-top: 0.5px solid var(--hairline); text-align: right; }
+.chart-table th[scope='row'], .chart-table thead th:first-child { text-align: left; font-weight: 500; }
+.minibars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; height: 86px; align-items: end; margin: 6px 0 10px; }
+.mb-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; }
+.mb-bar { width: 70%; max-width: 22px; min-height: 2px; border-radius: 4px; background: var(--fill-strong); }
+.mb-col.on .mb-bar { background: var(--blue); }
+.mb-label { font-size: 0.66rem; color: var(--label-2); }
+.detail-big { display: flex; flex-direction: column; gap: 2px; padding: 4px 4px 0; }
+.detail-big strong { font-family: var(--font-rounded); font-size: 2.4rem; font-variant-numeric: tabular-nums; }

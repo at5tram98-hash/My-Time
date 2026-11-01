@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { startOfDay, type CalEvent, type Task } from '@my-time/domain';
+import { startOfDay, type AnalysisPeriod, type CalEvent, type Task } from '@my-time/domain';
 
 export type TabId = 'home' | 'calendar' | 'tasks' | 'analysis' | 'other';
 
@@ -25,7 +25,9 @@ export type SheetState =
   /** 同期の詳細（Q57） */
   | { kind: 'syncStatus' }
   /** 分析の詳細（Q49） */
-  | { kind: 'analysisDetail'; metric: string; from: number; to: number };
+  | { kind: 'analysisDetail'; metric: AnalysisMetric; period: AnalysisPeriod; from: number };
+
+export type AnalysisMetric = 'completion' | 'delay' | 'work' | 'planDiff' | 'interruptions';
 
 export interface AlertButton<T> {
   label: string;

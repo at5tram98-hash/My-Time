@@ -182,9 +182,9 @@ test.describe('Phase 2', () => {
     await expect(page.getByTestId('tile-completion')).toContainText('50');
     await expect(page.getByTestId('tile-completion')).toContainText('1 / 2 件');
     await expect(page.getByTestId('tile-work')).toContainText('1時間10分');
-    const label = await page.getByTestId('week-label').textContent();
-    await page.getByTestId('prev-week').click();
-    await expect(page.getByTestId('week-label')).not.toHaveText(label!);
+    const label = await page.getByTestId('period-label').textContent();
+    await page.getByTestId('prev-period').click();
+    await expect(page.getByTestId('period-label')).not.toHaveText(label!);
   });
 
   test('サーバー未接続でも「その他」は落ちずに状態を表示する', async ({ page }) => {
