@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { expandAll, planNotices } from '@my-time/domain';
 import { useNow } from './useNow';
@@ -9,7 +9,7 @@ import { Onboarding } from '../features/onboarding/Onboarding';
 import { AccountChoice } from '../features/onboarding/AccountChoice';
 import { takeFlash } from '../data/db';
 import { DataProvider, useAttention, useData, useSync } from './data';
-import { UIProvider, useUI, type TabId } from './ui';
+import { UIProvider, useUI, type TabId, useUIActions } from './ui';
 import { SheetHost } from './SheetHost';
 import { AlertHost, ToastHost } from '../components/Overlays';
 import { Icon, type IconName } from '../components/Icon';
@@ -18,6 +18,13 @@ import { CalendarScreen } from '../features/calendar/CalendarScreen';
 import { TasksScreen } from '../features/tasks/TasksScreen';
 import { AnalysisScreen } from '../features/analysis/AnalysisScreen';
 import { OtherScreen } from '../features/other/OtherScreen';
+
+// タブ切替でほかのタブの画面を再描画しない（各画面は自分のデータ・日付の変化でだけ描き直す）
+const Home = memo(HomeScreen);
+const Calendar = memo(CalendarScreen);
+const Tasks = memo(TasksScreen);
+const Analysis = memo(AnalysisScreen);
+const Other = memo(OtherScreen);
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'home', label: 'ホーム', icon: 'house' },
@@ -62,7 +69,7 @@ function AppearanceSync() {
 /** 同期の開始、AR の反映、アプリ表示中の通知、通知タップからの遷移 */
 function Background() {
   const { tasks, events, employers } = useData();
-  const { openSheet, setTab, showToast } = useUI();
+  const { openSheet, setTab, showToast } = useUIActions();
   const now = useNow(30_000);
   useEffect(() => {
     void syncEngine.start();
@@ -123,7 +130,7 @@ function sessionStorageSet(k: string, v: string) {
 function RestoreBanner() {
   const { restoredKeys } = useData();
   const sync = useSync();
-  const { confirm, showToast } = useUI();
+  const { confirm, showToast } = useUIActions();
   const [busy, setBusy] = useState(false);
   if (restoredKeys.size === 0) return null;
   const end = async () => {
@@ -160,11 +167,11 @@ function Shell() {
       <main className="app-main">
         {ready ? (
           <>
-            <div className="tab-panel" hidden={tab !== 'home'}><HomeScreen /></div>
-            <div className="tab-panel" hidden={tab !== 'calendar'}>{tab === 'calendar' && <CalendarScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'tasks'}>{tab === 'tasks' && <TasksScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'analysis'}>{tab === 'analysis' && <AnalysisScreen />}</div>
-            <div className="tab-panel" hidden={tab !== 'other'}>{tab === 'other' && <OtherScreen />}</div>
+            <div className="tab-panel" hidden={tab !== 'home'}><Home /></div>
+            <div className="tab-panel" hidden={tab !== 'calendar'}>{tab === 'calendar' && <Calendar />}</div>
+            <div className="tab-panel" hidden={tab !== 'tasks'}>{tab === 'tasks' && <Tasks />}</div>
+            <div className="tab-panel" hidden={tab !== 'analysis'}>{tab === 'analysis' && <Analysis />}</div>
+            <div className="tab-panel" hidden={tab !== 'other'}>{tab === 'other' && <Other />}</div>
           </>
         ) : (
           <div className="loading" aria-busy="true" />

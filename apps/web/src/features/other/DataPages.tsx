@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { formatHm } from '@my-time/domain';
 import { useData, useSync } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { formatFull } from '../../app/format';
 import { Group } from '../../components/Controls';
 import { Icon } from '../../components/Icon';
@@ -34,7 +34,7 @@ const kb = (b: number | null) => (b == null ? '' : b < 1024 ? `${b}B` : b < 1024
 /** バックアップ一覧と古い日次バックアップの整理。アーカイブ（削除データの保管先）と最新の検証済みは削除できない */
 export function BackupsPage() {
   const sync = useSync();
-  const { confirm, showToast } = useUI();
+  const { confirm, showToast } = useUIActions();
   const [items, setItems] = useState<BackupItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [drilling, setDrilling] = useState<string | null>(null);
@@ -141,7 +141,7 @@ const fromDateInput = (v: string) => {
 /** 30日を過ぎて削除したデータを期間指定で Drive から戻し、通常のカレンダーに表示。「閲覧を終了」で再び外す */
 export function RestorePage() {
   const sync = useSync();
-  const { showToast, confirm } = useUI();
+  const { showToast, confirm } = useUIActions();
   const [from, setFrom] = useState(toDateInput(Date.now() - 60 * 86_400_000));
   const [to, setTo] = useState(toDateInput(Date.now() - 30 * 86_400_000));
   const [sessions, setSessions] = useState<RestoreSession[]>([]);

@@ -4,7 +4,7 @@ import { Sheet } from '../../components/Sheet';
 import { Segmented, Toggle } from '../../components/Controls';
 import { useData } from '../../app/data';
 import { usePlacementGuard } from '../../app/usePlacementGuard';
-import { useUI } from '../../app/ui';
+import { useUIActions, useUIDates } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { db } from '../../data/db';
 import { repo } from '../../data/repo';
@@ -21,7 +21,8 @@ export function defaultStartFor(day: number, now: number): number {
 
 export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; defaults?: Partial<Task>; depth: number }) {
   const { tasks, calendars, subjects, settings } = useData();
-  const { closeSheet, homeDate, confirm, showToast } = useUI();
+  const { homeDate } = useUIDates();
+  const { closeSheet, confirm, showToast } = useUIActions();
   const existing = taskId ? tasks.find((t) => t.id === taskId) : undefined;
   const isNew = !existing;
   const init = existing ?? ({ ...defaults } as Partial<Task>);

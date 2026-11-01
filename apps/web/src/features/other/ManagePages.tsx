@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type Calendar, CALENDAR_ICON_CHOICES, type CalendarKind, defaultCalendarIcon, makeEmployer, makeSubject, newId } from '@my-time/domain';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { Group, Toggle } from '../../components/Controls';
 import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
@@ -11,14 +11,14 @@ const COLORS = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF375F', '#FF453A', '#FF9F0A'
 const KIND_LABEL: Record<CalendarKind, string> = { general: '一般', class: '授業', job: 'アルバイト' };
 
 function useErrorToast() {
-  const { showToast } = useUI();
+  const { showToast } = useUIActions();
   return (e: unknown) => showToast(e instanceof Error ? e.message : '保存できませんでした');
 }
 
 /** カレンダーの追加・名前/色/アイコン・表示ON/OFF・並び順・テンプレート（一般/授業/アルバイト） */
 export function CalendarsPage() {
   const { calendars } = useData();
-  const { confirm, showToast } = useUI();
+  const { confirm, showToast } = useUIActions();
   const fail = useErrorToast();
   const [editing, setEditing] = useState<Calendar | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -119,7 +119,7 @@ export function CalendarsPage() {
 
 export function SubjectsPage() {
   const { subjects } = useData();
-  const { confirm } = useUI();
+  const { confirm } = useUIActions();
   const fail = useErrorToast();
   const [name, setName] = useState('');
   const add = async () => {
@@ -151,7 +151,7 @@ export function SubjectsPage() {
 
 export function EmployersPage() {
   const { employers, settings } = useData();
-  const { confirm } = useUI();
+  const { confirm } = useUIActions();
   const fail = useErrorToast();
   const [name, setName] = useState('');
   const add = async () => {

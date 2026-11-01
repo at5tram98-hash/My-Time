@@ -3,7 +3,7 @@ import { classifyImport, formatDayLabel, formatHm, parseICS, parseText, type Imp
 import { Sheet } from '../../components/Sheet';
 import { Segmented } from '../../components/Controls';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { fromLocalInput, toLocalInput } from '../../app/format';
 import { repo } from '../../data/repo';
 import { Icon } from '../../components/Icon';
@@ -17,7 +17,7 @@ type Choice = 'import' | 'edit' | 'skip';
  */
 export function ImportSheet({ depth }: { depth: number }) {
   const { events, calendars } = useData();
-  const { closeSheet, showToast } = useUI();
+  const { closeSheet, showToast } = useUIActions();
   const fid = useId();
   const [mode, setMode] = useState<'text' | 'ics'>('text');
   const [text, setText] = useState('');

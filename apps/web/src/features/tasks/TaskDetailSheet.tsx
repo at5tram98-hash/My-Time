@@ -9,7 +9,7 @@ import { Sheet } from '../../components/Sheet';
 import { Icon, type IconName } from '../../components/Icon';
 import { TaskIcon } from '../../components/TaskIcon';
 import { useData, useSubtasks } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { formatFull, formatRange } from '../../app/format';
 import { db } from '../../data/db';
@@ -32,7 +32,7 @@ const LOG_JA: Record<string, string> = {
 
 export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
   const { tasks, events, calendarById } = useData();
-  const { closeSheet, openSheet, confirm, showToast } = useUI();
+  const { closeSheet, openSheet, confirm, showToast } = useUIActions();
   const now = useNow(5_000);
   const task = tasks.find((t) => t.id === id);
   const subtasks = useSubtasks(id);

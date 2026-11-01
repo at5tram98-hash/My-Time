@@ -1,5 +1,5 @@
 import { actualProgress, formatHm, idealProgress, runningAndNext, type Subtask, type Task } from '@my-time/domain';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { ItemIcon } from '../../components/ItemIcon';
 
 export const CARDS_H = 64;
@@ -9,7 +9,7 @@ export const CARDS_H = 64;
  * 実行中タスク：緑の充填（実績があれば実績、なければ理想）。次のタスク：横長カード。
  */
 export function FloatingCards({ tasks, subtasksByTask, now }: { tasks: Task[]; subtasksByTask: Map<string, Subtask[]>; now: number }) {
-  const { openSheet } = useUI();
+  const { openSheet } = useUIActions();
   const { running, next } = runningAndNext(tasks, now);
   return (
     <div className="float-cards" data-testid="floating-cards">

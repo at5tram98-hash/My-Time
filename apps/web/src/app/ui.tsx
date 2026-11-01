@@ -109,7 +109,37 @@ export function UIProvider({ children }: { children: ReactNode }) {
     () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast }),
     [tab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  // 画面の大半は「操作（安定した関数）」と「日付」だけを使う。タブ・シート・トーストの変化で
+  // 隠れているタブの画面やタスク行まで再描画しないよう、文脈を分ける。
+  const actions = useMemo<UIActions>(
+    () => ({ setTab, setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast }),
+    [setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast],
+  );
+  const dates = useMemo(() => ({ homeDate, calDate }), [homeDate, calDate]);
+  return (
+    <ActionsCtx.Provider value={actions}>
+      <DatesCtx.Provider value={dates}>
+        <Ctx.Provider value={value}>{children}</Ctx.Provider>
+      </DatesCtx.Provider>
+    </ActionsCtx.Provider>
+  );
+}
+
+type UIActions = Pick<UIContextValue, 'setTab' | 'setHomeDate' | 'setCalDate' | 'openSheet' | 'closeSheet' | 'confirm' | 'choose' | 'ask' | 'showToast'>;
+const ActionsCtx = createContext<UIActions | null>(null);
+const DatesCtx = createContext<{ homeDate: number; calDate: number } | null>(null);
+
+/** 操作だけを使う（タブ・シート・トーストの変化で再描画されない） */
+export function useUIActions(): UIActions {
+  const v = useContext(ActionsCtx);
+  if (!v) throw new Error('UIProvider がありません');
+  return v;
+}
+/** ホーム・カレンダーの表示日 */
+export function useUIDates(): { homeDate: number; calDate: number } {
+  const v = useContext(DatesCtx);
+  if (!v) throw new Error('UIProvider がありません');
+  return v;
 }
 
 export function useUI(): UIContextValue {

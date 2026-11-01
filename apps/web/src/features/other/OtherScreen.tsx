@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { formatDayLabel, formatHm } from '@my-time/domain';
 import { useAttention, useData, useSync } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { Group, Toggle } from '../../components/Controls';
 import { Icon, type IconName } from '../../components/Icon';
 import { MenuButton } from '../../components/Menu';
@@ -97,7 +97,7 @@ function syncLabel(s: ReturnType<typeof useSync>, pending: number): string {
 
 export function OtherScreen() {
   const { settings, tasks, events, outboxPending } = useData();
-  const { openSheet, confirm, showToast } = useUI();
+  const { openSheet, confirm, showToast } = useUIActions();
   const sync = useSync();
   const attention = useAttention();
   const [page, setPage] = useState<OtherPage>('root');

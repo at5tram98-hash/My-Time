@@ -6,7 +6,7 @@ import {
 import { formatOverMinutes } from '@my-time/domain';
 import { TaskIcon } from '../../components/TaskIcon';
 import { Icon } from '../../components/Icon';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { repo } from '../../data/repo';
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
 import { ItemIcon } from '../../components/ItemIcon';
@@ -23,7 +23,7 @@ interface Props {
 type Mode = { kind: 'idle' } | { kind: 'scrub'; value: number; initial: number; dragged: boolean };
 
 export function TaskRow({ task, subtasks, now, showDate }: Props) {
-  const { openSheet, confirm, showToast } = useUI();
+  const { openSheet, confirm, showToast } = useUIActions();
   const reduce = useReducedMotion();
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);

@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { needsSetup, taskAnchor, type Task, type TaskKind } from '@my-time/domain';
 import { useData } from '../../app/data';
-import { useUI } from '../../app/ui';
+import { useUIActions } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { Segmented } from '../../components/Controls';
 import { Icon } from '../../components/Icon';
 import { MenuButton } from '../../components/Menu';
 import { TaskRow } from './TaskRow';
+import { useProgressive } from '../../components/useProgressive';
 
 export function TasksScreen() {
   const { tasks, subtasksByTask } = useData();
-  const { openSheet } = useUI();
+  const { openSheet } = useUIActions();
   const now = useNow();
   const [kind, setKind] = useState<TaskKind>('do');
   const [q, setQ] = useState('');
@@ -26,13 +27,26 @@ export function TasksScreen() {
     const groups = new Map<string, Task[]>();
     for (const t of list.filter((x) => !needsSetup(x))) {
       const key = t.category ?? 'カテゴリなし';
-      groups.set(key, [...(groups.get(key) ?? []), t]);
+      const g = groups.get(key);
+      if (g) g.push(t);
+      else groups.set(key, [t]);
     }
     const sorted = [...groups.entries()]
       .sort(([a], [b]) => (a === 'カテゴリなし' ? 1 : b === 'カテゴリなし' ? -1 : a.localeCompare(b, 'ja')))
       .map(([name, ts]) => ({ name, tasks: ts.sort((a, b) => (taskAnchor(a) ?? 0) - (taskAnchor(b) ?? 0)) }));
     return { unscheduled, groups: sorted, total: list.length };
   }, [tasks, kind, q, showDone]);
+
+  // 大量のタスクでも、見えている付近だけを描画する（スクロールに合わせて追加）
+  const { limit, more } = useProgressive(sections.total, sections);
+  let budget = limit;
+  const take = (list: Task[]) => {
+    const out = list.slice(0, Math.max(0, budget));
+    budget -= out.length;
+    return out;
+  };
+  const unscheduledRows = take(sections.unscheduled);
+  const groupRows = sections.groups.map((g) => ({ ...g, rows: take(g.tasks) })).filter((g) => g.rows.length > 0);
 
   return (
     <div className="screen tasks" data-testid="tasks-screen">
@@ -61,18 +75,19 @@ export function TasksScreen() {
           <section className="task-section" data-testid="section-unscheduled">
             <h2 className="section-title">未設定</h2>
             <div className="rows card">
-              {sections.unscheduled.map((t) => <TaskRow key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} />)}
+              {unscheduledRows.map((t) => <TaskRow key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} />)}
             </div>
           </section>
         )}
-        {sections.groups.map((g) => (
+        {groupRows.map((g) => (
           <section className="task-section" key={g.name}>
             <h2 className="section-title">{g.name}</h2>
             <div className="rows card">
-              {g.tasks.map((t) => <TaskRow key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} showDate />)}
+              {g.rows.map((t) => <TaskRow key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} showDate />)}
             </div>
           </section>
         ))}
+        {more}
         {sections.total === 0 && (
           <div className="empty-list tall">
             <p>{q ? '一致するタスクはありません' : kind === 'do' ? '実施タスクはありません' : '確認タスクはありません'}</p>
