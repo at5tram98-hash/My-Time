@@ -35,6 +35,8 @@ const TABLE: Record<SyncEntity, keyof MyTimeDB> = {
   subtask: 'subtasks',
   subject: 'subjects',
   employer: 'employers',
+  category: 'categories',
+  studioType: 'studioTypes',
 };
 
 const NORMALIZE: Partial<Record<SyncEntity, (r: never) => unknown>> = {
@@ -388,6 +390,8 @@ export class SyncEngine {
   async applyRemote(changes: PullChange[], cursor?: number): Promise<void> {
     await this.database.transaction('rw', [this.database.outbox, this.database.meta, this.database.syncState, this.database.recovery, this.database.notices, ...Object.values(TABLE).map((t) => this.database[t] as unknown as Dexie.Table)], async () => {
       for (const c of changes) {
+        // このバージョンが知らない種類（将来のエンティティ）は無視する（落ちない・消さない）
+        if (!Object.prototype.hasOwnProperty.call(TABLE, c.entity)) continue;
         const table = this.database[TABLE[c.entity]] as unknown as Dexie.Table<Record<string, unknown>, string>;
         const key = `${c.entity}:${c.id}`;
         const dirty = await this.database.outbox.where('[entity+entityId]').equals([c.entity, c.id]).filter((o) => o.synced === 0).count();

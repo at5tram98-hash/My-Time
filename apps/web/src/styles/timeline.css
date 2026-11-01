@@ -86,3 +86,18 @@
 .tl-block.lifted.pending { transform: none; animation: ghostpulse 1.4s ease-in-out infinite; }
 @keyframes ghostpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
 .timeline.pinching .tl-block, .timeline.pinching .tl-hour { transition: none; }
+
+/* ---- UI/UX v2 ---- */
+.tl-allday { display: flex; border-bottom: 0.5px solid var(--separator); background: var(--bg-plain); }
+.tl-allday-label { font-size: 0.66rem; color: var(--label-2); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+.tl-allday-cols { flex: 1; display: grid; min-width: 0; }
+.tl-allday-col { display: flex; flex-direction: column; gap: 2px; padding: 3px 2px; min-width: 0; }
+.tl-allday-item { font-size: 0.72rem; font-weight: 600; text-align: left; padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--c) 18%, var(--bg-plain)); color: color-mix(in srgb, var(--c) 70%, var(--label)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-allday-more { font-size: 0.66rem; color: var(--label-2); padding-left: 4px; }
+/* 今日以外の列：現在時刻と同じ高さの淡い目安線（「現在」とは表示しない：Q25） */
+.tl-now-guide { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--red) 28%, transparent); pointer-events: none; z-index: 1; }
+.tl-block.creating { background: color-mix(in srgb, var(--blue) 22%, transparent); border: 1.5px dashed var(--blue); opacity: 0.95; }
+/* 予定の上下端：伸縮できることを示す小さなつまみ（Q29） */
+.tl-block.event::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 18px; height: 3px; margin-left: -9px; border-radius: 2px; background: color-mix(in srgb, var(--c) 45%, transparent); opacity: 0; transition: opacity 160ms; }
+.tl-block.event:hover::after, .tl-block.event:focus-visible::after { opacity: 1; }
+.tl-ticon.ev { opacity: 0.85; }

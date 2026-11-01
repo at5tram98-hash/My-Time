@@ -13,7 +13,19 @@ export type SheetState =
   /** AR：自動開始・自動終了の予約 */
   | { kind: 'autoReserve'; taskId: string }
   /** 取り込み（TimeTree・ICS・テキスト） */
-  | { kind: 'import' };
+  | { kind: 'import' }
+  /** 情報確認（Q62）：予定・タスクのタップ後。約半分の高さ、上スワイプで拡大 */
+  | { kind: 'info'; entity: 'event' | 'task'; id: string }
+  /** 共通の作成・編集（Q38・Q63）。mode が初期の種類、id があれば編集 */
+  | { kind: 'edit'; mode: 'event' | 'task'; id?: string; defaults?: Record<string, unknown> }
+  /** 実行パネル（Q35・Q92） */
+  | { kind: 'run'; id: string }
+  /** 表示するカレンダーの切替（Q31） */
+  | { kind: 'calendarFilter' }
+  /** 同期の詳細（Q57） */
+  | { kind: 'syncStatus' }
+  /** 分析の詳細（Q49） */
+  | { kind: 'analysisDetail'; metric: string; from: number; to: number };
 
 export interface AlertButton<T> {
   label: string;

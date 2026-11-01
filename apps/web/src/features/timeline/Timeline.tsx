@@ -26,8 +26,12 @@ interface Props {
   /** 移動の確定要求。重複確認などが終わるまで仮位置を表示し続ける。 */
   onMove: (kind: 'event' | 'task', id: string, newStart: number) => Promise<void>;
   /** 予定の静止長押し（タスクでは呼ばない：タスクの編集・削除はタップ後の詳細シートから） */
-  onEventMenu: (id: string) => void;
+  onEventMenu: (id: string, anchor?: HTMLElement | null) => void;
   onTapDay?: (day: number) => void;
+  /** 空白の長押し→指で範囲を選んで離す：新規予定の作成（DB にはまだ書かない：Q27） */
+  onCreateRange?: (start: number, end: number) => void;
+  /** 予定の上下端をつかんで長さを変える（15分刻み：Q29） */
+  onResize?: (id: string, start: number, end: number) => Promise<void>;
   testId?: string;
 }
 
@@ -50,12 +54,19 @@ interface DragState {
   startScroll: number;
   lastX: number;
   lastY: number;
+  /** move=移動 / start・end=上端・下端の伸縮 */
+  mode: 'move' | 'start' | 'end';
 }
+
+/** 空白の長押しで作る新規予定の仮範囲 */
+interface CreateState { pointerId: number; dayStart: number; colTop: number; x0: number; y0: number; anchorMin: number; curMin: number; active: boolean }
 
 /** ドラッグ中または確認待ちの仮位置 */
 interface Ghost {
   item: Item;
   start: number;
+  /** 伸縮のときの終了（省略時は元の長さ） */
+  end?: number;
   pending: boolean;
 }
 
@@ -73,7 +84,9 @@ const realId = (it: Item) => (it.kind === 'event' ? it.event.id : it.task.id);
 
 /** Appleカレンダー風の時間軸。縦スクロール／ピンチ倍率はこの領域内だけで処理する。 */
 export function Timeline(props: Props) {
-  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onEventMenu, onTapDay, testId } = props;
+  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onEventMenu, onTapDay, onCreateRange, onResize, testId } = props;
+  const createRef = useRef<CreateState | null>(null);
+  const [creating, setCreating] = useState<CreateState | null>(null);
   /** 確定済みの倍率（文字の出し分けなどに使う）。ピンチ中は CSS 変数だけを毎フレーム更新する。 */
   const [hourH, setHourH] = useState(DEFAULT_H);
   const liveHour = useRef(DEFAULT_H);
@@ -196,7 +209,7 @@ export function Timeline(props: Props) {
     el.addEventListener('wheel', wheel, { passive: false });
     el.addEventListener('gesturestart', gesture);
     el.addEventListener('gesturechange', gesture);
-    const unblock = blockTouchScrollWhile(el, () => dragRef.current?.active === true);
+    const unblock = blockTouchScrollWhile(el, () => dragRef.current?.active === true || createRef.current?.active === true);
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(commitTimer);
@@ -214,7 +227,7 @@ export function Timeline(props: Props) {
   const dayStarts = useMemo(() => Array.from({ length: days }, (_, i) => addDays(startDay, i)), [startDay, days]);
 
   const items: Item[] = useMemo(() => {
-    const out: Item[] = events.map((e) => ({ id: `event:${e.id}`, kind: 'event', start: e.start, end: e.end, event: e }));
+    const out: Item[] = events.filter((e) => !e.extra?.allDay).map((e) => ({ id: `event:${e.id}`, kind: 'event', start: e.start, end: e.end, event: e }));
     for (const t of tasks) {
       const b = taskBlock(t, subtasksByTask.get(t.id) ?? [], now);
       if (b) out.push({ id: b.id, kind: 'task', start: b.start, end: b.end, task: t, block: b });
@@ -232,7 +245,10 @@ export function Timeline(props: Props) {
 
   const onItemPointerDown = (e: RPointerEvent, item: Item, col: number) => {
     if (e.button !== 0 || dragRef.current || pending) return;
-    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, grabCol: col, active: false, moved: false, deltaMin: 0, deltaDays: 0, startScroll: scrollRef.current?.scrollTop ?? 0, lastX: e.clientX, lastY: e.clientY };
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // 予定の上端・下端（約10px）をつかんだときは伸縮（Q29）。それ以外は移動
+    const mode: DragState['mode'] = item.kind === 'event' && rect.height >= 30 ? (e.clientY - rect.top < 10 ? 'start' : rect.bottom - e.clientY < 10 ? 'end' : 'move') : 'move';
+    const d: DragState = { item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, grabCol: col, active: false, moved: false, deltaMin: 0, deltaDays: 0, startScroll: scrollRef.current?.scrollTop ?? 0, lastX: e.clientX, lastY: e.clientY, mode };
     dragRef.current = d;
     const target = e.currentTarget as HTMLElement;
     window.clearTimeout(timerRef.current);
@@ -272,7 +288,7 @@ export function Timeline(props: Props) {
     const dx = x - d.startX;
     const dy = y - d.startY + scrolled;
     const deltaMin = Math.round(dy / (liveHour.current / 60) / SNAP_MIN) * SNAP_MIN;
-    const deltaDays = days > 1 ? Math.min(days - 1 - d.grabCol, Math.max(-d.grabCol, Math.round(dx / colWidth()))) : 0;
+    const deltaDays = days > 1 && d.mode === 'move' ? Math.min(days - 1 - d.grabCol, Math.max(-d.grabCol, Math.round(dx / colWidth()))) : 0;
     const moved = d.moved || Math.hypot(x - d.startX, y - d.startY) > 6 || Math.abs(scrolled) > 6;
     if (deltaMin !== d.deltaMin || deltaDays !== d.deltaDays || moved !== d.moved) setDragBoth({ ...d, deltaMin, deltaDays, moved, lastX: x, lastY: y });
     else dragRef.current = { ...d, lastX: x, lastY: y };
@@ -315,12 +331,20 @@ export function Timeline(props: Props) {
     suppressClick.current = true;
     window.setTimeout(() => (suppressClick.current = false), 50);
     if (!commit) return; // pointercancel では何も変えない
+    if (d.mode !== 'move') {
+      if (d.moved && d.deltaMin !== 0 && onResize) {
+        const rr = resizeRange(d);
+        setPending({ item: d.item, ...rr, pending: true });
+        void onResize(realId(d.item), rr.start, rr.end).finally(() => setPending(null));
+      } else if (!d.moved && d.item.kind === 'event') onEventMenu(d.item.event.id, rootRef.current?.querySelector(`[data-testid="tl-event:${d.item.event.id}"]`) as HTMLElement | null);
+      return;
+    }
     if (d.moved && (d.deltaMin !== 0 || d.deltaDays !== 0)) {
       const start = ghostStart(d);
       setPending({ item: d.item, start, pending: true });
       void onMove(d.item.kind, realId(d.item), start).finally(() => setPending(null));
     } else if (!d.moved && d.item.kind === 'event') {
-      onEventMenu(d.item.event.id);
+      onEventMenu(d.item.event.id, rootRef.current?.querySelector(`[data-testid="tl-event:${d.item.event.id}"]`) as HTMLElement | null);
     }
     // タスクの静止長押しは何もしない（持ち上げを戻すだけ）
   };
@@ -331,13 +355,72 @@ export function Timeline(props: Props) {
     else onOpenTask(item.task.id);
   };
 
-  const ghost: Ghost | null = drag?.active && drag.moved ? { item: drag.item, start: ghostStart(drag), pending: false } : pending;
+  const resizeRange = (d: DragState) => {
+    if (d.mode === 'end') return { start: d.item.start, end: Math.max(d.item.start + SNAP_MIN * MINUTE, snapToStep(d.item.end + d.deltaMin * MINUTE, SNAP_MIN)) };
+    return { start: Math.min(d.item.end - SNAP_MIN * MINUTE, snapToStep(d.item.start + d.deltaMin * MINUTE, SNAP_MIN)), end: d.item.end };
+  };
+  const ghost: Ghost | null = drag?.active && drag.moved ? (drag.mode === 'move' ? { item: drag.item, start: ghostStart(drag), pending: false } : { item: drag.item, ...resizeRange(drag), pending: false }) : pending;
   const ghostConflict = ghost
     ? items.some((o) => o.id !== ghost.item.id && !(o.kind === 'task' && o.task.status === 'done') && overlaps({ start: ghost.start, end: ghost.start + itemDuration(ghost.item) }, o))
     : false;
   const hiddenId = drag?.active ? drag.item.id : pending?.item.id;
 
+  // ---- 空白の長押しで新規予定（Q27）：長押しで仮予定が現れ、指で範囲を選び、離すと編集画面へ ----
+  const minAt = (cs: CreateState, clientY: number) => {
+    const col = rootRef.current?.querySelector(`[data-date="${cs.dayStart}"]`) as HTMLElement | null;
+    const y = clientY - (col?.getBoundingClientRect().top ?? 0);
+    return Math.max(0, Math.min(24 * 60, (y / liveHour.current) * 60));
+  };
+  const onColPointerDown = (e: RPointerEvent<HTMLDivElement>, dayStart: number) => {
+    if (e.button !== 0 || e.target !== e.currentTarget || !onCreateRange || dragRef.current || pending) return;
+    const cs: CreateState = { pointerId: e.pointerId, dayStart, colTop: 0, x0: e.clientX, y0: e.clientY, anchorMin: 0, curMin: 0, active: false };
+    cs.anchorMin = Math.floor(minAt(cs, e.clientY) / SNAP_MIN) * SNAP_MIN;
+    cs.curMin = cs.anchorMin + 60;
+    createRef.current = cs;
+    const target = e.currentTarget;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      if (createRef.current !== cs) return;
+      if (!gestureLock.acquire('timeline-drag')) return;
+      try { target.setPointerCapture(cs.pointerId); } catch { /* noop */ }
+      navigator.vibrate?.(8);
+      cs.active = true;
+      setCreating({ ...cs });
+    }, LONG_PRESS_MS);
+  };
+  const onColPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
+    const cs = createRef.current;
+    if (!cs || e.pointerId !== cs.pointerId) return;
+    if (!cs.active) {
+      if (Math.hypot(e.clientX - cs.x0, e.clientY - cs.y0) > 8) { window.clearTimeout(timerRef.current); createRef.current = null; }
+      return;
+    }
+    const m = Math.round(minAt(cs, e.clientY) / SNAP_MIN) * SNAP_MIN;
+    const cur = m <= cs.anchorMin ? Math.min(m, cs.anchorMin - SNAP_MIN) : Math.max(m, cs.anchorMin + SNAP_MIN);
+    if (cur !== cs.curMin && Math.abs(e.clientY - cs.y0) > 6) { cs.curMin = cur; setCreating({ ...cs }); }
+  };
+  const onColPointerUp = (e: RPointerEvent<HTMLDivElement>, commit: boolean) => {
+    const cs = createRef.current;
+    if (!cs || e.pointerId !== cs.pointerId) return;
+    window.clearTimeout(timerRef.current);
+    createRef.current = null;
+    setCreating(null);
+    if (!cs.active) return;
+    gestureLock.release('timeline-drag');
+    suppressClick.current = true;
+    window.setTimeout(() => (suppressClick.current = false), 50);
+    if (!commit) return; // キャンセル：何も作らない
+    const a = Math.min(cs.anchorMin, cs.curMin);
+    const b = Math.max(cs.anchorMin, cs.curMin);
+    onCreateRange?.(cs.dayStart + a * MINUTE, cs.dayStart + b * MINUTE);
+  };
+
+  // 終日の予定は時間軸の上の専用領域へ（Q30）
+  const allDayByCol = dayStarts.map((d) => events.filter((e) => e.extra?.allDay && e.start < addDays(d, 1) && e.end > d));
+  const todayIdxAll = dayStarts.findIndex((d) => isSameDay(d, now));
+  const nowMinAll = (now - startOfDay(now)) / MINUTE;
   const renderColumn = (dayStart: number, colIndex: number) => {
+    const todayIdx = todayIdxAll;
     const dayEnd = addDays(dayStart, 1);
     const dayItems = items.filter((it) => it.start < dayEnd && it.end > dayStart);
     const delayedTasks = dayItems.filter((it): it is Extract<Item, { kind: 'task' }> => it.kind === 'task' && it.block.delayed);
@@ -385,7 +468,7 @@ export function Timeline(props: Props) {
         >
           {planEndMin != null && planEndMin < p.height && <span className="tl-overrun" style={{ top: mins(Math.max(0, planEndMin)) }} aria-hidden />}
           <span className="tl-title">
-            {it.kind === 'task' && <ItemIcon value={it.task.icon} size={13} strokeWidth={2.3} className="tl-ticon" />}
+            {it.kind === 'task' ? <ItemIcon value={it.task.icon} size={13} strokeWidth={2.3} className="tl-ticon" /> : <ItemIcon value={cal?.icon} fallback="calendar" size={12} strokeWidth={2.3} className="tl-ticon ev" />}
             {title}
           </span>
           {showTime(p.height) && <span className="tl-time">{timeText}</span>}
@@ -401,9 +484,8 @@ export function Timeline(props: Props) {
     // 仮位置：日付をまたぐ場合も、重なる各列に切り分けて表示する
     let ghostEl = null;
     if (ghost) {
-      const dur = itemDuration(ghost.item);
       const gs = ghost.start;
-      const ge = gs + dur;
+      const ge = ghost.end ?? gs + itemDuration(ghost.item);
       if (gs < dayEnd && ge > dayStart) {
         const s = Math.max(gs, dayStart);
         const e = Math.min(ge, dayEnd);
@@ -423,7 +505,24 @@ export function Timeline(props: Props) {
     }
 
     return (
-      <div className={`tl-col ${isToday ? 'today' : ''}`} key={dayStart} data-testid={`tl-col-${colIndex}`} data-date={dayStart}>
+      <div
+        className={`tl-col ${isToday ? 'today' : ''}`}
+        key={dayStart}
+        data-testid={`tl-col-${colIndex}`}
+        data-date={dayStart}
+        onPointerDown={(e) => onColPointerDown(e, dayStart)}
+        onPointerMove={onColPointerMove}
+        onPointerUp={(e) => onColPointerUp(e, true)}
+        onPointerCancel={(e) => onColPointerUp(e, false)}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {creating && creating.dayStart === dayStart && (
+          <div className="tl-block lifted creating" data-testid="tl-create-ghost" aria-hidden style={{ top: mins(Math.min(creating.anchorMin, creating.curMin)), height: `calc(${mins(Math.abs(creating.curMin - creating.anchorMin))} - 2px)`, left: 1, width: 'calc(100% - 3px)', ['--c' as string]: 'var(--blue)' }}>
+            <span className="tl-title">新規予定</span>
+            <span className="tl-time">{formatHm(dayStart + Math.min(creating.anchorMin, creating.curMin) * MINUTE)}〜{formatHm(dayStart + Math.max(creating.anchorMin, creating.curMin) * MINUTE)}</span>
+          </div>
+        )}
+        {!isToday && todayIdx >= 0 && <div className="tl-now-guide" style={{ top: mins(nowMinAll) }} aria-hidden />}
         {placed.map((p) => renderBlock(p, false))}
         {placedDelayed.map((p) => renderBlock(p, true))}
         {ghostEl}
@@ -459,6 +558,23 @@ export function Timeline(props: Props) {
                 <span className="wd">{weekdayJa(d)}</span>
                 <span className="dn">{new Date(d).getDate()}</span>
               </button>
+            ))}
+          </motion.div>
+        </div>
+      )}
+      {allDayByCol.some((l) => l.length > 0) && (
+        <div className="tl-allday" data-testid="tl-allday">
+          <div className="tl-gutter-head tl-allday-label">終日</div>
+          <motion.div className="tl-allday-cols" style={{ x, gridTemplateColumns: `repeat(${days}, minmax(0, 1fr))` }}>
+            {allDayByCol.map((list, i) => (
+              <div key={i} className="tl-allday-col">
+                {list.slice(0, 3).map((ev) => (
+                  <button key={ev.id} type="button" className="tl-allday-item" style={{ ['--c' as string]: ev.extra?.color ?? calendarById.get(ev.calendarId)?.color ?? 'var(--blue)' }} onClick={() => onOpenEvent(ev.id)} data-testid={`tl-allday:${ev.id}`}>
+                    {ev.title}
+                  </button>
+                ))}
+                {list.length > 3 && <span className="tl-allday-more">他{list.length - 3}件</span>}
+              </div>
             ))}
           </motion.div>
         </div>

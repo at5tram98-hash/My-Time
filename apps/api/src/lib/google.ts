@@ -118,6 +118,32 @@ export class Drive {
     return (await this.call(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`)).text();
   }
 
+  /** 添付ファイル（画像・PDF）のバイナリ保存（Q80） */
+  async uploadBinary(folderId: string, name: string, mime: string, bytes: ArrayBuffer, appProperties: Record<string, string> = {}): Promise<DriveFile> {
+    const boundary = `mt${crypto.randomUUID()}`;
+    const meta = JSON.stringify({ name, parents: [folderId], mimeType: mime, appProperties });
+    const enc = new TextEncoder();
+    const head = enc.encode(`--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\ncontent-type: ${mime}\r\n\r\n`);
+    const tail = enc.encode(`\r\n--${boundary}--`);
+    const body = new Uint8Array(head.length + bytes.byteLength + tail.length);
+    body.set(head, 0);
+    body.set(new Uint8Array(bytes), head.length);
+    body.set(tail, head.length + bytes.byteLength);
+    const res = await this.call('/upload/drive/v3/files?uploadType=multipart&fields=id,name,size', { method: 'POST', headers: { 'content-type': `multipart/related; boundary=${boundary}` }, body });
+    return (await res.json()) as DriveFile;
+  }
+
+  async downloadBinary(fileId: string): Promise<{ bytes: ArrayBuffer; mime: string; appProperties: Record<string, string> }> {
+    const meta = (await (await this.call(`/drive/v3/files/${encodeURIComponent(fileId)}?fields=mimeType,appProperties`)).json()) as { mimeType: string; appProperties?: Record<string, string> };
+    const res = await this.call(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    return { bytes: await res.arrayBuffer(), mime: meta.mimeType, appProperties: meta.appProperties ?? {} };
+  }
+
+  /** ゴミ箱へ移す（30日間は Drive 側で戻せる。完全削除はしない） */
+  async trash(fileId: string): Promise<void> {
+    await this.call(`/drive/v3/files/${encodeURIComponent(fileId)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
+  }
+
   async remove(fileId: string): Promise<void> {
     await this.call(`/drive/v3/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
   }

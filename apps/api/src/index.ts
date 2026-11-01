@@ -105,6 +105,40 @@ api.post('/push/unsubscribe', async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- 添付ファイル（画像・PDF）：本体は Google ドライブの「My Time Backup/Attachments」へ（Q80）----
+const ATTACH_MAX = 10 * 1024 * 1024;
+const ATTACH_TYPES = /^(image\/(png|jpeg|gif|webp|heic|heif)|application\/pdf)$/;
+api.post('/attachments', async (c) => {
+  const mime = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  if (!ATTACH_TYPES.test(mime)) return c.json({ error: '画像またはPDFだけを添付できます' }, 415);
+  const len = Number(c.req.header('content-length') ?? '0');
+  if (len > ATTACH_MAX) return c.json({ error: '10MB 以内のファイルにしてください' }, 413);
+  const bytes = await c.req.arrayBuffer();
+  if (bytes.byteLength === 0 || bytes.byteLength > ATTACH_MAX) return c.json({ error: '10MB 以内のファイルにしてください' }, 413);
+  const name = decodeURIComponent(c.req.header('x-file-name') ?? 'file').split('').map((ch) => (ch < ' ' || ch === '/' || ch === '\\' ? '_' : ch)).join('').slice(0, 200) || 'file';
+  const drive = await driveFor(c.env, c.get('userId'), c.get('now'));
+  if (!drive) return c.json({ error: 'Googleドライブに接続していません' }, 409);
+  const folder = await drive.findOrCreateFolder('My Time Attachments');
+  const f = await drive.uploadBinary(folder, name, mime, bytes, { mytimeKind: 'attachment', mytimeUser: c.get('userId') });
+  return c.json({ driveFileId: f.id, size: bytes.byteLength });
+});
+api.get('/attachments/:id', async (c) => {
+  const drive = await driveFor(c.env, c.get('userId'), c.get('now'));
+  if (!drive) return c.json({ error: 'Googleドライブに接続していません' }, 409);
+  const f = await drive.downloadBinary(c.req.param('id'));
+  // このアプリが作った、このアカウントの添付だけを返す（アカウントの混在を防ぐ）
+  if (f.appProperties.mytimeKind !== 'attachment' || f.appProperties.mytimeUser !== c.get('userId')) return c.json({ error: '見つかりません' }, 404);
+  return new Response(f.bytes, { headers: { 'content-type': f.mime, 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:" } });
+});
+api.delete('/attachments/:id', async (c) => {
+  const drive = await driveFor(c.env, c.get('userId'), c.get('now'));
+  if (!drive) return c.json({ error: 'Googleドライブに接続していません' }, 409);
+  const f = await drive.downloadBinary(c.req.param('id')).catch(() => null);
+  if (!f || f.appProperties.mytimeKind !== 'attachment' || f.appProperties.mytimeUser !== c.get('userId')) return c.json({ error: '見つかりません' }, 404);
+  await drive.trash(c.req.param('id'));
+  return c.json({ ok: true });
+});
+
 api.get('/settings', async (c) => {
   const r = await c.env.DB.prepare('SELECT data FROM user_settings WHERE user_id = ?').bind(c.get('userId')).first<{ data: string }>();
   return c.json(r ? JSON.parse(r.data) : {});

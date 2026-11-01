@@ -13,7 +13,7 @@ import { usePager } from '../../gestures/usePager';
 import { Timeline } from '../timeline/Timeline';
 import { useTimelineActions } from '../timeline/useTimelineActions';
 
-const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '日', '2day': '2日', week: '週', month: '月' };
+const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '1日', '2day': '2日', '3day': '3日', week: '週', month: '月' };
 
 export function weekStart(t: number): number {
   const d = startOfDay(t);
@@ -29,14 +29,14 @@ export function CalendarScreen() {
   const view = settings.calendarView;
   const setView = (v: CalendarViewPref) => void repo.updateSettings({ calendarView: v });
 
-  const days = view === 'day' ? 1 : view === '2day' ? 2 : 7;
+  const days = view === 'day' ? 1 : view === '2day' ? 2 : view === '3day' ? 3 : 7;
   const startDay = view === 'week' ? weekStart(calDate) : calDate;
   const events = useVisibleEvents(addDays(startDay, -1), addDays(startDay, days + 1), now);
   const step = days;
   // 表示中の日付の前後だけを時間軸へ渡す（大量のタスクでも描画・計算を範囲内に限る）
   const rangeTasks = useMemo(() => tasksForRange(tasks, addDays(startDay, -1), addDays(startDay, days + 1), now), [tasks, startDay, days, now]);
 
-  const viewItems: MenuItem[] = (['day', '2day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
+  const viewItems: MenuItem[] = (['day', '2day', '3day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
   const isTodayVisible = view === 'month' ? new Date(calDate).getMonth() === new Date(now).getMonth() && new Date(calDate).getFullYear() === new Date(now).getFullYear() : now >= startDay && now < addDays(startDay, days);
 
   return (
