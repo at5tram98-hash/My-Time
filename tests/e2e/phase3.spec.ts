@@ -226,3 +226,31 @@ test.describe('Phase 3：アクセシビリティ', () => {
     expect(problems).toEqual({});
   });
 });
+
+test('閉じかけのシートの入力内容を、次に開いたシートへ持ち越さない（別タスクの編集が前のタスクの値で始まらない）', async ({ page }) => {
+  await openApp(page);
+  await seed(page, {
+    tasks: [
+      task({ id: 'sa', title: '一つ目', icon: '🧪', plannedStart: at(13), plannedEnd: at(14) }),
+      task({ id: 'sb', title: '二つ目', icon: '🎯', plannedStart: at(15), plannedEnd: at(16) }),
+    ],
+  });
+  for (let round = 0; round < 3; round++) {
+    await page.getByTestId('task-row-sa').getByRole('button').first().click();
+    await page.getByRole('button', { name: '編集', exact: true }).last().click();
+    await expect(page.getByTestId('task-title-input').last()).toHaveValue('一つ目');
+    await page.getByTestId('save-task').last().click();
+    await page.keyboard.press('Escape');
+    // 閉じるアニメーションを待たずに（閉じかけの前のシートはまだ DOM にあるので、最後に開いたシートを見る）、すぐ別のタスクを開いて編集
+    await page.getByTestId('task-row-sb').getByRole('button').first().click();
+    await page.getByRole('button', { name: '編集', exact: true }).last().click();
+    await expect(page.getByTestId('task-title-input').last()).toHaveValue('二つ目');
+    await expect(page.getByRole('radiogroup', { name: 'アイコン' }).last().getByRole('radio', { name: '目標' })).toHaveAttribute('aria-checked', 'true');
+    await page.getByTestId('save-task').last().click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  }
+  const all = await readStore(page, 'tasks');
+  expect(all.find((t) => t.id === 'sa')).toMatchObject({ title: '一つ目', icon: '🧪' });
+  expect(all.find((t) => t.id === 'sb')).toMatchObject({ title: '二つ目', icon: '🎯' });
+});

@@ -38,7 +38,8 @@ interface UIContextValue {
   setHomeDate: (d: number) => void;
   calDate: number;
   setCalDate: (d: number) => void;
-  sheets: SheetState[];
+  /** 開いているシート。uid は開くたびに新しく振る（閉じるアニメーション中の古い画面の状態を使い回さない） */
+  sheets: (SheetState & { uid: number })[];
   openSheet: (s: SheetState) => void;
   closeSheet: () => void;
   alert: AlertState | null;
@@ -56,7 +57,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<TabId>('home');
   const [homeDate, setHomeDateRaw] = useState(() => startOfDay(Date.now()));
   const [calDate, setCalDateRaw] = useState(() => startOfDay(Date.now()));
-  const [sheets, setSheets] = useState<SheetState[]>([]);
+  const [sheets, setSheets] = useState<(SheetState & { uid: number })[]>([]);
+  const sheetSeq = useRef(0);
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -64,7 +66,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const setHomeDate = useCallback((d: number) => setHomeDateRaw(startOfDay(d)), []);
   const setCalDate = useCallback((d: number) => setCalDateRaw(startOfDay(d)), []);
-  const openSheet = useCallback((s: SheetState) => setSheets((st) => [...st, s]), []);
+  const openSheet = useCallback((s: SheetState) => {
+    sheetSeq.current += 1;
+    const uid = sheetSeq.current;
+    setSheets((st) => [...st, { ...s, uid }]);
+  }, []);
   const closeSheet = useCallback(() => setSheets((st) => st.slice(0, -1)), []);
 
   const present = useCallback(<T,>(variant: AlertState['variant'], title: string, message: string | undefined, buttons: AlertButton<T>[]) => {
