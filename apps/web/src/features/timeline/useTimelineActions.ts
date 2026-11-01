@@ -110,7 +110,7 @@ export function useTimelineActions() {
               { label: '削除', value: 'delete', style: 'destructive' },
             ],
           });
-      if (act === 'edit') openSheet({ kind: 'editEvent', eventId: id });
+      if (act === 'edit') openSheet({ kind: 'edit', mode: 'event', id });
       if (act === 'copy') openSheet({ kind: 'copyEvent', eventId: id });
       if (act === 'dup') {
         await repo.saveEvent(makeEvent({ title: ev.title, calendarId: ev.calendarId, start: r.start, end: r.end, notes: ev.notes, classInfo: null, employerId: ev.employerId }, Date.now()), true);

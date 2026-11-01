@@ -7,6 +7,8 @@ import { SearchSheet } from '../features/search/SearchSheet';
 import { CopyEventSheet } from '../features/calendar/CopyEventSheet';
 import { AutoReserveSheet } from '../features/tasks/AutoReserveSheet';
 import { ImportSheet } from '../features/other/ImportSheet';
+import { EditorSheet } from '../features/editor/EditorSheet';
+import { CalendarFilterSheet, EventInfoSheet, SyncStatusSheet } from '../features/editor/InfoSheets';
 
 export function SheetHost() {
   const { sheets } = useUI();
@@ -30,6 +32,18 @@ export function SheetHost() {
             return <AutoReserveSheet key={key} depth={i} taskId={s.taskId} />;
           case 'import':
             return <ImportSheet key={key} depth={i} />;
+          case 'info':
+            return s.entity === 'event' ? <EventInfoSheet key={key} id={s.id} depth={i} /> : <TaskDetailSheet key={key} id={s.id} depth={i} />;
+          case 'run':
+            return <TaskDetailSheet key={key} id={s.id} depth={i} />;
+          case 'edit':
+            return <EditorSheet key={key} depth={i} mode={s.mode} {...(s.id ? { id: s.id } : {})} {...(s.defaults ? { defaults: s.defaults } : {})} />;
+          case 'calendarFilter':
+            return <CalendarFilterSheet key={key} depth={i} />;
+          case 'syncStatus':
+            return <SyncStatusSheet key={key} depth={i} />;
+          case 'analysisDetail':
+            return null;
         }
       })}
     </AnimatePresence>

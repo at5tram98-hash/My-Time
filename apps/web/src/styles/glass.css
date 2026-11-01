@@ -101,3 +101,53 @@
 .undo-bar { pointer-events: auto; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 8px 0 16px; border-radius: 24px; max-width: 460px; width: 100%; }
 .undo-text { flex: 1; min-width: 0; font-size: 0.94rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .undo-btn { height: 36px; padding: 0 14px; border-radius: 18px; color: var(--blue); font-weight: 700; }
+
+/* ===== 小型ガラスシート（ピッカー）===== */
+.popup-layer { position: fixed; inset: 0; z-index: 90; display: flex; align-items: flex-end; justify-content: center; }
+.popup-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.25); }
+.popup { position: relative; width: 100%; max-width: 560px; max-height: 78%; border-radius: 22px 22px 0 0; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); background: color-mix(in srgb, var(--bg-elev) 82%, transparent); }
+.popup.tall { height: 78%; }
+.popup-bar { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+.popup-title { text-align: center; font-weight: 600; }
+.popup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 16px; overscroll-behavior: contain; }
+
+/* コンパクト検索（Q19・Q31） */
+.isearch { position: absolute; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); top: calc(env(safe-area-inset-top) + 6px); z-index: 40; display: flex; flex-direction: column; gap: 8px; }
+.isearch-bar { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 6px 0 14px; border-radius: 23px; }
+.isearch-bar input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 1rem; }
+.isearch-results { max-height: 52vh; overflow-y: auto; border-radius: 18px; padding: 4px 0; }
+.screen { position: absolute; }
+.month-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; }
+.calendar .nav { gap: 6px; }
+@media (max-width: 380px) { .calendar .nav-actions.gap { gap: 4px; } .calendar .gpill { padding: 0 10px; } }
+
+/* ===== タスク一覧（Q32〜41）===== */
+.tasks .nav.large { gap: 10px; }
+.scope-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.scope-btn { min-height: 32px; padding: 0 12px; border-radius: 16px; font-size: 0.86rem; font-weight: 600; color: var(--label-2); }
+.scope-btn[aria-pressed='true'] { color: var(--label); background: var(--fill-strong); }
+.task-li { display: flex; align-items: center; gap: 4px; position: relative; background: var(--bg-elev); }
+.task-li-main { flex: 1; min-width: 0; }
+.task-li.editing { padding-left: 12px; }
+.task-li.dragging { z-index: 10; box-shadow: var(--shadow-lift); border-radius: 12px; }
+.drag-handle { width: 44px; height: 44px; display: grid; place-items: center; color: var(--label-2); touch-action: none; cursor: grab; }
+.sub-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 10px 0 4px; color: var(--label-2); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.subtask-list { overflow: hidden; background: color-mix(in srgb, var(--fill) 40%, var(--bg-elev)); }
+.subtask-li { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 16px 0 64px; font-size: 0.92rem; }
+.subtask-li .struck { text-decoration: line-through; color: var(--label-2); }
+.subtask-li.parent-progress { min-height: 34px; }
+.section-title { display: flex; align-items: center; gap: 8px; font-size: 1.12rem; }
+.cat-dot { width: 10px; height: 10px; border-radius: 5px; }
+.task-section.done { opacity: 0.85; }
+.multi-bar { position: absolute; left: 16px; right: 16px; bottom: calc(var(--tabbar-space) + 8px); display: flex; align-items: center; gap: 8px; justify-content: space-between; min-height: 54px; padding: 0 10px 0 16px; border-radius: 27px; z-index: 25; }
+.gpill.danger { color: var(--red); }
+.check-circle { width: 26px; height: 26px; border-radius: 13px; border: 1.5px solid var(--label-3); display: grid; place-items: center; flex: none; color: #fff; }
+.check-circle.on { background: var(--blue); border-color: var(--blue); }
+.check-circle.small { width: 22px; height: 22px; }
+/* 実行中ミニバー（Q93）：タブバーのすぐ上 */
+.minibar { position: absolute; left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); max-width: 460px; margin: 0 auto; bottom: calc(var(--tabbar-space) - 2px); z-index: 19; display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 0 6px 0 8px; border-radius: 26px; }
+.minibar-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; text-align: left; }
+.minibar-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.minibar-time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green); }
+:root[data-minibar] .app-main .scroll-body, :root[data-minibar] .app-main .tl-scroll { padding-bottom: calc(var(--tabbar-space) + 60px); }
+:root[data-minibar] .undo-layer { bottom: calc(var(--tabbar-space) + 62px); }

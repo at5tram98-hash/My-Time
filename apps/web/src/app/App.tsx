@@ -16,6 +16,7 @@ import { Icon } from '../components/Icon';
 import { TabBar, type TabDef } from '../ui/TabBar';
 import { ContextMenuHost } from '../ui/ContextMenu';
 import { UndoHost } from '../ui/undo';
+import { RunningMiniBar } from '../ui/MiniBar';
 import { installGlassPointer } from '../ui/gestures';
 import { HomeScreen } from '../features/home/HomeScreen';
 import { CalendarScreen } from '../features/calendar/CalendarScreen';
@@ -101,8 +102,8 @@ function Background() {
   // 通知をタップして開いたとき
   useEffect(() => {
     const open = (t: { kind: string; id: string | null } | null) => {
-      if (t?.kind === 'task' && t.id) openSheet({ kind: 'task', id: t.id });
-      else if (t?.kind === 'event' && t.id) openSheet({ kind: 'editEvent', eventId: t.id });
+      if (t?.kind === 'task' && t.id) openSheet({ kind: 'info', entity: 'task', id: t.id });
+      else if (t?.kind === 'event' && t.id) openSheet({ kind: 'info', entity: 'event', id: t.id });
       else if (t?.kind === 'settings') setTab('tasks');
     };
     const p = new URLSearchParams(location.search);
@@ -186,6 +187,7 @@ function Shell() {
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>
       {ready && <AccountChoice />}
+      <RunningMiniBar />
       <ContextMenuHost />
       <UndoHost />
       <AlertHost />

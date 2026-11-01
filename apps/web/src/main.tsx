@@ -8,6 +8,7 @@ import './styles/timeline.css';
 import './styles/home.css';
 import './styles/phase2.css';
 import './styles/glass.css';
+import './styles/editor.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

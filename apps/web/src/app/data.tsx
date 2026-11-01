@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { expandAll, hiddenAfterEnd, normalizeCalendar, normalizeEvent, normalizeTask, type CalEvent, type Calendar, type Employer, type Occurrence, type Subject, type Subtask, type Task } from '@my-time/domain';
+import { expandAll, hiddenAfterEnd, normalizeCalendar, normalizeEvent, normalizeTask, type CalEvent, type Calendar, type Employer, type Occurrence, type StudioType, type Subject, type Subtask, type Task, type TaskCategory } from '@my-time/domain';
 import { db, DEFAULT_SETTINGS, type AppSettings, type LocalNotice } from '../data/db';
 import { repo } from '../data/repo';
 import { syncEngine, type SyncStatus } from '../sync/engine';
@@ -20,6 +20,8 @@ export interface AppData {
   /** 期間指定復元で一時的に表示している記録（`${entity}:${id}`） */
   restoredKeys: Set<string>;
   localNotices: LocalNotice[];
+  categories: TaskCategory[];
+  studioTypes: StudioType[];
 }
 
 const EMPTY: Subtask[] = [];
@@ -40,6 +42,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const outboxPending = useLiveQuery(() => db.outbox.where('synced').equals(0).count(), []);
   const restored = useLiveQuery(() => db.meta.filter((m) => m.restoredSessionId != null).toArray(), []);
   const localNotices = useLiveQuery(() => db.notices.toArray(), []);
+  const categories = useLiveQuery(() => db.categories.orderBy('order').toArray(), []);
+  const studioTypes = useLiveQuery(() => db.studioTypes.toArray(), []);
   // 取り消し待ちの削除は画面から隠す（確定前）
   const pendingDel = usePendingDeletes();
 
@@ -64,8 +68,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       outboxPending: outboxPending ?? 0,
       restoredKeys: new Set((restored ?? []).map((m) => m.key)),
       localNotices: localNotices ?? [],
+      categories: categories ?? [],
+      studioTypes: studioTypes ?? [],
     };
-  }, [tasks, events, calendars, subtasks, subjects, employers, settingsRow, outboxPending, restored, localNotices, pendingDel]);
+  }, [tasks, events, calendars, subtasks, subjects, employers, settingsRow, outboxPending, restored, localNotices, pendingDel, categories, studioTypes]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
