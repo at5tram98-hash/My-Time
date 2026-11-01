@@ -189,3 +189,10 @@ input, textarea, select { font: inherit; color: inherit; }
   .tab-icon svg { width: 21px; height: 21px; }
   .tab-label { font-size: 12px; }
 }
+
+/* 幅の狭い画面：左右の余白を詰め、ラベルは固定の小さめの大きさ（文字拡大時も5タブを1行に収める） */
+@media (max-width: 360px) {
+  :root { --tabbar-side: 8px; }
+  .tabbar-glass { --pad: 4px; }
+  .tab-label { font-size: 10px; letter-spacing: -0.02em; }
+}
