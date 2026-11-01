@@ -82,9 +82,11 @@ interface Props {
   className?: string;
   style?: CSSProperties;
   label?: string;
+  /** 選択中：形の内側を淡く塗る（Q09） */
+  filled?: boolean;
 }
 
-export function Icon({ name, size = 24, strokeWidth = 1.9, className, style, label }: Props) {
+export function Icon({ name, size = 24, strokeWidth = 1.9, className, style, label, filled }: Props) {
   const common = {
     width: size,
     height: size,
@@ -113,6 +115,7 @@ export function Icon({ name, size = 24, strokeWidth = 1.9, className, style, lab
   }
   return (
     <svg {...common}>
+      {filled && <path d={PATHS[name]} fill="currentColor" fillOpacity={0.2} stroke="none" />}
       <path d={PATHS[name]} />
     </svg>
   );

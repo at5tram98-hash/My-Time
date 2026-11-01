@@ -9,10 +9,14 @@ import { Onboarding } from '../features/onboarding/Onboarding';
 import { AccountChoice } from '../features/onboarding/AccountChoice';
 import { takeFlash } from '../data/db';
 import { DataProvider, useAttention, useData, useSync } from './data';
-import { UIProvider, useUI, type TabId, useUIActions } from './ui';
+import { UIProvider, useUI, useUIActions } from './ui';
 import { SheetHost } from './SheetHost';
 import { AlertHost, ToastHost } from '../components/Overlays';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
+import { TabBar, type TabDef } from '../ui/TabBar';
+import { ContextMenuHost } from '../ui/ContextMenu';
+import { UndoHost } from '../ui/undo';
+import { installGlassPointer } from '../ui/gestures';
 import { HomeScreen } from '../features/home/HomeScreen';
 import { CalendarScreen } from '../features/calendar/CalendarScreen';
 import { TasksScreen } from '../features/tasks/TasksScreen';
@@ -26,7 +30,7 @@ const Tasks = memo(TasksScreen);
 const Analysis = memo(AnalysisScreen);
 const Other = memo(OtherScreen);
 
-const TABS: { id: TabId; label: string; icon: IconName }[] = [
+const TABS: TabDef[] = [
   { id: 'home', label: 'ホーム', icon: 'house' },
   { id: 'calendar', label: 'カレンダー', icon: 'calendar' },
   { id: 'tasks', label: 'タスク', icon: 'checklist' },
@@ -159,6 +163,7 @@ function Shell() {
   const { tab, setTab } = useUI();
   const { ready, settings } = useData();
   const attention = useAttention();
+  useEffect(() => installGlassPointer(), []);
   return (
     <div className="app-shell">
       <AppearanceSync />
@@ -177,26 +182,12 @@ function Shell() {
           <div className="loading" aria-busy="true" />
         )}
       </main>
-      <nav className="tabbar" aria-label="タブ" data-testid="tabbar">
-        <div className="tabbar-glass" style={{ ['--tab-index' as string]: Math.max(0, TABS.findIndex((t) => t.id === tab)) }}>
-          <span className="tab-capsule" aria-hidden />
-          {TABS.map((t) => {
-            const on = tab === t.id;
-            return (
-              <button key={t.id} type="button" className={`tab ${on ? 'active' : ''}`} aria-current={on ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
-                <span className="tab-icon">
-                  <Icon name={t.icon} size={24} strokeWidth={on ? 2.2 : 1.8} />
-                  {t.id === 'other' && attention > 0 && <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span>}
-                </span>
-                <span className="tab-label">{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <TabBar tabs={TABS} current={tab} onSelect={setTab} badge={(t) => (t === 'other' && attention > 0 ? <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span> : null)} />
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>
       {ready && <AccountChoice />}
+      <ContextMenuHost />
+      <UndoHost />
       <AlertHost />
       <ToastHost />
     </div>

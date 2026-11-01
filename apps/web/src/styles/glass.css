@@ -1,0 +1,103 @@
+/* ===== Liquid Glass 風の共通素材（Q01–03・Q100）=====
+ * 素材は操作部品（ボタン・セグメント・ツールバー・検索・メニュー・シートの枠）だけに使う。予定・タスクのカードには使わない（Q02）。
+ * 状態：静止 / 押下（data-press）/ 指の位置の光（--gx,--gy）/ 無効。Web での近似であり、ネイティブの屈折は再現しない。
+ */
+.glass {
+  position: relative; isolation: isolate;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: inset 0 0 0 0.5px var(--glass-edge), inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 var(--glass-lowlight), var(--glass-shadow-sm);
+}
+.glass::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: linear-gradient(180deg, var(--glass-sheen) 0%, transparent 52%);
+}
+/* 触れた位置からにじむ光と、縁の明るさ（押下中だけ） */
+.glass-i::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(120px circle at var(--gx, 50%) var(--gy, 50%), var(--glass-touch), transparent 70%);
+  box-shadow: inset 0 0 0 1px var(--glass-touch-edge);
+  transition: opacity 220ms var(--spring);
+}
+.glass-i[data-press]::after { opacity: 1; transition-duration: 60ms; }
+.glass-i { transition: transform 160ms var(--spring); }
+.glass-i[data-press] { transform: scale(0.96); }
+.glass-i:disabled { opacity: 0.4; }
+
+/* 独立したガラスの丸ボタン（上部の操作・Q05）。1つずつ分かれ、位置は変えない */
+.gbtn {
+  width: 38px; height: 38px; min-width: 38px; border-radius: 19px;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--label);
+}
+.gbtn.tint { color: var(--blue); }
+.gbtn-wrap { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+/* 青いガラスの主ボタン（保存・開始） */
+.gbtn-primary {
+  height: 36px; padding: 0 16px; border-radius: 18px; font-weight: 600; color: #fff;
+  background: color-mix(in srgb, var(--blue) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 0.5px rgba(255, 255, 255, 0.25), 0 4px 14px color-mix(in srgb, var(--blue) 30%, transparent);
+}
+.gbtn-primary.big { height: 52px; border-radius: 26px; font-size: 1.12rem; width: 100%; }
+.gbtn-primary.green { background: color-mix(in srgb, var(--green) 90%, transparent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 14px color-mix(in srgb, var(--green) 30%, transparent); }
+.gbtn-primary.red { background: color-mix(in srgb, var(--red) 90%, transparent); }
+.gbtn-primary[aria-busy='true'] { opacity: 0.75; }
+/* ガラスのピル（表示切替など） */
+.gpill { height: 36px; padding: 0 14px; border-radius: 18px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--blue); font-size: 0.94rem; }
+
+/* 非ガラスの独立トグル（タスクの「すべて / 実行 / 確認」Q33） */
+.chip-toggle { display: flex; gap: 8px; }
+.chip-toggle button {
+  flex: 1; min-height: 36px; border-radius: 10px; font-weight: 600; font-size: 0.92rem;
+  background: var(--fill); color: var(--label); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background-color 180ms, color 180ms;
+}
+.chip-toggle button[aria-pressed='true'] { background: var(--blue); color: #fff; }
+
+/* 小さな解除可能チップ（絞り込み条件 Q40） */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px 0 10px; border-radius: 14px; background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); font-size: 0.84rem; font-weight: 600; }
+.chip button { width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 11px; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--glass-solid); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--glass-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .glass { background: var(--glass-solid); box-shadow: inset 0 0 0 1px var(--label-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glass-i, .glass-i[data-press] { transform: none; transition: none; }
+}
+
+/* ===== 長押しの浮遊カード＋近接メニュー（Q07・Q99）===== */
+.ctx-layer { position: fixed; inset: 0; z-index: 95; }
+.ctx-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.18); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+:root[data-theme='dark'] .ctx-dim { background: rgba(0, 0, 0, 0.4); }
+.ctx-preview { position: absolute; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1); background: var(--bg-elev); pointer-events: none; }
+.ctx-menu { position: absolute; width: 250px; border-radius: 14px; overflow: hidden; padding: 0; }
+.ctx-item { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; font-size: 1rem; text-align: left; }
+.ctx-item + .ctx-item { border-top: 0.5px solid var(--separator); }
+.ctx-item.destructive { color: var(--red); }
+.ctx-item:active { background: var(--fill); }
+.ctx-sep { height: 8px; background: color-mix(in srgb, var(--label) 6%, transparent); }
+
+/* ===== スワイプ操作の行（Q39・Q98）===== */
+.swipe-row { position: relative; overflow: hidden; touch-action: pan-y; }
+.swipe-actions { position: absolute; top: 0; bottom: 0; display: flex; }
+.swipe-actions.right { right: 0; }
+.swipe-actions.left { left: 0; }
+.swipe-act { height: 100%; min-width: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #fff; font-size: 0.78rem; font-weight: 600; }
+.swipe-act.blue { background: var(--blue); }
+.swipe-act.red { background: var(--red); }
+.swipe-act.green { background: var(--green); }
+.swipe-act.gray { background: var(--gray); }
+.swipe-content { position: relative; background: var(--bg-elev); will-change: transform; }
+
+/* 削除の取り消しバー（タブバーの上） */
+.undo-layer { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-space) + 4px); display: flex; justify-content: center; pointer-events: none; z-index: 120; padding: 0 16px; }
+.undo-bar { pointer-events: auto; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 8px 0 16px; border-radius: 24px; max-width: 460px; width: 100%; }
+.undo-text { flex: 1; min-width: 0; font-size: 0.94rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-btn { height: 36px; padding: 0 14px; border-radius: 18px; color: var(--blue); font-weight: 700; }

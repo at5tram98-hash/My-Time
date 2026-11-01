@@ -4,6 +4,7 @@ import { expandAll, hiddenAfterEnd, normalizeCalendar, normalizeEvent, normalize
 import { db, DEFAULT_SETTINGS, type AppSettings, type LocalNotice } from '../data/db';
 import { repo } from '../data/repo';
 import { syncEngine, type SyncStatus } from '../sync/engine';
+import { usePendingDeletes } from '../ui/undo';
 
 export interface AppData {
   ready: boolean;
@@ -39,18 +40,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const outboxPending = useLiveQuery(() => db.outbox.where('synced').equals(0).count(), []);
   const restored = useLiveQuery(() => db.meta.filter((m) => m.restoredSessionId != null).toArray(), []);
   const localNotices = useLiveQuery(() => db.notices.toArray(), []);
+  // 取り消し待ちの削除は画面から隠す（確定前）
+  const pendingDel = usePendingDeletes();
 
   const value = useMemo<AppData>(() => {
     const byTask = new Map<string, Subtask[]>();
     for (const s of subtasks ?? []) {
+      if (pendingDel.has(`subtask:${s.id}`)) continue;
       const arr = byTask.get(s.taskId);
       if (arr) arr.push(s);
       else byTask.set(s.taskId, [s]);
     }
     return {
       ready: tasks !== undefined && events !== undefined && calendars !== undefined && settingsRow !== undefined,
-      tasks: tasks ?? [],
-      events: events ?? [],
+      tasks: pendingDel.size ? (tasks ?? []).filter((t) => !pendingDel.has(`task:${t.id}`)) : tasks ?? [],
+      events: pendingDel.size ? (events ?? []).filter((e) => !pendingDel.has(`event:${e.id}`)) : events ?? [],
       calendars: calendars ?? [],
       calendarById: new Map((calendars ?? []).map((c) => [c.id, c])),
       subtasksByTask: byTask,
@@ -61,7 +65,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       restoredKeys: new Set((restored ?? []).map((m) => m.key)),
       localNotices: localNotices ?? [],
     };
-  }, [tasks, events, calendars, subtasks, subjects, employers, settingsRow, outboxPending, restored, localNotices]);
+  }, [tasks, events, calendars, subtasks, subjects, employers, settingsRow, outboxPending, restored, localNotices, pendingDel]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
