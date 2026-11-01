@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { formatDayLabel, formatHm } from '@my-time/domain';
 import { useAttention, useData, useSync } from '../../app/data';
 import { useUIActions } from '../../app/ui';
-import { Group, Toggle } from '../../components/Controls';
+import { Group } from '../../components/Controls';
 import { Icon, type IconName } from '../../components/Icon';
 import { MenuButton } from '../../components/Menu';
 import { db, type TextSizePref, type ThemePref } from '../../data/db';
@@ -16,11 +16,13 @@ import { BackupsPage, NoticesPage, RestorePage } from './DataPages';
 import { DeviceTransferPage } from './DeviceTransferPage';
 import { NotificationSettings } from './NotificationSettings';
 import { LimitsPage } from './LimitsPage';
+import { AdvancedPage, CategoriesPage, TimeTreePage } from './MorePages';
+import { StudioPage } from '../studio/StudioPage';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits' | 'categories' | 'studio' | 'timetree' | 'advanced';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
   root: 'その他',
@@ -33,6 +35,10 @@ const PAGE_TITLE: Record<OtherPage, string> = {
   notices: 'お知らせ',
   notifications: '通知',
   limits: '使える範囲と制限',
+  categories: 'タスクの種類とカテゴリー',
+  studio: 'Create Studio',
+  timetree: 'TimeTree の読み込み',
+  advanced: '詳細設定',
 };
 
 export function SettingIcon({ name, color }: { name: IconName; color: string }) {
@@ -98,7 +104,7 @@ function syncLabel(s: ReturnType<typeof useSync>, pending: number): string {
 }
 
 export function OtherScreen() {
-  const { settings, tasks, events, outboxPending } = useData();
+  const { settings, outboxPending } = useData();
   const { openSheet, confirm, showToast } = useUIActions();
   const sync = useSync();
   const attention = useAttention();
@@ -127,41 +133,39 @@ export function OtherScreen() {
       <header className="nav large">
         <div className="nav-row"><h1 className="large-title">その他</h1></div>
       </header>
-      <div className="scroll-body">
-        <Group header="アカウントと同期" footer={sync.phase === 'unavailable' ? 'この配信先にはサーバーがないため、データはこの端末内だけに保存されます。' : 'データはまず端末に保存され、オンラインのときにクラウドへ送られます。オフラインでも使えます。'}>
-          <div className="row" data-testid="account-row">
-            <SettingIcon name="person" color="#8E8E93" />
-            <span className="row-label">Googleアカウント</span>
-            {loggedIn ? (
-              <span className="row-value">{sync.me!.user.email}</span>
-            ) : sync.phase === 'notConfigured' || sync.phase === 'unavailable' ? (
-              <span className="row-value muted">未設定</span>
-            ) : (
-              <a className="pill-btn primary small" href={api.loginUrl()} data-testid="login">Googleでログイン</a>
-            )}
-          </div>
-          <div className="row" data-testid="data-area">
-            <SettingIcon name="stack" color="#5AC8FA" />
-            <span className="row-label">表示中のデータ</span>
-            <span className="row-value muted">{area ? (loggedIn ? 'このアカウント' : 'アカウント（再ログインが必要）') : 'この端末（ログインなし）'}</span>
-          </div>
-          <button type="button" className="row row-button" onClick={() => void syncEngine.syncNow()} disabled={!loggedIn} data-testid="sync-row">
-            <SettingIcon name="cloud" color="#34C759" />
-            <span className="row-label">同期</span>
-            <span className="row-value muted" data-testid="sync-status">{syncLabel(sync, outboxPending)}</span>
-          </button>
-          <NavRow icon="stack" color="#FF9500" label="Driveバックアップ" value={loggedIn ? (sync.me!.drive.connected ? '毎日22時' : '未接続') : '—'} onClick={() => setPage('backups')} testId="nav-backups" />
-          <NavRow icon="stack" color="#30B0C7" label="データの移行" onClick={() => setPage('transfer')} testId="nav-transfer" />
-          <NavRow icon="undo" color="#5856D6" label="期間指定の復元" onClick={() => setPage('restore')} testId="nav-restore" />
-          <NavRow icon="bell" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
-          {loggedIn && (
-            <button type="button" className="row row-button destructive" onClick={() => void logout()} data-testid="logout">
-              <span className="row-label">ログアウト</span>
+      <div className="scroll-body other-body">
+        {/* アカウント（Q52・Q57）：状態はカードで、細かい項目はリストで */}
+        <section className="status-card" data-testid="account-row">
+          <span className="avatar" aria-hidden><Icon name="person" size={26} /></span>
+          <div className="status-main">
+            <div className="status-title">{loggedIn ? sync.me!.user.email : 'Googleアカウント'}</div>
+            <button type="button" className={`sync-chip ${sync.phase === 'error' ? 'err' : ''}`} onClick={() => openSheet({ kind: 'syncStatus' })} data-testid="sync-row">
+              <Icon name={sync.phase === 'error' ? 'warning' : 'cloud'} size={14} strokeWidth={2.2} />
+              <span data-testid="sync-status">{syncLabel(sync, outboxPending)}</span>
             </button>
+            <div className="muted small" data-testid="data-area">{area ? (loggedIn ? 'このアカウントのデータを表示中' : 'アカウントのデータ（再ログインが必要）') : 'この端末のデータを表示中（ログインなし）'}</div>
+          </div>
+          {loggedIn ? (
+            <button type="button" className="gpill glass glass-i danger" onClick={() => void logout()} data-testid="logout">ログアウト</button>
+          ) : sync.phase === 'notConfigured' || sync.phase === 'unavailable' ? (
+            <span className="muted small">未設定</span>
+          ) : (
+            <a className="gbtn-primary glass-i" href={api.loginUrl()} data-testid="login">ログイン</a>
           )}
+        </section>
+        {(sync.phase === 'unavailable') && <p className="note-text">この配信先にはサーバーがないため、データはこの端末内だけに保存されます。</p>}
+
+        <Group header="カレンダーとタスクの管理">
+          <NavRow icon="calendar" color="#FF3B30" label="カレンダー" onClick={() => setPage('calendars')} testId="nav-calendars" />
+          <NavRow icon="tray" color="#A2845E" label="タスクの種類とカテゴリー" onClick={() => setPage('categories')} testId="nav-categories" />
+          <NavRow icon="sparkles" color="#BF5AF2" label="Create Studio" value="自分専用の種類" onClick={() => setPage('studio')} testId="nav-studio" />
+          <NavRow icon="graduation" color="#5E5CE6" label="授業の科目" onClick={() => setPage('subjects')} testId="nav-subjects" />
+          <NavRow icon="briefcase" color="#FF9F0A" label="勤務先" onClick={() => setPage('employers')} testId="nav-employers" />
         </Group>
 
-        <Group header="表示">
+        <Group header="通知と外観">
+          <NavRow icon="bell" color="#FF2D55" label="通知" onClick={() => setPage('notifications')} testId="nav-notifications" />
+          <NavRow icon="tray" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
           <div className="row">
             <SettingIcon name="paint" color="#5856D6" />
             <span className="row-label">外観</span>
@@ -178,81 +182,27 @@ export function OtherScreen() {
               <Icon name="arrowUpDown" size={14} />
             </MenuButton>
           </div>
-          <div className="row">
-            <SettingIcon name="daysN" color="#30B0C7" />
-            <span className="row-label">カレンダーを広げたときの日数</span>
-            <MenuButton label="広げたときの日数" className="row-menu-btn" items={Array.from({ length: 7 }, (_, i) => ({ label: `${i + 1}日`, checked: settings.expandedDays === i + 1, onSelect: () => void repo.updateSettings({ expandedDays: i + 1 }) }))}>
-              {settings.expandedDays}日
-              <Icon name="arrowUpDown" size={14} />
-            </MenuButton>
-          </div>
         </Group>
 
-        <Group header="カレンダー">
-          <NavRow icon="calendar" color="#FF3B30" label="カレンダー" onClick={() => setPage('calendars')} testId="nav-calendars" />
-          <NavRow icon="checklist" color="#5E5CE6" label="授業の科目" onClick={() => setPage('subjects')} testId="nav-subjects" />
-          <NavRow icon="flag" color="#FF9F0A" label="勤務先" onClick={() => setPage('employers')} testId="nav-employers" />
-        </Group>
-
-        <Group header="タスクと分析" footer="一時停止したタスク・自動開始/終了（AR）したタスクは、初期設定では分析の集計に含めません。授業・アルバイトの予定は常に対象外です。">
-          <div className="row">
-            <label className="row-label" htmlFor="opt-paused">一時停止したタスクを含める</label>
-            <Toggle id="opt-paused" label="一時停止したタスクを含める" checked={settings.analysisIncludePaused} onChange={(v) => void repo.updateSettings({ analysisIncludePaused: v })} />
-          </div>
-          <div className="row">
-            <label className="row-label" htmlFor="opt-auto">自動開始・終了したタスクを含める</label>
-            <Toggle id="opt-auto" label="自動開始・終了したタスクを含める" checked={settings.analysisIncludeAuto} onChange={(v) => void repo.updateSettings({ analysisIncludeAuto: v })} />
-          </div>
-          <div className="row">
-            <span className="row-label">新しいタスクの通知</span>
-            <MenuButton label="新しいタスクの通知" className="row-menu-btn" items={[null, 0, 5, 10, 30, 60].map((m) => ({ label: m == null ? 'なし' : m === 0 ? '開始時刻' : `${m}分前`, checked: settings.defaultNotifyMinutes === m, onSelect: () => void repo.updateSettings({ defaultNotifyMinutes: m }) }))}>
-              {settings.defaultNotifyMinutes == null ? 'なし' : settings.defaultNotifyMinutes === 0 ? '開始時刻' : `${settings.defaultNotifyMinutes}分前`}
-              <Icon name="arrowUpDown" size={14} />
-            </MenuButton>
-          </div>
-        </Group>
-
-        <Group header="通知">
-          <NavRow icon="bell" color="#FF2D55" label="通知" onClick={() => setPage('notifications')} testId="nav-notifications" />
-        </Group>
-
-        <Group header="入力・操作" footer="予定やタスクの時間が重なったときに提案する空き時間の範囲です。既存の予定は自動では動かしません。">
-          <div className="row">
-            <span className="row-label">提案する時間帯</span>
-            <MenuButton label="提案の開始時刻" className="row-menu-btn" items={[5, 6, 7, 8, 9, 10].map((h) => ({ label: `${h}時から`, checked: settings.suggestFromHour === h, onSelect: () => void repo.updateSettings({ suggestFromHour: h }) }))}>
-              {settings.suggestFromHour}時
-            </MenuButton>
-            〜
-            <MenuButton label="提案の終了時刻" className="row-menu-btn" items={[20, 21, 22, 23, 24].map((h) => ({ label: `${h}時まで`, checked: settings.suggestToHour === h, onSelect: () => void repo.updateSettings({ suggestToHour: h }) }))}>
-              {settings.suggestToHour}時
-            </MenuButton>
-          </div>
-          <div className="row">
-            <span className="row-label">提案の刻み</span>
-            <MenuButton label="提案の刻み" className="row-menu-btn" items={([15, 30, 60] as const).map((m) => ({ label: `${m}分`, checked: settings.suggestStepMin === m, onSelect: () => void repo.updateSettings({ suggestStepMin: m }) }))}>
-              {settings.suggestStepMin}分
-              <Icon name="arrowUpDown" size={14} />
-            </MenuButton>
-          </div>
-        </Group>
-
-        <Group header="共有・連携" footer="TimeTree の公式APIは提供が終了しているため、書き出したカレンダーファイル（.ics）またはテキストから取り込みます。">
+        <Group header="データとバックアップ" footer={`30日後の期限削除：${sync.config?.retentionMode === 'on' ? '有効' : sync.config?.retentionMode === 'dry-run' ? '試運転（削除しない）' : '停止中（自動では削除しません）'}`}>
+          <NavRow icon="cloud" color="#FF9500" label="Driveバックアップ" value={loggedIn ? (sync.me!.drive.connected ? '毎日22時' : '未接続') : '—'} onClick={() => setPage('backups')} testId="nav-backups" />
+          <NavRow icon="undo" color="#5856D6" label="期間指定の復元" onClick={() => setPage('restore')} testId="nav-restore" />
+          <NavRow icon="stack" color="#30B0C7" label="データの移行" onClick={() => setPage('transfer')} testId="nav-transfer" />
           <NavRow icon="link" color="#34C759" label="予定の取り込み（TimeTreeなど）" onClick={() => openSheet({ kind: 'import' })} testId="nav-import" />
+          <NavRow icon="calendar" color="#34C759" label="TimeTree の読み込み設定" onClick={() => setPage('timetree')} testId="nav-timetree" />
         </Group>
 
-        <Group header="この端末のデータ">
-          <div className="row"><span className="row-label">タスク</span><span className="row-value" data-testid="count-tasks">{tasks.length}件</span></div>
-          <div className="row"><span className="row-label">予定</span><span className="row-value">{events.length}件</span></div>
-          <div className="row"><span className="row-label">操作ログ</span><span className="row-value">{logCount}件</span></div>
-          <div className="row"><span className="row-label">未送信の変更</span><span className="row-value">{outboxPending}件</span></div>
+        <Group header="詳細設定">
+          <NavRow icon="chart" color="#8E8E93" label="分析・入力・端末のデータ" onClick={() => setPage('advanced')} testId="nav-advanced" />
         </Group>
 
-        <Group header="このアプリについて">
+        <Group header="ヘルプとアプリ情報">
           <NavRow icon="info" color="#8E8E93" label="使える範囲と制限" onClick={() => setPage('limits')} testId="nav-limits" />
-          <div className="row"><span className="row-label">バージョン</span><span className="row-value muted">0.3.0</span></div>
           <button type="button" className="row row-button" onClick={() => void repo.updateSettings({ onboarded: false })}>
-            <span className="row-label tint">はじめの設定をもう一度見る</span>
+            <SettingIcon name="play" color="#0A84FF" />
+            <span className="row-label">はじめの設定をもう一度見る</span>
           </button>
+          <div className="row"><SettingIcon name="info" color="#C7C7CC" /><span className="row-label">バージョン</span><span className="row-value muted">0.4.0</span></div>
         </Group>
       </div>
 
@@ -268,6 +218,10 @@ export function OtherScreen() {
             {page === 'transfer' && <DeviceTransferPage />}
             {page === 'notifications' && <NotificationSettings />}
             {page === 'limits' && <LimitsPage />}
+            {page === 'categories' && <CategoriesPage />}
+            {page === 'studio' && <StudioPage />}
+            {page === 'timetree' && <TimeTreePage />}
+            {page === 'advanced' && <AdvancedPage logCount={logCount} />}
           </SubPage>
         )}
       </AnimatePresence>

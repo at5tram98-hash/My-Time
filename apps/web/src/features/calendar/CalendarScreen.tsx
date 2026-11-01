@@ -47,7 +47,8 @@ export function CalendarScreen() {
       <header className="nav">
         {/* 月の表示をタップすると小型の月カレンダー（Q24） */}
         <button type="button" className="nav-title-left month-btn" onClick={() => setMonthPick(true)} aria-label={`${formatMonth(view === 'week' ? startDay : calDate)}。タップで日付を選ぶ`} data-testid="cal-month">
-          {formatMonth(view === 'week' ? startDay : calDate)}<Icon name="chevronDown" size={14} strokeWidth={2.4} />
+          <span className="month-year">{new Date(view === 'week' ? startDay : calDate).getFullYear()}年</span>
+          <span className="month-name">{new Date(view === 'week' ? startDay : calDate).getMonth() + 1}月<Icon name="chevronDown" size={14} strokeWidth={2.6} /></span>
         </button>
         <div className="nav-actions gap">
           <button type="button" className="gpill glass glass-i" disabled={isTodayVisible} onClick={() => setCalDate(Date.now())}>今日</button>

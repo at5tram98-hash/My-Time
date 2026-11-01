@@ -151,3 +151,17 @@
 .minibar-time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green); }
 :root[data-minibar] .app-main .scroll-body, :root[data-minibar] .app-main .tl-scroll { padding-bottom: calc(var(--tabbar-space) + 60px); }
 :root[data-minibar] .undo-layer { bottom: calc(var(--tabbar-space) + 62px); }
+.month-btn { flex-direction: column; align-items: flex-start; gap: 0; }
+.month-year { font-size: 0.78rem; font-weight: 600; color: var(--red); }
+.month-name { font-size: 1.5rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+
+/* ===== その他（Q52）===== */
+.other-body { padding-top: 4px; }
+.status-card { display: flex; align-items: center; gap: 12px; margin: 4px 16px 18px; padding: 16px; border-radius: 18px; background: var(--bg-elev); box-shadow: 0 1px 0 var(--hairline); }
+.avatar { width: 48px; height: 48px; border-radius: 24px; display: grid; place-items: center; background: linear-gradient(180deg, #8e8e93, #636366); color: #fff; flex: none; }
+.status-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.status-title { font-weight: 700; font-size: 1.04rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px; border-radius: 14px; background: var(--fill); font-size: 0.8rem; color: var(--label-2); }
+.sync-chip.err { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); font-weight: 700; }
+.other .group { margin-bottom: 22px; }
+.cal-chip.small { width: 26px; height: 26px; border-radius: 7px; }

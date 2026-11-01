@@ -101,6 +101,26 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
       detents={['medium', 'large']}
       testId="task-info"
     >
+      <Popup open={progressOpen} title="進捗" onClose={() => setProgressOpen(false)} onDone={subtasks.length || st ? undefined : () => { setProgressOpen(false); void repo.recordProgress(task.id, manual / 100); }} testId="progress-popup">
+        {subtasks.length > 0 ? <p className="note-text">サブタスクの完了数から自動で計算します（{subtasks.filter((x) => x.done).length}/{subtasks.length}）。</p>
+          : st ? <p className="note-text">「{st.name}」の項目から計算します。値は編集画面の「{st.name}」で変更できます。{sp?.label}</p>
+          : (<>
+            <p className="note-text">実績の進捗を入力します（リングをなぞって変える操作はありません）。</p>
+            <div className="prog-input"><input type="range" min={0} max={100} step={5} value={manual} onChange={(e) => setManual(Number(e.target.value))} aria-label="進捗（%）" data-testid="progress-range" /><span className="run-elapsed">{manual}%</span></div>
+          </>)}
+      </Popup>
+      <div className="detail-hero">
+        {task.kind === 'check' && <TaskIcon task={task} now={now} size={56} />}
+        <h2 id="task-detail-title" className="detail-title">{task.title}</h2>
+        <div className="detail-meta">
+          {task.kind === 'check' ? '確認タスク' : st ? st.name : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実行タスク'}
+          {task.category ? ` · ${task.category}` : ''}
+          {task.flagged && <span className="flag-mark" role="img" aria-label="フラグ付き"><Icon name="flag" size={15} strokeWidth={2.2} /></span>}
+          {task.priority > 0 && <span className="prio-mark" role="img" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{Array.from({ length: task.priority }, (_, i) => <Icon key={i} name="exclamation" size={14} strokeWidth={2.6} />)}</span>}
+          {task.autoReserved && <span className="ar-badge">AR</span>}
+        </div>
+        {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
+      </div>
       {/* 実行パネル（Q35・Q92）：名前と進捗リング → 見積／経過 → 大きな主ボタン */}
       {task.kind === 'do' && (
         <div className="run-panel" data-testid="run-panel">
@@ -127,26 +147,6 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
           )}
         </div>
       )}
-      <Popup open={progressOpen} title="進捗" onClose={() => setProgressOpen(false)} onDone={subtasks.length || st ? undefined : () => { setProgressOpen(false); void repo.recordProgress(task.id, manual / 100); }} testId="progress-popup">
-        {subtasks.length > 0 ? <p className="note-text">サブタスクの完了数から自動で計算します（{subtasks.filter((x) => x.done).length}/{subtasks.length}）。</p>
-          : st ? <p className="note-text">「{st.name}」の項目から計算します。値は編集画面の「{st.name}」で変更できます。{sp?.label}</p>
-          : (<>
-            <p className="note-text">実績の進捗を入力します（リングをなぞって変える操作はありません）。</p>
-            <div className="prog-input"><input type="range" min={0} max={100} step={5} value={manual} onChange={(e) => setManual(Number(e.target.value))} aria-label="進捗（%）" data-testid="progress-range" /><span className="run-elapsed">{manual}%</span></div>
-          </>)}
-      </Popup>
-      <div className="detail-hero">
-        {task.kind === 'check' && <TaskIcon task={task} now={now} size={56} />}
-        <h2 id="task-detail-title" className="detail-title">{task.title}</h2>
-        <div className="detail-meta">
-          {task.kind === 'check' ? '確認タスク' : st ? st.name : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実行タスク'}
-          {task.category ? ` · ${task.category}` : ''}
-          {task.flagged && <span className="flag-mark" role="img" aria-label="フラグ付き"><Icon name="flag" size={15} strokeWidth={2.2} /></span>}
-          {task.priority > 0 && <span className="prio-mark" role="img" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{Array.from({ length: task.priority }, (_, i) => <Icon key={i} name="exclamation" size={14} strokeWidth={2.6} />)}</span>}
-          {task.autoReserved && <span className="ar-badge">AR</span>}
-        </div>
-        {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
-      </div>
 
       {task.kind === 'check' && (
         <div className="action-row">
