@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { formatHm } from '@my-time/domain';
+import { addDays, formatHm, startOfDay } from '@my-time/domain';
 import { useData, useSync } from '../../app/data';
 import { useUIActions } from '../../app/ui';
 import { formatFull } from '../../app/format';
@@ -8,6 +8,8 @@ import { Icon } from '../../components/Icon';
 import { db } from '../../data/db';
 import { api, type BackupItem, type RestoreSession } from '../../sync/api';
 import { syncEngine } from '../../sync/engine';
+import { SwipeRow } from '../../ui/SwipeRow';
+import { Popup } from '../../ui/Popup';
 
 function NeedsLogin() {
   const sync = useSync();
@@ -38,6 +40,7 @@ export function BackupsPage() {
   const [items, setItems] = useState<BackupItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [drilling, setDrilling] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BackupItem | null>(null);
   const load = useCallback(() => {
     if (!sync.me) return;
     api.backups().then((r) => setItems(r.items)).catch((e: Error) => showToast(e.message));
@@ -107,7 +110,7 @@ export function BackupsPage() {
           return (
             <div className="row backup-row" key={b.id} data-testid="backup-row">
               <span className={`status-dot ${b.status}`} aria-label={b.status === 'verified' ? '確認済み' : b.status === 'failed' ? '失敗' : '処理中'} />
-              <span className="row-label">
+              <span className="row-label row-tap" role="button" tabIndex={0} onClick={() => setPreview(b)} onKeyDown={(e) => { if (e.key === 'Enter') setPreview(b); }} data-testid="backup-open">
                 {b.kind === 'daily' ? '日次' : 'アーカイブ'} · {formatFull(b.created_at)}
                 <span className="sub-label">{b.status === 'failed' ? `失敗：${backupErrorLabel(b.error)}` : `予定${counts.event ?? 0}・タスク${counts.task ?? 0} ${kb(b.bytes)}`}</span>
               </span>
@@ -125,6 +128,42 @@ export function BackupsPage() {
           );
         })}
       </Group>
+      <Popup open={!!preview} title="バックアップの内容" onClose={() => setPreview(null)} testId="backup-preview">
+        {preview && <BackupPreview b={preview} />}
+        {preview?.status === 'verified' && (
+          <div className="popup-actions">
+            <button type="button" className="gpill glass glass-i" disabled={drilling != null} onClick={() => void drill(preview)}>{drilling === preview.id ? '確認中…' : '復元試験（データは変えません）'}</button>
+          </div>
+        )}
+      </Popup>
+    </>
+  );
+}
+
+const ENTITY_LABEL: Record<string, string> = { event: '予定', task: 'タスク', subtask: 'サブタスク', calendar: 'カレンダー', subject: '授業の科目', employer: '勤務先', category: 'カテゴリー', studioType: 'Studioの種類', settings: '設定', operationLog: '操作ログ', tombstones: '削除の印' };
+
+/** バックアップ履歴の中身の確認（Q58）。件数・大きさ・検証の状態だけを表示し、データは変更しない */
+function BackupPreview({ b }: { b: BackupItem }) {
+  const counts = b.counts ? (JSON.parse(b.counts) as Record<string, number>) : {};
+  const rows = Object.entries(counts).filter(([, n]) => typeof n === 'number');
+  return (
+    <>
+      <div className="group"><div className="group-body">
+        <div className="row"><span className="row-label">種類</span><span className="row-value">{b.kind === 'daily' ? '日次バックアップ' : 'アーカイブ（期限削除の保管）'}</span></div>
+        <div className="row"><span className="row-label">保存日時</span><span className="row-value">{formatFull(b.created_at)}</span></div>
+        <div className="row"><span className="row-label">状態</span><span className="row-value">{b.status === 'verified' ? `読み戻し確認済み${b.verified_at ? `（${formatHm(b.verified_at)}）` : ''}` : b.status === 'failed' ? `失敗：${backupErrorLabel(b.error)}` : '処理中'}</span></div>
+        {b.range_from != null && b.range_to != null && <div className="row"><span className="row-label">対象期間</span><span className="row-value">{formatFull(b.range_from)}〜{formatFull(b.range_to)}</span></div>}
+        <div className="row"><span className="row-label">大きさ</span><span className="row-value">{kb(b.bytes)}</span></div>
+        {b.drive_file_name && <div className="row"><span className="row-label">ファイル名</span><span className="row-value small wrap">{b.drive_file_name}</span></div>}
+      </div></div>
+      {rows.length > 0 && (
+        <>
+          <div className="group-header">含まれるデータ</div>
+          <div className="group"><div className="group-body" data-testid="backup-counts">
+            {rows.map(([k, n]) => <div className="row" key={k}><span className="row-label">{ENTITY_LABEL[k] ?? k}</span><span className="row-value">{n}件</span></div>)}
+          </div></div>
+        </>
+      )}
     </>
   );
 }
@@ -210,32 +249,59 @@ export function RestorePage() {
 export function NoticesPage() {
   const sync = useSync();
   const { localNotices } = useData();
+  const { showToast } = useUIActions();
+  // 開いた時点で未読だったもの（既読処理の後も、この画面を見ている間は青い点を残す）
+  const [unread] = useState(() => new Set(sync.notices.filter((n) => !n.read_at).map((n) => n.id)));
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const items = [
-    ...localNotices.map((n) => ({ id: `l-${n.key}`, level: n.level, title: n.title, body: n.body, at: n.createdAt, resolved: n.resolvedAt != null, local: n.key })),
+    ...localNotices.map((n) => ({ id: `l-${n.key}`, level: n.level, title: n.title, body: n.body, at: n.createdAt, resolved: n.resolvedAt != null, local: n.key as string | null })),
     ...sync.notices.map((n) => ({ id: n.id, level: n.level, title: n.title, body: n.body, at: n.created_at, resolved: n.resolved_at != null, local: null as string | null })),
-  ].sort((a, b) => Number(a.resolved) - Number(b.resolved) || b.at - a.at);
+  ].filter((n) => !hidden.has(n.id)).sort((a, b) => Number(a.resolved) - Number(b.resolved) || b.at - a.at);
   useEffect(() => {
     for (const n of sync.notices) if (!n.read_at) void api.readNotice(n.id).catch(() => undefined);
   }, [sync.notices]);
+  const today = startOfDay(Date.now());
+  const groups: [string, typeof items][] = [
+    ['今日', items.filter((n) => n.at >= today)],
+    ['昨日', items.filter((n) => n.at < today && n.at >= addDays(today, -1))],
+    ['それ以前', items.filter((n) => n.at < addDays(today, -1))],
+  ];
+  const canDelete = (n: (typeof items)[number]) => n.resolved || n.level === 'info';
+  const remove = async (n: (typeof items)[number]) => {
+    setHidden((h) => new Set(h).add(n.id));
+    try {
+      if (n.local) await db.notices.delete(n.local);
+      else await api.deleteNotice(n.id);
+    } catch {
+      setHidden((h) => { const x = new Set(h); x.delete(n.id); return x; });
+      showToast('削除できませんでした（オンラインで再度お試しください）');
+    }
+  };
+  if (items.length === 0) return <div className="empty-state" data-testid="notices-empty"><Icon name="tray" size={36} /><strong>お知らせはありません</strong><span>同期・バックアップの結果や、対応が必要なことをここでお知らせします。</span></div>;
   return (
-    <Group>
-      {items.length === 0 && <div className="row"><span className="row-label muted">お知らせはありません</span></div>}
-      {items.map((n) => (
-        <div className={`notice-row ${n.resolved ? 'resolved' : ''}`} key={n.id} data-testid="notice-row">
-          <span className={`notice-icon ${n.level}`} aria-hidden><Icon name={n.level === 'info' ? 'info' : 'warning'} size={16} strokeWidth={2.2} /></span>
-          <div className="notice-text">
-            <div className="notice-title">{n.title}{n.resolved && <span className="sub-label"> · 解決済み</span>}</div>
-            <div className="notice-body">{n.body}</div>
-            <div className="notice-time">{formatFull(n.at)}</div>
-          </div>
-          {n.local && n.resolved && (
-            <button type="button" className="icon-btn subtle" aria-label="消去" onClick={() => void db.notices.delete(n.local!)}>
-              <Icon name="close" size={14} />
-            </button>
-          )}
+    <>
+      {groups.filter(([, xs]) => xs.length).map(([label, xs]) => (
+        <div key={label} data-testid={`notice-group-${label}`}>
+          <div className="group-header">{label}</div>
+          <div className="group"><div className="group-body">
+            {xs.map((n) => {
+              const row = (
+                <div className={`notice-row ${n.resolved ? 'resolved' : ''}`} data-testid="notice-row">
+                  <span className={`notice-icon ${n.level}`} aria-hidden><Icon name={n.level === 'info' ? 'info' : 'warning'} size={16} strokeWidth={2.2} /></span>
+                  <div className="notice-text">
+                    <div className="notice-title">{unread.has(n.id) && <span className="unread-dot" aria-label="未読" />}{n.title}{n.resolved && <span className="sub-label"> · 解決済み</span>}</div>
+                    <div className="notice-body">{n.body}</div>
+                    <div className="notice-time">{label === 'それ以前' ? formatFull(n.at) : formatHm(n.at)}</div>
+                  </div>
+                  {canDelete(n) && <button type="button" className="icon-btn subtle" aria-label={`「${n.title}」を削除`} onClick={() => void remove(n)}><Icon name="close" size={14} /></button>}
+                </div>
+              );
+              return canDelete(n) ? <SwipeRow key={n.id} testId={`notice-swipe-${n.id}`} right={[{ label: '削除', icon: 'trash', color: 'red', onAct: () => void remove(n) }]}>{row}</SwipeRow> : <div key={n.id}>{row}</div>;
+            })}
+          </div></div>
         </div>
       ))}
-      {sync.lastSuccessAt && <div className="group-footer">最終同期 {formatHm(sync.lastSuccessAt)}</div>}
-    </Group>
+      <p className="note-text">解決済みとお知らせ（青）は左へスワイプで削除できます。対応が必要な警告は、解決すると消せるようになります。{sync.lastSuccessAt ? ` 最終同期 ${formatHm(sync.lastSuccessAt)}` : ''}</p>
+    </>
   );
 }

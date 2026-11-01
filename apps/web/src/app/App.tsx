@@ -109,6 +109,8 @@ function Background() {
     const p = new URLSearchParams(location.search);
     if (p.get('task')) open({ kind: 'task', id: p.get('task') });
     if (p.get('event')) open({ kind: 'event', id: p.get('event') });
+    // 再読み込みで同じ画面が開き直さないよう、通知から来たパラメータを消す
+    if (p.get('task') || p.get('event')) { p.delete('task'); p.delete('event'); history.replaceState(history.state, '', `${location.pathname}${p.size ? `?${p}` : ''}${location.hash}`); }
     const onMsg = (e: MessageEvent<{ type: string; target: { kind: string; id: string | null } | null }>) => e.data?.type === 'open' && open(e.data.target);
     navigator.serviceWorker?.addEventListener('message', onMsg);
     return () => navigator.serviceWorker?.removeEventListener('message', onMsg);

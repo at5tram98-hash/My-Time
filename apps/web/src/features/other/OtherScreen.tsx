@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { formatDayLabel, formatHm } from '@my-time/domain';
 import { useAttention, useData, useSync } from '../../app/data';
@@ -18,6 +18,7 @@ import { NotificationSettings } from './NotificationSettings';
 import { LimitsPage } from './LimitsPage';
 import { AdvancedPage, CategoriesPage, TimeTreePage } from './MorePages';
 import { StudioPage } from '../studio/StudioPage';
+import { useEdgeSwipeBack } from '../../ui/gestures';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
@@ -63,8 +64,12 @@ export function NavRow({ icon, color, label, value, onClick, badge, testId }: { 
 
 function SubPage({ title, onBack, children }: { title: string; onBack: () => void; children: ReactNode }) {
   const reduce = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  // 左端から右へスワイプで戻る（Q98）。指に追従し、離した位置で戻るか決める
+  useEdgeSwipeBack(ref, onBack, (p) => x.set(p * (ref.current?.clientWidth ?? 0)));
   return (
-    <motion.div className="subpage" initial={reduce ? { opacity: 0 } : { x: '100%' }} animate={reduce ? { opacity: 1 } : { x: 0 }} exit={reduce ? { opacity: 0 } : { x: '100%' }} transition={reduce ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 42 }}>
+    <motion.div ref={ref} className="subpage" style={{ translateX: x }} initial={reduce ? { opacity: 0 } : { x: '100%' }} animate={reduce ? { opacity: 1 } : { x: 0 }} exit={reduce ? { opacity: 0 } : { x: '100%' }} transition={reduce ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 42 }}>
       <header className="nav">
         <button type="button" className="back-btn" onClick={onBack} data-testid="back">
           <Icon name="chevronLeft" size={22} strokeWidth={2.4} />

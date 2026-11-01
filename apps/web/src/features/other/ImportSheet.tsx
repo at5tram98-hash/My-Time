@@ -16,20 +16,22 @@ type Choice = 'import' | 'edit' | 'skip';
  * 1件ずつ「取り込む / 編集 / スキップ」を選ぶ。同じ予定は取り込み元を優先して更新し、無関係な予定は上書きしない。
  */
 export function ImportSheet({ depth }: { depth: number }) {
-  const { events, calendars } = useData();
+  const { events, calendars, settings } = useData();
   const { closeSheet, showToast } = useUIActions();
   const fid = useId();
   const [mode, setMode] = useState<'text' | 'ics'>('text');
   const [text, setText] = useState('');
   const [owner, setOwner] = useState<'me' | 'partner'>('partner');
-  const [calendarId, setCalendarId] = useState(calendars[0]?.id ?? 'cal-general');
+  const [calendarId, setCalendarId] = useState(settings.timetreeDefaultCalendarId ?? calendars[0]?.id ?? 'cal-general');
+  const [done, setDone] = useState<{ added: number; updated: number; skipped: number } | null>(null);
   const [items, setItems] = useState<{ c: ImportCandidate; cls: ImportClass; choice: Choice }[] | null>(null);
   const [errors, setErrors] = useState<{ line: number; text: string }[]>([]);
 
   const analyze = (src: string, kind: 'text' | 'ics') => {
     const parsed = kind === 'ics' ? { items: parseICS(src, owner), errors: [] } : parseText(src, Date.now());
     setErrors(parsed.errors);
-    setItems(parsed.items.map((c) => ({ c, cls: classifyImport(c, events), choice: 'import' as Choice })));
+    // 「同じ予定は飛ばす」設定：変更のない同じ予定は最初からスキップにしておく（Q59）
+    setItems(parsed.items.map((c) => { const cls = classifyImport(c, events); return { c, cls, choice: (settings.timetreeAutoSkipDuplicates && cls.kind === 'same' && !cls.changed ? 'skip' : 'import') as Choice }; }));
   };
 
   const onFile = async (f: File | undefined) => {
@@ -44,15 +46,16 @@ export function ImportSheet({ depth }: { depth: number }) {
 
   const apply = async () => {
     if (!items) return;
-    let n = 0;
+    const r = { added: 0, updated: 0, skipped: 0 };
     for (const it of items) {
-      if (it.choice === 'skip') continue;
+      if (it.choice === 'skip') { r.skipped += 1; continue; }
       const c = { ...it.c, owner: mode === 'ics' ? owner : it.c.owner };
       await repo.importEvent(c, calendarId, mode === 'ics' ? 'ics' : 'text', it.cls.kind === 'same' ? it.cls.existing.id : null);
-      n += 1;
+      if (it.cls.kind === 'same') r.updated += 1; else r.added += 1;
     }
-    showToast(`${n}件を取り込みました`);
-    closeSheet();
+    showToast(`${r.added + r.updated}件を取り込みました`);
+    setItems(null);
+    setDone(r);
   };
 
   return (
@@ -60,10 +63,24 @@ export function ImportSheet({ depth }: { depth: number }) {
       onClose={closeSheet}
       depth={depth}
       title="予定の取り込み"
-      left={<button type="button" className="bar-btn" onClick={closeSheet}>キャンセル</button>}
-      right={items ? <button type="button" className="bar-btn bold" disabled={!counts.go} onClick={() => void apply()} data-testid="apply-import">{counts.go}件を取り込む</button> : undefined}
+      left={done ? undefined : items ? <button type="button" className="bar-btn" onClick={() => setItems(null)} data-testid="import-back">戻る</button> : <button type="button" className="bar-btn" onClick={closeSheet}>キャンセル</button>}
+      right={done ? <button type="button" className="gbtn-primary glass-i" onClick={closeSheet} data-testid="import-close">完了</button> : items ? <button type="button" className="gbtn-primary glass-i" disabled={!counts.go} onClick={() => void apply()} data-testid="apply-import">{counts.go}件を取り込む</button> : undefined}
     >
-      {!items ? (
+      {/* 段階表示（Q59）：1 読み込み → 2 確認 → 3 完了 */}
+      <ol className="steps" aria-label="取り込みの手順" data-testid="import-steps">
+        {['読み込み', '確認', '完了'].map((l, i) => {
+          const cur = done ? 2 : items ? 1 : 0;
+          return <li key={l} className={i < cur ? 'past' : i === cur ? 'now' : ''} aria-current={i === cur ? 'step' : undefined}><span className="step-n">{i < cur ? '✓' : i + 1}</span>{l}</li>;
+        })}
+      </ol>
+      {done ? (
+        <div className="empty-state" data-testid="import-done">
+          <Icon name="check" size={36} />
+          <strong>取り込みが完了しました</strong>
+          <span>追加 {done.added}件・更新 {done.updated}件・スキップ {done.skipped}件</span>
+          <span>{calendars.find((c) => c.id === calendarId)?.name ?? ''}に入れました。取り込んだ予定はカレンダーから編集・削除できます。</span>
+        </div>
+      ) : !items ? (
         <>
           <div className="form-center">
             <Segmented label="取り込み方法" value={mode} onChange={setMode} options={[{ value: 'text', label: 'テキスト' }, { value: 'ics', label: 'カレンダーファイル' }]} />
@@ -113,6 +130,12 @@ export function ImportSheet({ depth }: { depth: number }) {
         </>
       ) : (
         <>
+          <div className="import-summary" data-testid="import-summary">
+            <span><b>{items.filter((i) => i.cls.kind !== 'same').length}</b>新規</span>
+            <span><b>{items.filter((i) => i.cls.kind === 'same').length}</b>取り込み済み</span>
+            <span><b>{items.filter((i) => i.cls.kind === 'overlap').length}</b>時間が重なる</span>
+            <span><b>{items.filter((i) => i.choice === 'skip').length}</b>スキップ</span>
+          </div>
           {errors.length > 0 && <p className="form-error">読み取れなかった行：{errors.map((e) => e.line).join('、')}行目</p>}
           <div className="import-list" data-testid="import-list">
             {items.map((it, i) => (

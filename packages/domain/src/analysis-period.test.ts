@@ -30,3 +30,16 @@ describe('分析の期間集計（v2）', () => {
     expect(w.buckets.reduce((s, b) => s + b.workedMs, 0)).toBe(3 * HOUR);
   });
 });
+
+import { makeEvent, MINUTE, planNotices } from './index';
+describe('複数の通知（v2）', () => {
+  it('タスクと予定の extra.notifies をそれぞれ1回ずつ送る', () => {
+    const start = fromWall(2026, 10, 5, 10);
+    const t = makeTask({ title: 'T', kind: 'do', plannedStart: start, plannedEnd: start + HOUR, extra: { notifies: [10, 60] } }, start - 2 * HOUR);
+    const e = makeEvent({ title: 'E', calendarId: 'c', start, end: start + HOUR, extra: { notifies: [0, 1440] } }, start - 2 * HOUR);
+    expect(planNotices([t], [e], [], start - 60 * MINUTE, 5 * MINUTE).map((n) => n.body)).toEqual(['1時間後に開始します']);
+    expect(planNotices([t], [e], [], start - 10 * MINUTE, 5 * MINUTE).map((n) => n.key)).toEqual([`remind:${t.id}:${start}:10`]);
+    expect(planNotices([t], [e], [], start, 5 * MINUTE).map((n) => n.title)).toEqual(['E']);
+    expect(planNotices([t], [e], [], start - 1440 * MINUTE, 5 * MINUTE)[0]?.body).toContain('1日後');
+  });
+});

@@ -41,6 +41,12 @@ api.post('/notifications/:id/read', async (c) => {
   return c.json({ ok: true });
 });
 
+/** お知らせの削除（利用者の操作）。未解決の警告・エラーは消さない（対応が必要なため） */
+api.delete('/notifications/:id', async (c) => {
+  const r = await c.env.DB.prepare("DELETE FROM notifications WHERE id = ? AND user_id = ? AND (resolved_at IS NOT NULL OR level = 'info')").bind(c.req.param('id'), c.get('userId')).run();
+  return c.json({ ok: true, deleted: r.meta.changes ?? 0 });
+});
+
 api.get('/backups', async (c) => {
   const rows = await c.env.DB.prepare("SELECT id, kind, created_at, drive_file_name, bytes, counts, status, verified_at, error, range_from, range_to FROM backup_manifests WHERE user_id = ? AND status != 'deleted' ORDER BY created_at DESC LIMIT 200").bind(c.get('userId')).all();
   const pending = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM restoration_sessions WHERE user_id = ? AND ended_at IS NULL').bind(c.get('userId')).first<{ n: number }>();

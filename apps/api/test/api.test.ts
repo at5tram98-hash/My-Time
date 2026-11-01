@@ -342,6 +342,12 @@ describe('Driveバックアップ（読み戻し検証で初めて成功）', ()
     expect((await runDailyBackup(E, userId, NOW + 1)).ok).toBe(false);
     const notes = await (await api(cookie, '/notifications')).json<{ items: { title: string }[] }>();
     expect(notes.items.map((n) => n.title)).toEqual(['Googleドライブの権限がありません']);
+    // 未解決の警告は削除できない（対応が必要なため）
+    const id = (await (await api(cookie, '/notifications')).json<{ items: { id: string }[] }>()).items[0]!.id;
+    expect(await (await api(cookie, `/notifications/${id}`, { method: 'DELETE' })).json()).toMatchObject({ deleted: 0 });
+    await E.DB.prepare('UPDATE notifications SET resolved_at = ? WHERE id = ?').bind(NOW, id).run();
+    expect(await (await api(cookie, `/notifications/${id}`, { method: 'DELETE' })).json()).toMatchObject({ deleted: 1 });
+    expect((await (await api(cookie, '/notifications')).json<{ items: unknown[] }>()).items).toHaveLength(0);
   });
 
   it('容量が少なければ警告', async () => {

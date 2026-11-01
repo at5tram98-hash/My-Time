@@ -207,3 +207,17 @@ button.tile:active { transform: scale(0.98); }
 .mb-label { font-size: 0.66rem; color: var(--label-2); }
 .detail-big { display: flex; flex-direction: column; gap: 2px; padding: 4px 4px 0; }
 .detail-big strong { font-family: var(--font-rounded); font-size: 2.4rem; font-variant-numeric: tabular-nums; }
+.unread-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-right: 6px; vertical-align: 2px; }
+.popup-actions { display: flex; justify-content: center; padding: 12px 0 4px; }
+.row-tap { cursor: pointer; }
+.row-value.wrap { white-space: normal; word-break: break-all; text-align: right; max-width: 65%; }
+.steps { display: flex; justify-content: center; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; font-size: 0.78rem; color: var(--label-2); }
+.steps li { display: flex; align-items: center; gap: 4px; }
+.steps li + li::before { content: ''; width: 18px; height: 1px; background: var(--separator); margin-right: 4px; }
+.step-n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); font-weight: 700; font-size: 0.72rem; }
+.steps li.now { color: var(--label); font-weight: 600; }
+.steps li.now .step-n { background: var(--blue); color: #fff; }
+.steps li.past .step-n { background: var(--green); color: #fff; }
+.import-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; text-align: center; font-size: 0.72rem; color: var(--label-2); }
+.import-summary span { background: var(--bg-elev); border-radius: 10px; padding: 8px 2px; display: flex; flex-direction: column; gap: 2px; }
+.import-summary b { font-size: 1.15rem; color: var(--label); font-family: var(--font-rounded); }

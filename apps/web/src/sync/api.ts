@@ -99,6 +99,7 @@ export const api = {
   restoreDrill: (id: string) => call<RestoreDrill>(`/backups/${id}/drill`, { method: 'POST' }),
   notices: () => call<{ items: ServerNotice[] }>('/notifications'),
   readNotice: (id: string) => call(`/notifications/${id}/read`, { method: 'POST' }),
+  deleteNotice: (id: string) => call<{ ok: boolean; deleted: number }>(`/notifications/${id}`, { method: 'DELETE' }),
   backups: () => call<{ items: BackupItem[]; activeRestorations: number }>('/backups'),
   runBackup: () => call<{ ok: boolean; error?: string }>('/backups/run', { method: 'POST' }),
   deleteBackup: (id: string) => call(`/backups/${id}`, { method: 'DELETE' }),
