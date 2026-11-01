@@ -104,7 +104,7 @@ Phase 2 の実装と本番接続は完了している。Phase 2 の受け入れ�
 |---|---|
 | `pnpm typecheck` / `pnpm lint` / `pnpm build` | 成功 |
 | `pnpm test` | Web・domain 101件、API 41件、すべて成功（基準は 90＋41） |
-| `pnpm e2e --grep-invert 画面キャプチャ` | 120件成功・4件スキップ・失敗 0（Chromium＋WebKit、基準は 102/4） |
+| `pnpm e2e --grep-invert 画面キャプチャ` | 120件成功・4件スキップ・失敗 0（Chromium＋WebKit、基準は 102/4）。CI run 41285171838 でも同じ件数で成功（stack 6件も成功） |
 | `pnpm e2e:stack` | 6件成功 |
 | `test:realdrive`（合成ファイル） | 3件成功（実ファイルでは未実施） |
 
