@@ -301,7 +301,8 @@ test.describe('時間軸', () => {
     await openApp(page);
     await seed(page, { events: [event({ id: 'm1', title: '移動する予定', start: at(13), end: at(14) })] });
     const block = page.getByTestId('tl-event:m1');
-    await block.scrollIntoViewIfNeeded();
+    // 画面の中ほどへ（端まで運ぶと Phase 3 の端の自動スクロールが働くため、ここでは小さな移動だけを確かめる）
+    await block.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     const c = await center(block);
     // 時間軸は 52px/時 → 50分 ≒ 43px 下へ。15分刻みで 13:45 になる
     await mouseLongPressDrag(page, { x: c.x, y: c.y }, { x: c.x, y: c.y + (52 * 50) / 60 });

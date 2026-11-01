@@ -286,6 +286,11 @@ export function Timeline(props: Props) {
       const d = dragRef.current;
       const el = scrollRef.current;
       if (!d?.active || !el) return;
+      // 静止した長押し（端の近くの予定を掴んだだけ）では流さない。指を動かして端へ運んだときだけ
+      if (Math.hypot(d.lastX - d.startX, d.lastY - d.startY) < 12) {
+        edgeRaf.current = requestAnimationFrame(step);
+        return;
+      }
       const rect = el.getBoundingClientRect();
       const bar = document.querySelector('.tabbar-glass')?.getBoundingClientRect();
       const bottom = bar && bar.top < rect.bottom && bar.top > rect.top ? bar.top : rect.bottom;

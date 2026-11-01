@@ -78,7 +78,7 @@ export function Onboarding() {
           card(
             'My Time へようこそ',
             <>
-              <div className="ob-hero" aria-hidden><Icon name="stopwatch" size={44} strokeWidth={1.7} /></div>
+              <img className="ob-hero" src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width={88} height={88} />
               <p>予定とタスクをひとつの画面で。やることの進み具合を、長押しのひと動作で記録できます。</p>
             </>,
             <button type="button" className="ob-primary" onClick={next} data-testid="ob-next">はじめる</button>,

@@ -125,7 +125,7 @@
 .ob-title { font-size: 1.9rem; font-weight: 700; margin: 12px 0 14px; }
 .ob-body { flex: 1; overflow-y: auto; font-size: 1.02rem; line-height: 1.6; color: var(--label); }
 .ob-body p { margin: 0 0 12px; }
-.ob-hero { width: 88px; height: 88px; margin: 24px auto; border-radius: 22px; display: grid; place-items: center; color: #fff; background: linear-gradient(180deg, #3b9bff, #0060df); box-shadow: 0 8px 24px rgba(0, 96, 223, 0.25); }
+.ob-hero { display: block; width: 88px; height: 88px; margin: 24px auto; border-radius: 22px; box-shadow: 0 8px 24px rgba(0, 96, 223, 0.25); }
 .ob-ok { display: flex; align-items: center; gap: 6px; }
 .ob-actions { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 .ob-primary { height: 52px; border-radius: 14px; background: var(--blue); color: #fff; font-weight: 600; font-size: 1.06rem; display: grid; place-items: center; text-decoration: none; }
