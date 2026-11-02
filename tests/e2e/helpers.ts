@@ -150,8 +150,18 @@ export async function pickTime(page: Page, buttonTestId: string, hh: number, mm:
   const w = page.getByTestId('time-wheel');
   await expect(w).toBeVisible();
   if (mm % 5 !== 0 && (await w.getByRole('button', { name: '1分刻みにする' }).count())) await w.getByRole('button', { name: '1分刻みにする' }).click();
-  await w.getByRole('listbox', { name: '時' }).getByRole('option', { name: String(hh).padStart(2, '0'), exact: true }).click();
-  await w.getByRole('listbox', { name: '分' }).getByRole('option', { name: String(mm).padStart(2, '0'), exact: true }).click();
+  // ホイールは実際の操作と同じくスクロールで選ぶ（スクロール吸着のあるホイールでは、見えない行のクリックが安定しないため）
+  const spin = async (name: string, v: number) => {
+    await w.getByRole('listbox', { name }).evaluate((el, label) => {
+      const opts = [...el.querySelectorAll('[role="option"]')];
+      const i = opts.findIndex((o) => o.textContent === label);
+      el.scrollTop = i * 40;
+      el.dispatchEvent(new Event('scroll'));
+    }, String(v).padStart(2, '0'));
+    await expect(w.getByRole('listbox', { name }).getByRole('option', { name: String(v).padStart(2, '0'), exact: true })).toHaveAttribute('aria-selected', 'true');
+  };
+  await spin('時', hh);
+  await spin('分', mm);
   await expect(w.getByTestId('time-wheel-value')).toHaveText(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
   await w.getByRole('button', { name: '完了' }).click();
   await expect(w).toHaveCount(0);
@@ -173,4 +183,17 @@ export async function openNewTask(page: Page) {
 export async function openNewEvent(page: Page) {
   await openNewTask(page);
   await page.getByTestId('editor-mode-event').click();
+}
+
+/** 日付ピッカーで年月日を選んで「完了」 */
+export async function pickDate(page: Page, buttonTestId: string, y: number, m: number, d: number) {
+  await page.getByTestId(buttonTestId).click();
+  const p = page.getByTestId('date-picker');
+  await expect(p).toBeVisible();
+  await p.getByTestId('dp-ym').click();
+  await p.getByRole('group', { name: '年と月' }).getByRole('button', { name: String(y), exact: true }).click();
+  await p.getByRole('group', { name: '年と月' }).getByRole('button', { name: `${m}月`, exact: true }).click();
+  await p.getByTestId(`dp-day-${d}`).click();
+  await p.getByRole('button', { name: '完了' }).click();
+  await expect(p).toHaveCount(0);
 }

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { at, center, event, openApp, openNewTask, pickTime, readStore, saveEditor, seed, task, touchDrag } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openNewTask, pickTime, readStore, saveEditor, seed, task, touchDrag } from './helpers';
 
 /** UI/UX v2（Q01〜Q111）の主な操作の回帰テスト */
 
@@ -169,5 +169,66 @@ test.describe('UI/UX v2：分析・お知らせ', () => {
     await page.getByTestId('tab-other').click();
     await page.getByTestId('nav-notices').click();
     await expect(page.getByTestId('notices-empty')).toBeVisible();
+  });
+});
+
+test.describe('UI/UX v2：時間軸の作成と伸縮', () => {
+  test('空白を長押しして下へなぞると、その範囲で予定の作成画面が開く', async ({ page }) => {
+    await openApp(page);
+    await seed(page, { events: [event({ id: 'ref', title: '目印', start: at(15), end: at(16) })] });
+    const ref = page.getByTestId('tl-event:ref');
+    await ref.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const b = (await ref.boundingBox())!;
+    const hour = b.height + 2; // ブロックは高さから2px引いて描画
+    const from = { x: b.x + b.width / 2, y: b.y + hour * 2 + 4 }; // 17:00 付近の空白
+    await mouseLongPressDrag(page, from, { x: from.x, y: from.y + hour * 1.5 }, 600, 10);
+    await expect(page.getByTestId('tl-create-ghost')).toBeVisible();
+    await page.mouse.up();
+    await expect(page.getByTestId('editor-sheet')).toBeVisible();
+    await expect(page.getByTestId('editor-mode-event')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('editor-start-time')).toHaveText('17:00');
+    await expect(page.getByTestId('editor-end-time')).toHaveText('18:30');
+  });
+
+  test('予定の下端をつかんで伸ばすと、15分刻みで終了だけが変わる', async ({ page }) => {
+    await openApp(page);
+    await seed(page, { events: [event({ id: 'rs', title: '伸縮', start: at(15), end: at(16) })] });
+    const blk = page.getByTestId('tl-event:rs');
+    await blk.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const b = (await blk.boundingBox())!;
+    const hour = b.height + 2;
+    const from = { x: b.x + b.width / 2, y: b.y + b.height - 4 };
+    await mouseLongPressDrag(page, from, { x: from.x, y: from.y + hour / 2 }, 600, 10);
+    await page.mouse.up();
+    await expect.poll(async () => (await readStore(page, 'events')).find((e) => e.id === 'rs')?.end).toBe(at(16, 30));
+    expect((await readStore(page, 'events')).find((e) => e.id === 'rs')?.start).toBe(at(15));
+  });
+});
+
+test.describe('UI/UX v2：タスク一覧の絞り込み', () => {
+  test('今日／すべて、実行／確認で絞り込み、サブタスクを折りたたみできる', async ({ page }) => {
+    await openApp(page);
+    await seed(page, {
+      tasks: [
+        task({ id: 'td', title: '今日の実行', plannedStart: at(15), plannedEnd: at(16) }),
+        task({ id: 'nx', title: '来週の実行', plannedStart: at(15, 0, 8), plannedEnd: at(16, 0, 8) }),
+        task({ id: 'ck', title: '今日の確認', kind: 'check', checkAt: at(18) }),
+      ],
+      subtasks: [{ id: 's1', taskId: 'td', title: '下書き', done: false, completedAt: null, order: 0, createdAt: at(9), updatedAt: at(9) }],
+    });
+    await page.getByTestId('tab-tasks').click();
+    await page.getByTestId('scope-today').click();
+    await expect(page.getByTestId('swipe-td')).toBeVisible();
+    await expect(page.getByTestId('swipe-nx')).toHaveCount(0);
+    await page.getByTestId('scope-all').click();
+    await expect(page.getByTestId('swipe-nx')).toBeVisible();
+    await page.getByTestId('kind-check').click();
+    await expect(page.getByTestId('swipe-ck')).toBeVisible();
+    await expect(page.getByTestId('swipe-td')).toHaveCount(0);
+    await page.getByTestId('kind-all').click();
+    await page.getByTestId('subs-toggle-td').click();
+    await expect(page.getByText('下書き')).toBeVisible();
+    await page.getByTestId('subs-toggle-td').click();
+    await expect(page.getByText('下書き')).toHaveCount(0);
   });
 });
