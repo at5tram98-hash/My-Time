@@ -66,9 +66,19 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
   const [custom, setCustom] = useState('');
   const composing = useRef(false);
   const s = usePlaceSearch();
+  // 入力が止まって0.8秒たったら自動で検索（1秒に1回までの制限は検索側で守る）。変換中は待つ
+  const lastQ = useRef('');
   useEffect(() => {
     if (!open) return;
-    setP(place); setT(travel); setQ(''); setManualOpen(false); s.reset();
+    const k2 = q.trim();
+    if (k2.length < 2 || k2 === lastQ.current) return;
+    const id = setTimeout(() => { if (!composing.current) { lastQ.current = k2; void s.run(k2); } }, 800);
+    return () => clearTimeout(id);
+  }, [q, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const submit = () => { const k2 = q.trim(); if (!k2) return; lastQ.current = k2; void s.run(k2); };
+  useEffect(() => {
+    if (!open) return;
+    setP(place); setT(travel); setQ(''); lastQ.current = ''; setManualOpen(false); s.reset();
     setManual(place && place.lat == null ? place : { name: '', address: '', lat: null, lng: null });
     setCustom(travel != null && !TRAVEL.includes(travel) && travel !== 0 ? String(travel) : '');
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -89,21 +99,21 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
           <span className="place-current-text"><strong>{p.name}</strong>{p.address && <span className="muted small">{p.address}</span>}</span>
         </div>
       )}
-      <form className="csearch" role="search" onSubmit={(e) => { e.preventDefault(); if (!composing.current) void s.run(q); }}>
+      <form className="csearch" role="search" onSubmit={(e) => { e.preventDefault(); composing.current = false; submit(); }}>
         <Icon name="search" size={17} className="muted" />
         <input
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onCompositionStart={() => { composing.current = true; }}
-          onCompositionEnd={() => { composing.current = false; }}
+          onCompositionEnd={(e) => { composing.current = false; setQ(e.currentTarget.value); }}
           placeholder="場所や住所を検索"
           aria-label="場所や住所を検索"
           enterKeyHint="search"
           data-testid="place-query"
         />
         {q && <button type="button" className="csearch-clear" aria-label="入力を消す" onClick={() => { setQ(''); s.reset(); }}><Icon name="close" size={13} strokeWidth={2.6} /></button>}
-        <button type="submit" className="csearch-go" aria-label="検索" disabled={!k || s.state.kind === 'busy'} data-testid="place-search"><Icon name="search" size={16} strokeWidth={2.4} /></button>
+        <button type="submit" className="csearch-go" aria-label="検索" disabled={!k} data-testid="place-search"><Icon name="search" size={16} strokeWidth={2.4} /></button>
       </form>
 
       <AnimatePresence mode="popLayout" initial={false}>

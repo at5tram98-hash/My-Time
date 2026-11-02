@@ -4,30 +4,51 @@ import { at, center, event, openApp, openNewTask, pickDate, pickTime, readStore,
 /** 指示書 v3（C01〜C35・F1〜F6・R1〜R3）の受入条件の自動確認 */
 
 test.describe('v3 ホーム', () => {
-  test('C01：コンパクト表示は円だけ。円の列から上スワイプでカレンダー（ホームの日付を引き継ぐ）', async ({ page, browserName }) => {
+  test('C01/v3.1：一覧→円（Dynamic Island 風）→さらに上で非表示（線が残る）→線を下で円に戻る', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'CDP のタッチ入力が必要');
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'r1', title: '実行中', plannedStart: at(10), plannedEnd: at(11), status: 'running', intervals: [{ start: at(10), end: null }], actualStart: at(10) })] });
     const h = await center(page.getByTestId('split-handle'));
     await touchDrag(page, h, { x: h.x, y: h.y - 400 });
+    // 1回目の上スライドではまだ消えない（円が残る）
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
-    // 文字・つまみは描かない
+    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
     await expect(page.getByTestId('split-handle')).toHaveCount(0);
     await expect(page.getByTestId('floating-cards')).not.toContainText('実行中');
     await page.waitForTimeout(500);
     const row = await center(page.getByTestId('compact-row'));
     await touchDrag(page, { x: row.x, y: row.y }, { x: row.x, y: row.y - 60 }, { steps: 8 });
-    await expect(page.getByTestId('tab-calendar')).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('calendar-screen')).toHaveAttribute('data-view', 'day');
+    // 2回目で非表示。タブは移動せず、上に線が残る
+    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'true');
+    await expect(page.getByTestId('tab-home')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
+    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(1);
+    await page.waitForTimeout(400);
+    const line = await center(page.getByTestId('tasks-hidden-line'));
+    await touchDrag(page, line, { x: line.x, y: line.y + 60 }, { steps: 8 });
+    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
+    await expect(page.getByTestId('floating-cards')).toBeVisible();
   });
 
-  test('C01：対象がなければコンパクト表示は高さ0（空の帯を出さない）', async ({ page }) => {
+  test('C01：対象がなければコンパクト表示は帯を出さず、線だけ残す', async ({ page }) => {
     await openApp(page);
     await page.getByRole('button', { name: 'その他の操作' }).click();
     await page.getByRole('menuitem', { name: 'タスクをコンパクト表示' }).click();
     await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(1);
+    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
     await page.getByRole('button', { name: 'その他の操作' }).click();
     await expect(page.getByRole('menuitem', { name: 'タスク一覧を表示' })).toBeVisible();
+  });
+
+  test('v3.1：カレンダー選択から新しいカレンダーを追加できる', async ({ page }) => {
+    await openApp(page);
+    await page.getByTestId('tab-calendar').click();
+    await page.getByTestId('cal-filter').click();
+    await page.getByTestId('filter-add-calendar').click();
+    await page.getByTestId('filter-add-name').fill('ゼミ');
+    await page.getByTestId('filter-add-save').click();
+    await expect(page.getByTestId('calendar-filter')).toContainText('ゼミ');
+    await expect.poll(async () => (await readStore(page, 'calendars') as { name: string }[]).some((c) => c.name === 'ゼミ')).toBe(true);
   });
 
   test('C02：メニューに1日／2日の重複がなく、「日付を選択」で閏日へ移動できる', async ({ page }) => {

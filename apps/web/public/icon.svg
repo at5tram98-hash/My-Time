@@ -1,40 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- My Time（v2）：時間の輪（進捗）と時計の針。背景の上にガラスの円盤を重ねたリキッドグラス調 -->
+  <!-- My Time（v3.1）：iOS 純正アプリ調。白い面に、進捗リング（赤〜オレンジ）と時計の針だけ -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4FA8FF"/>
-      <stop offset="0.55" stop-color="#1E6BFF"/>
-      <stop offset="1" stop-color="#4B3FE0"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#ECECF1"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.9">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
-      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.10"/>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF9F0A"/>
+      <stop offset="0.55" stop-color="#FF453A"/>
+      <stop offset="1" stop-color="#FF2D55"/>
     </linearGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.15"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.45"/>
-    </linearGradient>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#C8FFB4"/>
-      <stop offset="1" stop-color="#4EDB5E"/>
-    </linearGradient>
-    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#0B1D6B" flood-opacity="0.35"/>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.14"/>
     </filter>
   </defs>
   <rect width="1024" height="1024" fill="url(#bg)"/>
-  <rect width="1024" height="1024" fill="url(#glow)"/>
-  <g filter="url(#sh)">
-    <circle cx="512" cy="512" r="330" fill="url(#glass)"/>
-    <circle cx="512" cy="512" r="328" fill="none" stroke="url(#rim)" stroke-width="5"/>
+  <!-- リングの溝 -->
+  <circle cx="512" cy="512" r="318" fill="none" stroke="#E3E3E8" stroke-width="92"/>
+  <!-- 進捗（約3/4）。12時から時計回り -->
+  <circle cx="512" cy="512" r="318" fill="none" stroke="url(#arc)" stroke-width="92" stroke-linecap="round"
+          stroke-dasharray="1498 1998" transform="rotate(-90 512 512)" filter="url(#soft)"/>
+  <!-- 針（10時10分ではなく、すっきり見える 12時と4時） -->
+  <g stroke="#1C1C1E" stroke-linecap="round" filter="url(#soft)">
+    <line x1="512" y1="512" x2="512" y2="300" stroke-width="40"/>
+    <line x1="512" y1="512" x2="640" y2="590" stroke-width="40"/>
   </g>
-  <circle cx="512" cy="512" r="262" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="58"/>
-  <path d="M512 250 A262 262 0 1 1 285 643" fill="none" stroke="url(#g)" stroke-width="58" stroke-linecap="round"/>
-  <path d="M512 372 V512 L604 572" fill="none" stroke="#ffffff" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="512" cy="512" r="26" fill="#ffffff"/>
+  <circle cx="512" cy="512" r="34" fill="#1C1C1E"/>
+  <circle cx="512" cy="512" r="14" fill="#FF453A"/>
 </svg>

@@ -46,6 +46,9 @@ export function HomeScreen() {
   const island = useMemo(() => islandOrder(tasks, now), [tasks, now]);
   // コンパクト表示は円だけ。対象がなければ空の帯を出さず高さ0（C01）
   const collapsedH = island.length ? CARDS_H : 0;
+  // 3段階：一覧 → コンパクト（円・Dynamic Island 風）→ 非表示（上に線だけ残す）。非表示はコンパクトからもう一度上へスライドしたときだけ
+  const [hidden, setHidden] = useState(false);
+  const hiddenRef = useRef(false);
   const [datePick, setDatePick] = useState(false);
 
   useLayoutEffect(() => {
@@ -63,7 +66,7 @@ export function HomeScreen() {
 
   useEffect(() => {
     // サイズ変更時は現在の状態の高さへ追従
-    if (!handleDrag.current) paneH.set(expandedRef.current ? collapsedH : normalH);
+    if (!handleDrag.current) paneH.set(hiddenRef.current ? 0 : expandedRef.current ? collapsedH : normalH);
   }, [normalH, collapsedH, paneH]);
 
   const listOpacity = useTransform(paneH, [collapsedH + 24, normalH * 0.75], [0, 1]);
@@ -73,10 +76,13 @@ export function HomeScreen() {
   // パネルの高さに応じて情報量を段階的に変える（文字を縮めるのではなく項目を省く：Q08・Q17）
   const [density, setDensity] = useState<'s' | 'm' | 'l'>('m');
 
-  const settle = (toExpanded: boolean) => {
+  const settle = (toExpanded: boolean, toHidden = false) => {
     expandedRef.current = toExpanded;
     setExpanded(toExpanded);
-    const target = toExpanded ? collapsedH : normalH;
+    // 円にするタスクがないときは、消えたままにせず線を残す
+    hiddenRef.current = toExpanded && (toHidden || collapsedH === 0);
+    setHidden(hiddenRef.current);
+    const target = hiddenRef.current ? 0 : toExpanded ? collapsedH : normalH;
     if (reduce) paneH.set(target);
     else void animate(paneH, target, SPRING);
   };
@@ -171,8 +177,33 @@ export function HomeScreen() {
     const nowT = performance.now();
     const first = g.samples.find((p) => nowT - p.t < 100) ?? g.samples[0]!;
     const v = (e.clientY - first.y) / Math.max(16, nowT - first.t);
-    if (dy <= -36 || v <= -0.65) return goCalendar();
+    // コンパクトからさらに上へ＝タスク表示を隠す（線だけ残す）。下へ＝一覧に戻す
+    if (dy <= -36 || v <= -0.65) return settle(true, true);
     if (dy >= 36 || v >= 0.65) return settle(false);
+  };
+
+  // ---- 非表示のときの線：下へスライド（またはタップ）でタスク表示を戻す ----
+  const hg = useRef<{ id: number; y: number; t: number } | null>(null);
+  const restore = () => settle(island.length > 0, false);
+  const onLineDown = (e: RPointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    hg.current = { id: e.pointerId, y: e.clientY, t: performance.now() };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+  const onLineMove = (e: RPointerEvent<HTMLButtonElement>) => {
+    const g = hg.current;
+    if (!g || g.id !== e.pointerId) return;
+    const dy = e.clientY - g.y;
+    if (dy > 0) paneH.set(Math.min(collapsedH || 40, dy * 0.6));
+  };
+  const onLineUp = (e: RPointerEvent<HTMLButtonElement>) => {
+    const g = hg.current;
+    hg.current = null;
+    if (!g || g.id !== e.pointerId) return;
+    const dy = e.clientY - g.y;
+    const v = dy / Math.max(16, performance.now() - g.t);
+    if (dy >= 24 || v >= 0.5) restore();
+    else settle(true, true);
   };
   const onCompactCancel = () => { if (cg.current?.vertical) gestureLock.release('split'); cg.current = null; };
 
@@ -195,12 +226,13 @@ export function HomeScreen() {
     // 1日／2日の切替はヘッダーのボタンだけ（二重にしない：C02）。代わりに日付を選ぶ
     { label: '日付を選択', icon: 'calendar', onSelect: () => setDatePick(true) },
     { label: expanded ? 'タスク一覧を表示' : 'タスクをコンパクト表示', icon: 'expand', onSelect: () => settle(!expanded) },
+    ...(hidden ? [] : [{ label: 'タスク表示を隠す', icon: 'expand' as const, onSelect: () => settle(true, true) }]),
     { label: 'カレンダーで表示', icon: 'calendar', onSelect: goCalendar },
   ];
   const hd = new Date(homeDate);
 
   return (
-    <div className="screen home" data-testid="home-screen" data-expanded={expanded}>
+    <div className="screen home" data-testid="home-screen" data-expanded={expanded} data-hidden={hidden}>
       <header className="nav home-nav">
         {/* 日付ヘッダー（Q19）：月を小さく、日と曜日を大きく。今日は赤い印、別の日はタップで今日へ */}
         <button type="button" className="date-head" onClick={() => !isToday && setHomeDate(startOfDay(Date.now()))} aria-label={`${formatDayLabel(homeDate)}${isToday ? '（今日）' : '。タップで今日へ'}`} data-testid="home-date">
@@ -248,12 +280,19 @@ export function HomeScreen() {
               </motion.div>
             </div>
           </motion.div>
-          <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive ? 'auto' : 'none' }} aria-hidden={!cardsInteractive}
+          <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive && !hidden ? 'auto' : 'none' }} aria-hidden={!cardsInteractive || hidden}
             onPointerDown={onCompactDown} onPointerMove={onCompactMove} onPointerUp={onCompactUp} onPointerCancel={onCompactCancel} data-testid="compact-row">
             <FloatingCards tasks={tasks} subtasksByTask={subtasksByTask} now={now} />
           </motion.div>
         </motion.section>
 
+        {hidden && (
+          <button type="button" className="hidden-line" aria-label="タスク表示を戻す（下へスライド）" data-testid="tasks-hidden-line"
+            onPointerDown={onLineDown} onPointerMove={onLineMove} onPointerUp={onLineUp} onPointerCancel={() => { hg.current = null; settle(true, true); }}
+            onClick={(e) => { if (e.detail === 0) restore(); }}>
+            <span className="hidden-line-bar" />
+          </button>
+        )}
         {/* コンパクト表示ではつまみ・線・その余白を描かない（C01）。戻すのは円の列の下スワイプかメニュー */}
         {!expanded && (
           <div

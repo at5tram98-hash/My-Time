@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { defaultCalendarIcon, expandEvent, formatHm, parseOccurrenceId, resolveItemIcon } from '@my-time/domain';
+import { useMemo, useState } from 'react';
+import { defaultCalendarIcon, expandEvent, newId, formatHm, parseOccurrenceId, resolveItemIcon } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
 import { EventBadge } from '../../components/Identity';
@@ -84,9 +84,25 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
 }
 
 /** カレンダーの表示・非表示（Q31）。管理・作成は「その他」へ */
+const CAL_COLORS = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF375F', '#FF453A', '#FF9F0A', '#FFD60A', '#30D158', '#64D2FF', '#8E8E93'];
+
 export function CalendarFilterSheet({ depth }: { depth: number }) {
   const { calendars } = useData();
-  const { closeSheet } = useUIActions();
+  const { closeSheet, showToast } = useUIActions();
+  // カレンダー選択からそのまま追加できる（v3.1）。名前と色だけ決め、細かい設定は「その他」の「カレンダー」で
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [color, setColor] = useState(CAL_COLORS[calendars.length % CAL_COLORS.length]!);
+  const add = async () => {
+    const n = name.trim();
+    if (!n) return showToast('名前を入力してください');
+    const now = Date.now();
+    try {
+      await repo.saveCalendar({ id: newId(), name: n, color, icon: 'calendar', kind: 'general', studioTypeId: null, visible: true, order: calendars.length, createdAt: now, updatedAt: now }, true);
+      setAdding(false); setName('');
+      showToast(`「${n}」を追加しました`);
+    } catch (e) { showToast(e instanceof Error ? e.message : '追加できませんでした'); }
+  };
   return (
     <Sheet onClose={closeSheet} depth={depth} detent="small" title="表示するカレンダー" right={<button type="button" className="bar-btn bold" onClick={closeSheet}>完了</button>} testId="calendar-filter">
       <div className="group"><div className="group-body">
@@ -97,7 +113,27 @@ export function CalendarFilterSheet({ depth }: { depth: number }) {
             <Toggle label={`${c.name}を表示`} checked={c.visible} onChange={(b) => void repo.saveCalendar({ ...c, visible: b }, false)} />
           </div>
         ))}
-      </div><div className="group-footer">カレンダーの追加・編集は「その他」の「カレンダー」で行えます。</div></div>
+        {!adding ? (
+          <button type="button" className="row row-button add-row" onClick={() => setAdding(true)} data-testid="filter-add-calendar">
+            <span className="cal-chip small add" aria-hidden><Icon name="plus" size={14} strokeWidth={2.6} /></span>
+            <span className="row-label tint-text">カレンダーを追加</span>
+          </button>
+        ) : (
+          <div className="row add-cal-form" data-testid="filter-add-form">
+            <div className="add-cal-top">
+              <span className="cal-chip small" style={{ background: color }} aria-hidden><Icon name="calendar" size={14} /></span>
+              <input className="row-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void add(); }} placeholder="カレンダー名" aria-label="カレンダー名" enterKeyHint="done" data-testid="filter-add-name" />
+            </div>
+            <div className="add-cal-colors" role="radiogroup" aria-label="色">
+              {CAL_COLORS.map((c) => <button key={c} type="button" role="radio" aria-checked={c === color} aria-label={c} className={`color-dot ${c === color ? 'on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} />)}
+            </div>
+            <div className="add-cal-actions">
+              <button type="button" className="gpill glass glass-i" onClick={() => { setAdding(false); setName(''); }}>キャンセル</button>
+              <button type="button" className="gpill glass glass-i tint" disabled={!name.trim()} onClick={() => void add()} data-testid="filter-add-save">追加</button>
+            </div>
+          </div>
+        )}
+      </div><div className="group-footer">種類や並び順の変更は「その他」の「カレンダー」で行えます。</div></div>
     </Sheet>
   );
 }

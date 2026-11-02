@@ -123,7 +123,10 @@ export class SyncEngine {
 
   private onOnline = () => void this.syncNow();
   private onVisible = () => {
-    if (document.visibilityState === 'visible') void this.syncNow();
+    if (document.visibilityState !== 'visible') return;
+    // iPhone のホーム画面アプリでは、ログイン画面から戻っても再読み込みされないことがある。未ログイン・エラー時は状態を確認し直す
+    if (this.status.phase === 'loggedOut' || this.status.phase === 'error' || this.status.phase === 'starting') void this.checkAccount();
+    else void this.syncNow();
   };
   private onLocalChange = () => {
     void this.refreshPending();
