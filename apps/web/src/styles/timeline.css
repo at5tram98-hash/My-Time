@@ -101,3 +101,11 @@
 .tl-block.event::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 18px; height: 3px; margin-left: -9px; border-radius: 2px; background: color-mix(in srgb, var(--c) 45%, transparent); opacity: 0; transition: opacity 160ms; }
 .tl-block.event:hover::after, .tl-block.event:focus-visible::after { opacity: 1; }
 .tl-ticon.ev { box-shadow: 0 0 0 1px rgba(255,255,255,0.5); }
+/* 狭い列（週表示など）では識別に必要なタイトルの先頭を優先し、図形と時刻を省く（R2）。全文は情報確認と読み上げ名で */
+.tl-block { container-type: inline-size; }
+.tl-title { overflow: hidden; }
+@container (max-width: 64px) {
+  .tl-ticon { display: none; }
+  .tl-time { display: none; }
+  .tl-title { font-size: 0.68rem; text-overflow: clip; letter-spacing: -0.02em; }
+}
