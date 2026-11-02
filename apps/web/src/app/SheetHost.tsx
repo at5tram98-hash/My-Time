@@ -36,7 +36,7 @@ export function SheetHost() {
           case 'info':
             return s.entity === 'event' ? <EventInfoSheet key={key} id={s.id} depth={i} /> : <TaskDetailSheet key={key} id={s.id} depth={i} />;
           case 'run':
-            return <TaskDetailSheet key={key} id={s.id} depth={i} />;
+            return <TaskDetailSheet key={key} id={s.id} depth={i} openProgress={s.progress} />;
           case 'edit':
             return <EditorSheet key={key} depth={i} mode={s.mode} {...(s.id ? { id: s.id } : {})} {...(s.defaults ? { defaults: s.defaults } : {})} />;
           case 'calendarFilter':

@@ -55,7 +55,8 @@ export function ContextMenuHost() {
     const rows = s.items.filter((i) => i !== 'separator').length;
     const menuH = rows * 46 + s.items.filter((i) => i === 'separator').length * 8;
     const pw = Math.min(s.rect.w, vw - 24);
-    const ph = Math.min(s.rect.h, Math.max(56, vh * 0.35));
+    // 短い予定でもタイトルと時刻の2行が切れない高さを確保（F6）。長いカードは画面の35%まで
+    const ph = Math.min(Math.max(s.rect.h, 76), Math.max(76, vh * 0.35));
     let px = Math.min(Math.max(12, s.rect.x), vw - 12 - pw);
     let py = s.rect.y;
     // メニューをカードの下に置けなければ上へ。どちらも足りなければカードを上へずらす（画面外へはみ出さない）
@@ -79,7 +80,7 @@ export function ContextMenuHost() {
           <motion.div
             className="ctx-preview"
             aria-hidden
-            style={{ left: layout.px, width: layout.pw, height: layout.ph }}
+            style={{ left: layout.px, width: layout.pw, minHeight: layout.ph, maxHeight: Math.max(layout.ph, 160) }}
             initial={{ top: s.rect.y, scale: 1 }}
             animate={{ top: layout.py, scale: reduce ? 1 : 1.03 }}
             transition={reduce ? { duration: 0 } : SPRING.pop}

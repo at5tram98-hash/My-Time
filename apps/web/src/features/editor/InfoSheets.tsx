@@ -2,13 +2,15 @@ import { useMemo } from 'react';
 import { defaultCalendarIcon, expandEvent, formatHm, parseOccurrenceId, resolveItemIcon } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
+import { EventBadge } from '../../components/Identity';
 import { Toggle } from '../../components/Controls';
 import { useData, useSync } from '../../app/data';
 import { useUIActions } from '../../app/ui';
 import { repo } from '../../data/repo';
 import { InfoExtras } from '../tasks/TaskDetailSheet';
 import { StudioValueView } from '../studio/StudioFieldsForm';
-import { describeRule, notifyLabel } from './pickers';
+import { describeRule, notifySummary } from './pickers';
+import { MapPreview, travelLabel } from './place';
 import { useTimelineActions } from '../timeline/useTimelineActions';
 import { syncEngine } from '../../sync/engine';
 
@@ -40,13 +42,13 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
       right={<button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={() => openSheet({ kind: 'edit', mode: 'event', id })} data-testid="info-edit"><Icon name="pencil" size={18} /></button>}
     >
       <div className="info-hero">
-        <span className="ed-preview-icon big" style={{ ['--c' as string]: color }} aria-hidden><Icon name={resolveItemIcon(cal?.icon, defaultCalendarIcon(cal?.kind ?? 'general')).id} size={28} /></span>
+        <EventBadge icon={st ? st.icon : cal?.icon} color={color} size={56} fallback={defaultCalendarIcon(cal?.kind ?? 'general')} />
         <div className="info-head">
           <h2 className="detail-title" data-testid="info-title">{inst.title}</h2>
           <div className="info-when">{fmtDay(inst.start)}{allDay ? ' 終日' : ` ${formatHm(inst.start)}〜${formatHm(inst.end)}`}</div>
           <div className="info-badges">
             {master.recurrence && <span className="badge-mini"><Icon name="undo" size={13} />{describeRule(master.recurrence)}</span>}
-            {(master.extra?.notifies ?? []).length > 0 && <span className="badge-mini"><Icon name="bell" size={13} />{master.extra!.notifies!.map(notifyLabel).join('・')}</span>}
+            {(master.extra?.notifies ?? []).length > 0 && <span className="badge-mini" data-testid="info-notify"><Icon name="bell" size={13} />{notifySummary(master.extra!.notifies!)}</span>}
             {cal && <span className="badge-mini"><span className="dot" style={{ background: cal.color }} />{cal.name}</span>}
           </div>
         </div>
@@ -63,6 +65,13 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
         <div className="group"><div className="group-header">{st.name}</div><div className="group-body">
           {st.fields.filter((f) => f.showInInfo && !f.hidden && f.type !== 'note').map((f) => <div className="row" key={f.id}><span className="row-label">{f.label}</span><span className="row-value"><StudioValueView f={f} value={master.extra!.studio!.values[f.id]} /></span></div>)}
         </div></div>
+      )}
+      {master.extra?.place && (
+        <>
+          <div className="group-header">場所</div>
+          <MapPreview place={master.extra.place} />
+          {master.extra.travelMinutes ? <p className="muted small info-travel">{travelLabel(master.extra.travelMinutes)}（出発の目安 {formatHm(inst.start - master.extra.travelMinutes * 60_000)}）</p> : null}
+        </>
       )}
       <InfoExtras extra={master.extra} />
       {inst.notes && <div className="group"><div className="group-header">メモ</div><div className="group-body padded notes">{inst.notes}</div></div>}

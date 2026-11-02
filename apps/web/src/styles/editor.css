@@ -96,7 +96,8 @@
 .banner-inline { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 10px; border-radius: 12px; background: color-mix(in srgb, var(--blue) 12%, transparent); font-size: 0.9rem; }
 .banner-inline span { flex: 1; }
 .link-fields { display: flex; flex-direction: column; gap: 2px; }
-.ctx-card { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.ctx-card { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ctx-card strong { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ctx-card span { color: var(--label-2); font-size: 0.86rem; }
 /* 実行パネル（Q35・Q92） */
 .run-panel { display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'ring time' 'act act' 'ar ar'; align-items: center; gap: 12px 16px; padding: 4px 4px 16px; }
@@ -247,3 +248,26 @@
 .att-text strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-login { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 0.88rem; color: var(--label-2); }
 .att-login span { flex: 1; }
+/* ---- 進捗パネル（C26）・実績ログ（C08）・サブタスク日時（C07） ---- */
+.pp-head { display: flex; align-items: center; gap: 16px; padding: 4px 4px 12px; }
+.pp-num { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pp-num strong { font-family: var(--font-rounded); font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.pp-src { font-size: 0.82rem; color: var(--label-2); }
+.pp-ideal { font-size: 0.76rem; color: var(--label-3); }
+.pp-slider { padding: 6px 4px 10px; }
+.pp-slider input[type=range] { width: 100%; height: 32px; accent-color: var(--do); }
+.pp-ticks { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--label-3); font-variant-numeric: tabular-nums; }
+.pp-studio { padding: 4px 4px 10px; }
+.pp-num-in { display: inline-flex; align-items: center; gap: 6px; }
+.note-text.warn { color: var(--orange); }
+.log-toggle { min-height: 48px; gap: 12px; }
+.chev.rot90 { transform: rotate(90deg); }
+.log-body { overflow: hidden; }
+.log-sec { font-size: 0.8rem; font-weight: 600; color: var(--label-2); padding: 12px 16px 2px; }
+.log-day { font-size: 0.76rem; color: var(--label-3); padding: 6px 16px 0; }
+.log-row { min-height: 40px; }
+.tnum { font-variant-numeric: tabular-nums; }
+.sub-time-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--label-2); border-radius: 50%; flex: none; }
+.sub-time-btn:active { background: var(--fill); }
+.info-travel { margin: -4px 4px 12px; }
+.row-input.num { width: 6em; text-align: right; background: var(--fill); border-radius: 9px; padding: 0 10px; min-height: 40px; }

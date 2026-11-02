@@ -103,7 +103,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   const sync = useSync();
   const { homeDate, calDate } = useUIDates();
   const { tab } = useUI();
-  const { closeSheet, confirm, showToast, openSheet } = useUIActions();
+  const { closeSheet, confirm, choose, showToast, openSheet } = useUIActions();
   const guard = usePlacementGuard();
   const askScope = useAskScope();
 
@@ -312,8 +312,18 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           if (!(await confirm({ title: v.taskKind === 'check' ? '確認タスクに変更しますか？' : '実行タスクに変更しますか？', message: pv.warnings.join('\n') || '実績の記録は保持されます。', confirmLabel: '変更' }))) return;
           await repo.convertTask(exTask.id, v.taskKind);
         }
+        // 親の日時を動かしたとき、日時のあるサブタスクをどうするか明示的に選ぶ（C07）。取消なら何も保存しない
+        const delta = isDo && exTask.plannedStart != null && ps != null ? ps - exTask.plannedStart : 0;
+        const timedSubs = delta ? (await db.subtasks.where('taskId').equals(exTask.id).toArray()).filter((x) => x.plannedStart != null).length : 0;
+        let moveSubs = false;
+        if (timedSubs) {
+          const c = await choose({ title: 'サブタスクの日時', message: `日時を設定したサブタスクが${timedSubs}件あります。`, actions: [{ label: '同じだけ一緒に移動', value: 'move' }, { label: 'サブタスクの日時はそのまま', value: 'keep' }, { label: 'キャンセル', value: 'cancel', style: 'cancel' }] });
+          if (c == null || c === 'cancel') return;
+          moveSubs = c === 'move';
+        }
         const fresh = (await db.tasks.get(exTask.id)) ?? exTask;
         await repo.saveTask({ ...fresh, ...fields }, false);
+        if (moveSubs) await repo.shiftSubtaskTimes(exTask.id, delta);
         showToast('保存しました');
       }
       await finish();

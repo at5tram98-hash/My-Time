@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { createPortal } from 'react-dom';
 import {
   actualProgress, canScrubProgress, delayInfo, formatDayLabel, formatHm, idealProgress, rowTimeLabel, type Subtask, type Task,
 } from '@my-time/domain';
@@ -145,6 +146,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
       if (task.status === 'paused') items.push({ label: '再開', icon: 'play', onSelect: () => void repo.taskAction(task.id, 'resume') });
       if (task.status === 'done') items.push({ label: '完了を取り消す', icon: 'undo', onSelect: () => void repo.taskAction(task.id, 'undoFinish') });
     } else items.push({ label: task.checked ? 'チェックを外す' : '確認済みにする', icon: task.checked ? 'undo' : 'check', onSelect: () => void repo.toggleCheck(task.id) });
+    // 長押しを使えない利用者も、メニューから同じ進捗パネルへ（C26）
+    if (task.kind === 'do') items.push({ label: '進捗を変更', icon: 'chart', onSelect: () => openSheet({ kind: 'run', id: task.id, progress: true }) });
     items.push({ label: '編集', icon: 'pencil', onSelect: () => openSheet({ kind: 'edit', mode: 'task', id: task.id }) });
     openContextMenu({
       anchor: el,
@@ -163,6 +166,15 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
   };
 
   const scrubbing = mode.kind === 'scrub';
+  // 浮遊パネルの位置：行の上（入らなければ下）。画面の端からはみ出さない
+  const panelPos = (() => {
+    const r = rowRef.current?.getBoundingClientRect();
+    if (!r || !scrubbing) return {};
+    const w = Math.min(360, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+    const above = r.top - 128 > 60;
+    return { position: 'fixed' as const, left, width: w, top: above ? r.top - 124 : Math.min(window.innerHeight - 130, r.bottom + 8) };
+  })();
   const pct = scrubbing ? Math.round(mode.value * 100) : 0;
   const timeText = label.kind === 'none' ? '' : formatHm(label.at);
   const timeTag = label.kind === 'eta' ? '予測' : label.kind === 'plannedEnd' ? '予定' : label.kind === 'actualEnd' ? '完了' : '';
@@ -223,36 +235,30 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
           {delay.delayed && <span className="late-text">+{formatOverMinutes(delay.overMinutes)}</span>}
         </span>
       </button>
-      {scrubbing && (
+      {/* 長押しの進捗入力（C26）：行を少し持ち上げ、近くに丸角の浮遊パネル。横に動かして離すと確定、取消は保存しない */}
+      {scrubbing && createPortal(
         <motion.div
-          ref={barRef}
-          className="scrubber"
+          className="scrub-panel"
+          style={panelPos}
           role="slider"
           aria-label={`${task.title}の実績進捗`}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct}
-          data-value={scrubbing ? mode.value.toFixed(4) : undefined}
+          aria-valuetext={`${pct}%`}
+          data-value={mode.value.toFixed(4)}
           data-testid="progress-scrubber"
-          initial={reduce ? { opacity: 0 } : { opacity: 0, scaleX: 0.55, scaleY: 0.8 }}
-          animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={reduce ? { duration: 0.08 } : { type: 'spring', stiffness: 520, damping: 34 }}
         >
-          <div className="scrub-fill" style={{ width: `${Math.max(pct, 0)}%` }}>
-            {pct >= 18 && (
-              <span className="scrub-num">
-                {pct}
-                <small>%</small>
-              </span>
-            )}
+          <div className="sp-head">
+            <TaskBadge icon={task.icon} kind="do" size={44} progress={mode.value} ideal={idealProgress(task, now)} />
+            <div className="sp-num"><strong>{pct}<small>%</small></strong><span>手動の実績・左右に動かして離すと記録</span></div>
           </div>
-          {pct < 18 && (
-            <span className="scrub-num outside" style={{ left: `calc(${pct}% + 12px)` }}>
-              {pct}
-              <small>%</small>
-            </span>
-          )}
-        </motion.div>
+          <div className="sp-track" ref={barRef}><div className="sp-fill" style={{ width: `${pct}%` }} /></div>
+        </motion.div>,
+        document.body,
       )}
     </div>
   );

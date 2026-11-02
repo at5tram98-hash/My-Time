@@ -110,6 +110,19 @@ export function createRepo(database: MyTimeDB = db, clock: () => number = Date.n
       });
     },
 
+    /** Studio の数値項目を進捗パネルから更新（C26）。manualProgress には書かない */
+    async setStudioValue(id: string, fieldId: string, value: number | null) {
+      return tx(async () => {
+        const t = await getTask(id);
+        const st = t.extra?.studio;
+        if (!st) throw new Error('専用の項目がありません');
+        const next: Task = { ...t, extra: { ...t.extra, studio: { ...st, values: { ...st.values, [fieldId]: value } } }, updatedAt: clock() };
+        await database.tasks.put(next);
+        await record('task', id, 'put', 'progress', { studioField: fieldId, value });
+        return next;
+      });
+    },
+
     /** 100%確認後の完了：実績100%を記録してから終了する（1トランザクション） */
     async completeFromProgress(id: string) {
       return tx(async () => {

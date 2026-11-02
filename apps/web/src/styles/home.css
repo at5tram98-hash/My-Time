@@ -113,3 +113,13 @@
 .task-pane[data-density='s'] .task-row-main { min-height: 48px; }
 .task-pane[data-density='l'] .task-row-sub { white-space: normal; }
 .ar-badge { display: inline-flex; align-items: center; }
+/* ---- 長押しの進捗パネル（C26） ---- */
+.task-row.scrubbing { transform: scale(1.02); box-shadow: var(--shadow-lift); z-index: 5; position: relative; border-radius: 12px; background: var(--bg-elev); transition: transform 180ms var(--spring); }
+.scrub-panel { z-index: 95; padding: 14px 16px 16px; border-radius: 20px; background: var(--glass-bg, var(--bg-elev)); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px var(--glass-edge, var(--separator)); pointer-events: none; }
+.sp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.sp-num { display: flex; flex-direction: column; min-width: 0; }
+.sp-num strong { font-family: var(--font-rounded); font-size: 2rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.sp-num strong small { font-size: 0.55em; margin-left: 1px; }
+.sp-num span { font-size: 0.76rem; color: var(--label-2); margin-top: 3px; }
+.sp-track { height: 10px; border-radius: 5px; background: var(--fill-strong); overflow: hidden; }
+.sp-fill { height: 100%; border-radius: 5px; background: var(--do); transition: width 60ms linear; }
