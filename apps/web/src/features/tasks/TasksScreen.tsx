@@ -11,6 +11,7 @@ import type { TaskKindFilter, TaskScope, TaskSort } from '../../data/db';
 import { TaskRow } from './TaskRow';
 import { useProgressive } from '../../components/useProgressive';
 import { SwipeRow } from '../../ui/SwipeRow';
+import { KindButtons } from '../../ui/KindButtons';
 import { deleteWithUndo } from '../../ui/undo';
 import { InlineSearch } from '../search/InlineSearch';
 import { Ring } from '../../ui/Ring';
@@ -203,12 +204,17 @@ export function TasksScreen() {
             <button type="button" className="gbtn glass glass-i tint" aria-label="新規タスク" onClick={() => openSheet({ kind: 'edit', mode: 'task', defaults: kind === 'check' ? { kind: 'check' } : {} })} data-testid="tasks-add"><Icon name="plus" size={20} strokeWidth={2.2} /></button>
           </div>
         </div>
-        {/* 種類：非ガラスの独立ボタン（Q33）。実行は進捗リング、確認はチェック */}
-        <div className="chip-toggle" role="group" aria-label="タスクの種類">
-          <button type="button" aria-pressed={kind === 'all'} onClick={() => setPref({ taskKind: 'all' })} data-testid="kind-all">すべて</button>
-          <button type="button" aria-pressed={kind === 'do'} onClick={() => setPref({ taskKind: 'do' })} data-testid="kind-do"><Ring value={0.6} size={16} />実行</button>
-          <button type="button" aria-pressed={kind === 'check'} onClick={() => setPref({ taskKind: 'check' })} data-testid="kind-check"><Icon name="check" size={15} strokeWidth={2.6} />確認</button>
-        </div>
+        {/* 種類：実行は赤・確認は青の独立ボタン。選択中が最も大きい（C10・C30） */}
+        <KindButtons
+          label="タスクの種類"
+          value={kind}
+          onChange={(k) => setPref({ taskKind: k })}
+          options={[
+            { value: 'all', label: 'すべて', tone: 'neutral', testId: 'kind-all' },
+            { value: 'do', label: '実行', tone: 'do', icon: 'play', testId: 'kind-do' },
+            { value: 'check', label: '確認', tone: 'check', icon: 'check', testId: 'kind-check' },
+          ]}
+        />
         {/* 期間（Q40）：種類とは別の操作 */}
         <div className="scope-row" role="group" aria-label="期間">
           {(['today', 'upcoming', 'all'] as TaskScope[]).map((s) => <button key={s} type="button" className="scope-btn" aria-pressed={scope === s} onClick={() => setPref({ taskScope: s })} data-testid={`scope-${s}`}>{SCOPE_LABEL[s]}</button>)}

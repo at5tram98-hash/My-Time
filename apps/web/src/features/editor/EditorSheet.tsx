@@ -14,6 +14,7 @@ import { repo } from '../../data/repo';
 import { api } from '../../sync/api';
 import { useAskScope } from '../timeline/useTimelineActions';
 import { Popup } from '../../ui/Popup';
+import { KindButtons } from '../../ui/KindButtons';
 import { ColorStrip, DatePickerPopup, describeRule, IconStrip, NotifyPopup, notifyLabel, PlacePopup, RecurrencePopup, TimeWheelPopup } from './pickers';
 import { StudioFieldsForm } from '../studio/StudioFieldsForm';
 
@@ -40,6 +41,25 @@ function Row({ icon, color, label, children, onClick, testId, expanded }: { icon
     </>
   );
   return onClick ? <button type="button" className="ed-row" onClick={onClick} data-testid={testId} aria-expanded={expanded}>{inner}</button> : <div className="ed-row" data-testid={testId}>{inner}</div>;
+}
+
+/**
+ * 日時の行（C09）：ラベル・日付ボタン・時刻ボタンの3役。幅が足りれば1行、足りなければ「ラベル」と「日付・時刻」の2段。
+ * 判定は端末名ではなく行の実幅（コンテナクエリ）。日付・時刻は折り返さず、各ボタンは44px以上。
+ */
+function DateTimeRow({ icon, label, date, time, onDate, onTime, danger, testIds }: { icon: IconName; label: string; date: string; time?: string | null; onDate: () => void; onTime?: () => void; danger?: boolean; testIds: [string, string?] }) {
+  return (
+    <div className="ed-dt">
+      <div className="ed-dt-in">
+        <span className="ed-row-icon" style={{ background: '#0A84FF' }} aria-hidden><Icon name={icon} size={17} strokeWidth={2.1} /></span>
+        <span className="ed-dt-label">{label}</span>
+        <span className="ed-dt-values">
+          <button type="button" className={`ed-chipbtn ${danger ? 'danger' : ''}`} onClick={onDate} aria-label={`${label}の日付 ${date}`} data-testid={testIds[0]}>{date}</button>
+          {time != null && onTime && <button type="button" className={`ed-chipbtn time ${danger ? 'danger' : ''}`} onClick={onTime} aria-label={`${label}の時刻 ${time}`} data-testid={testIds[1]}>{time}</button>}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 interface Draft {
@@ -412,12 +432,14 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           <div className="group"><div className="group-body">
             <Row icon="stack" color="#8E8E93" label="種類" onClick={() => setPick('type')} testId="editor-type">{typeLabel}</Row>
             {v.mode === 'task' && (
-              <Row icon={v.taskKind === 'do' ? 'play' : 'check'} color="#34C759" label="タスクの種類">
-                <span className="seg-mini" role="group" aria-label="タスクの種類">
-                  <button type="button" aria-pressed={v.taskKind === 'do'} onClick={() => set('taskKind', 'do')} data-testid="editor-kind-do">実行</button>
-                  <button type="button" aria-pressed={v.taskKind === 'check'} onClick={() => set('taskKind', 'check')} data-testid="editor-kind-check">確認</button>
-                </span>
-              </Row>
+              <div className="row ed-kind-row">
+                <KindButtons
+                  label="タスクの種類"
+                  value={v.taskKind}
+                  onChange={(k) => set('taskKind', k)}
+                  options={[{ value: 'do', label: '実行', tone: 'do', icon: 'play', testId: 'editor-kind-do' }, { value: 'check', label: '確認', tone: 'check', icon: 'check', testId: 'editor-kind-check' }]}
+                />
+              </div>
             )}
           </div></div>
 
@@ -430,14 +452,8 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
             )}
             {(v.mode === 'event' || (v.taskKind === 'do' && v.timed)) && (
               <>
-                <Row icon="play" color="#0A84FF" label="開始">
-                  <button type="button" className="ed-chipbtn" onClick={() => setPick('sDate')} data-testid="editor-start-date">{fmtDate(v.start)}</button>
-                  {!(v.mode === 'event' && v.allDay) && <button type="button" className="ed-chipbtn" onClick={() => setPick('sTime')} data-testid="editor-start-time">{fmtTime(v.start)}</button>}
-                </Row>
-                <Row icon="flag" color="#0A84FF" label="終了">
-                  <button type="button" className={`ed-chipbtn ${v.end <= v.start ? 'danger' : ''}`} onClick={() => setPick('eDate')} data-testid="editor-end-date">{fmtDate(v.end)}</button>
-                  {!(v.mode === 'event' && v.allDay) && <button type="button" className={`ed-chipbtn ${v.end <= v.start ? 'danger' : ''}`} onClick={() => setPick('eTime')} data-testid="editor-end-time">{fmtTime(v.end)}</button>}
-                </Row>
+                <DateTimeRow icon="play" label="開始" date={fmtDate(v.start)} time={!(v.mode === 'event' && v.allDay) ? fmtTime(v.start) : null} onDate={() => setPick('sDate')} onTime={() => setPick('sTime')} testIds={['editor-start-date', 'editor-start-time']} />
+                <DateTimeRow icon="flag" label="終了" date={fmtDate(v.end)} time={!(v.mode === 'event' && v.allDay) ? fmtTime(v.end) : null} onDate={() => setPick('eDate')} onTime={() => setPick('eTime')} danger={v.end <= v.start} testIds={['editor-end-date', 'editor-end-time']} />
               </>
             )}
             {conflicts.length > 0 && (
@@ -451,10 +467,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
               </div>
             )}
             {v.mode === 'task' && v.taskKind === 'check' && (
-              <Row icon="check" color="#0A84FF" label="確認日時">
-                <button type="button" className="ed-chipbtn" onClick={() => setPick('cDate')}>{v.checkAt != null ? fmtDate(v.checkAt) : '未設定'}</button>
-                {v.checkAt != null && <button type="button" className="ed-chipbtn" onClick={() => setPick('cTime')}>{fmtTime(v.checkAt)}</button>}
-              </Row>
+              <DateTimeRow icon="check" label="確認日時" date={v.checkAt != null ? fmtDate(v.checkAt) : '未設定'} time={v.checkAt != null ? fmtTime(v.checkAt) : null} onDate={() => setPick('cDate')} onTime={() => setPick('cTime')} testIds={['editor-check-date', 'editor-check-time']} />
             )}
             <Row icon="undo" color="#5E5CE6" label="繰り返し" onClick={() => setPick('rule')} testId="editor-repeat">{describeRule(v.rule)}</Row>
             {v.mode === 'task' && (
@@ -467,9 +480,9 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           </div>
 
           <div className="group-header">アイコン</div>
-          <div className="group"><div className="group-body padded"><IconStrip value={v.icon} onChange={(id) => set('icon', id)} recent={settings.recentIcons} target={v.mode} /></div></div>
+          <div className="group"><div className="group-body"><IconStrip value={v.icon} onChange={(id) => set('icon', id)} recent={settings.recentIcons} target={v.mode} /></div></div>
           <div className="group-header">色</div>
-          <div className="group"><div className="group-body padded"><ColorStrip value={v.color} onChange={(c) => set('color', c)} recent={settings.recentColors} /></div></div>
+          <div className="group"><div className="group-body"><ColorStrip value={v.color} onChange={(c) => set('color', c)} recent={settings.recentColors} /></div></div>
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 

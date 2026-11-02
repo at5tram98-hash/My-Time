@@ -86,9 +86,9 @@ export function CategoriesPage() {
           <>
             <div className="group"><div className="group-body"><input className="row-input big" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="カテゴリー名" aria-label="カテゴリー名" maxLength={40} data-testid="category-name" /></div></div>
             <div className="group-header">アイコン</div>
-            <div className="group"><div className="group-body padded"><IconStrip value={editing.icon} onChange={(id) => setEditing({ ...editing, icon: id })} recent={settings.recentIcons} target="task" /></div></div>
+            <div className="group"><div className="group-body"><IconStrip value={editing.icon} onChange={(id) => setEditing({ ...editing, icon: id })} recent={settings.recentIcons} target="task" /></div></div>
             <div className="group-header">色</div>
-            <div className="group"><div className="group-body padded"><ColorStrip value={editing.color} onChange={(col) => setEditing({ ...editing, color: col ?? '#0A84FF' })} recent={settings.recentColors} /></div></div>
+            <div className="group"><div className="group-body"><ColorStrip value={editing.color} onChange={(col) => setEditing({ ...editing, color: col ?? '#0A84FF' })} recent={settings.recentColors} /></div></div>
           </>
         )}
       </Popup>

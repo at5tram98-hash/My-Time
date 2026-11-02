@@ -178,9 +178,9 @@ function StudioDesigner({ initial, isNew, usage, onDone }: { initial: StudioType
       {/* 作成の順：名前 → アイコン → 色 → 項目（Q82） */}
       <Group header="名前"><input className="row-input big" value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder={t.target === 'calendar' ? '例：ゼミ' : '例：読書'} aria-label="種類の名前" maxLength={40} data-testid="studio-name" /></Group>
       <div className="group-header">アイコン</div>
-      <div className="group"><div className="group-body padded"><IconStrip value={t.icon} onChange={(id) => setT({ ...t, icon: id })} recent={settings.recentIcons} target={t.target === 'task' ? 'task' : 'event'} /></div></div>
+      <div className="group"><div className="group-body"><IconStrip value={t.icon} onChange={(id) => setT({ ...t, icon: id })} recent={settings.recentIcons} target={t.target === 'task' ? 'task' : 'event'} /></div></div>
       <div className="group-header">色</div>
-      <div className="group"><div className="group-body padded"><ColorStrip value={t.color} onChange={(c) => setT({ ...t, color: c ?? '#BF5AF2' })} recent={settings.recentColors} /></div></div>
+      <div className="group"><div className="group-body"><ColorStrip value={t.color} onChange={(c) => setT({ ...t, color: c ?? '#BF5AF2' })} recent={settings.recentColors} /></div></div>
 
       <div className="group-header">項目</div>
       <div className="search-field"><Icon name="search" size={17} /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="部品を探す（例：実行時間・ページ・休憩）" aria-label="部品を探す" data-testid="studio-part-search" /></div>

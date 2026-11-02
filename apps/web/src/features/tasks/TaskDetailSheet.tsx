@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   actualProgress, canAddSubtask, delayInfo, ETA_REASON_JA, subtaskLabel, estimateEnd, formatDuration, formatHm, idealProgress,
@@ -30,6 +30,7 @@ const LOG_JA: Record<string, string> = {
 export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
   const { tasks, events, calendarById, studioTypes } = useData();
   const [progressOpen, setProgressOpen] = useState(false);
+  const headId = useId();
   const [manual, setManual] = useState(0);
   const { closeSheet, openSheet, confirm, showToast } = useUIActions();
   const now = useNow(5_000);
@@ -94,7 +95,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
     <Sheet
       onClose={closeSheet}
       depth={depth}
-      labelledBy="task-detail-title"
+      labelledBy={headId}
       left={<button type="button" className="bar-btn" onClick={closeSheet}>閉じる</button>}
       right={<button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={() => openSheet({ kind: 'edit', mode: 'task', id: task.id })} data-testid="info-edit"><Icon name="pencil" size={18} /></button>}
       detent="medium"
@@ -111,7 +112,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
       </Popup>
       <div className="detail-hero">
         {task.kind === 'check' && <TaskIcon task={task} now={now} size={56} />}
-        <h2 id="task-detail-title" className="detail-title">{task.title}</h2>
+        <h2 id={headId} className="detail-title">{task.title}</h2>
         <div className="detail-meta">
           {task.kind === 'check' ? '確認タスク' : st ? st.name : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実行タスク'}
           {task.category ? ` · ${task.category}` : ''}

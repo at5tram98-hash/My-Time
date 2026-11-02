@@ -25,7 +25,7 @@ function Ring({ value, color, size = 58, stroke = 8, label }: { value: number | 
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
-    <svg width={size} height={size} role="img" aria-label={label} className="ring">
+    <svg width={size} height={size} role="img" aria-label={label} className="stat-ring">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeOpacity={0.2} strokeWidth={stroke} />
       {value != null && value > 0 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * Math.min(1, value)} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />}
       {value != null && value > 1 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * Math.min(1, value - 1)} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ filter: 'brightness(0.8)' }} />}

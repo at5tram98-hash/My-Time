@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { workedMs } from '@my-time/domain';
+import { idealProgress, workedMs } from '@my-time/domain';
+import { progressOf } from '../app/progress';
 import { useData } from '../app/data';
 import { useUI } from '../app/ui';
 import { Ring } from './Ring';
@@ -15,7 +16,7 @@ const fmt = (ms: number) => { const s = Math.floor(ms / 1000); const h = Math.fl
  * タップで実行パネル、右のボタンで停止。
  */
 export function RunningMiniBar() {
-  const { tasks } = useData();
+  const { tasks, subtasksByTask, studioTypes } = useData();
   const { tab, openSheet, sheets } = useUI();
   const running = tasks.find((t) => t.kind === 'do' && t.status === 'running');
   const [now, setNow] = useState(Date.now());
@@ -31,7 +32,8 @@ export function RunningMiniBar() {
       {show && running && (
         <motion.div className="minibar glass" initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }} transition={SPRING.capsule} data-testid="minibar">
           <button type="button" className="minibar-main" onClick={() => openSheet({ kind: 'run', id: running.id })} aria-label={`実行中 ${running.title}。経過 ${fmt(workedMs(running, now))}。タップで実行パネル`}>
-            <Ring value={running.plannedStart != null && running.plannedEnd != null ? Math.min(1, (now - running.plannedStart) / Math.max(1, running.plannedEnd - running.plannedStart)) : 0} size={30} icon={running.icon} />
+            {/* 実績の円弧（根拠は共通の解決関数）と理想の目盛りを別に表示（C28・D3） */}
+            <Ring value={progressOf(running, subtasksByTask.get(running.id) ?? [], studioTypes, now).value} ideal={idealProgress(running, now)} size={34} icon={running.icon} kind="do" running />
             <span className="minibar-title">{running.title}</span>
             <span className="minibar-time">{fmt(workedMs(running, now))}</span>
           </button>

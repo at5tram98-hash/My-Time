@@ -1,38 +1,27 @@
 import { delayInfo, idealProgress, type Task } from '@my-time/domain';
-import { Icon } from './Icon';
-import { ItemIcon } from './ItemIcon';
+import { TaskBadge } from './Identity';
 
-/** ユーザー定義アイコン＋外周の理想進捗リング。遅延時は注意の記号に置換、完了時はチェック。 */
-export function TaskIcon({ task, now, size = 40 }: { task: Task; now: number; size?: number }) {
-  const stroke = 3;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
+/**
+ * 一覧・ホームのタスクアイコン（C04・D3）。共通の識別バッジ（円・実行は赤／確認は青）に、
+ * 外周の実績の円弧と、理想進捗の目盛りを重ねる。遅延は注意の記号、完了はチェック。
+ */
+export function TaskIcon({ task, now, size = 40, progress }: { task: Task; now: number; size?: number; progress?: number | null }) {
   const ideal = task.kind === 'do' && task.status !== 'done' ? idealProgress(task, now) ?? 0 : 0;
   const delayed = delayInfo(task, now).delayed;
-  const done = task.status === 'done';
-  let inner;
-  if (done) inner = <span className="ti-done"><Icon name="check" size={size * 0.5} strokeWidth={3} /></span>;
-  else if (delayed) inner = <span className="ti-warn" role="img" aria-label="遅延"><Icon name="exclamation" size={size * 0.5} strokeWidth={3} /></span>;
-  else inner = <ItemIcon value={task.icon} size={Math.round(size * 0.5)} className="ti-glyph" />;
+  const done = task.kind === 'check' ? !!task.checked : task.status === 'done';
   return (
-    <span className={`task-icon ${task.status === 'running' ? 'running' : ''}`} style={{ width: size, height: size }} data-ideal={Math.round(ideal * 100)}>
-      <svg width={size} height={size} className="ti-ring" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--ring-track)" strokeWidth={stroke} />
-        {ideal > 0 && !done && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={delayed ? 'var(--orange)' : 'var(--ring-ideal)'}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${c * ideal} ${c}`}
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          />
-        )}
-      </svg>
-      {inner}
+    <span className={`task-icon ${task.status === 'running' ? 'running' : ''}`} data-ideal={Math.round(ideal * 100)}>
+      <TaskBadge
+        icon={task.icon}
+        kind={task.kind === 'check' ? 'check' : 'do'}
+        size={size}
+        progress={task.kind === 'do' ? progress ?? null : undefined}
+        ideal={task.kind === 'do' ? ideal : undefined}
+        done={done}
+        delayed={delayed && !done}
+        running={task.status === 'running'}
+        {...(delayed && !done ? { label: '遅延' } : {})}
+      />
     </span>
   );
 }

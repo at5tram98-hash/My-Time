@@ -6,7 +6,7 @@ import {
 } from '@my-time/domain';
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
 import { usePager } from '../../gestures/usePager';
-import { ItemIcon } from '../../components/ItemIcon';
+import { EventBadge, TaskBadge } from '../../components/Identity';
 import { clampScroll, edgeScrollSpeed } from './edgeScroll';
 
 export type DayLabelMode = 'none' | 'afterFirst' | 'all';
@@ -468,7 +468,8 @@ export function Timeline(props: Props) {
         >
           {planEndMin != null && planEndMin < p.height && <span className="tl-overrun" style={{ top: mins(Math.max(0, planEndMin)) }} aria-hidden />}
           <span className="tl-title">
-            {it.kind === 'task' ? <ItemIcon value={it.task.icon} size={13} strokeWidth={2.3} className="tl-ticon" /> : <ItemIcon value={cal?.icon} fallback="calendar" size={12} strokeWidth={2.3} className="tl-ticon ev" />}
+            {/* 予定は角丸四角、タスクは円（実行は赤・確認は青）で区別（C28） */}
+            {it.kind === 'task' ? <TaskBadge icon={it.task.icon} kind={it.task.kind === 'check' ? 'check' : 'do'} size={16} done={it.task.status === 'done' || !!it.task.checked} className="tl-ticon" /> : <EventBadge icon={cal?.icon} color={it.event.extra?.color ?? cal?.color ?? 'var(--blue)'} size={16} className="tl-ticon ev" />}
             {title}
           </span>
           {showTime(p.height) && <span className="tl-time">{timeText}</span>}

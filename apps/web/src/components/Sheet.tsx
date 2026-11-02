@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { animate, motion, useDragControls, useMotionValue, useReducedMotion } from 'motion/react';
 import { ExitSafeLayer } from './Overlays';
 import { useUIActions } from '../app/ui';
@@ -36,6 +36,7 @@ const ORDER: Detent[] = ['small', 'medium', 'large'];
  */
 export function Sheet({ title, left, right, onClose, children, depth = 0, labelledBy, detent = 'large', detents, dirty = false, footer, className = '', testId }: SheetProps) {
   const controls = useDragControls();
+  const titleId = useId();
   const reduce = useReducedMotion();
   const { confirm } = useUIActions();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -139,7 +140,7 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
         data-testid={testId}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={labelledBy}
+        aria-labelledby={labelledBy ?? (title ? titleId : undefined)}
         tabIndex={-1}
         style={{ y }}
         drag="y"
@@ -154,7 +155,8 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
           <div className="sheet-grabber" aria-hidden />
           <div className="sheet-bar">
             <div className="sheet-bar-side">{left}</div>
-            <div className="sheet-title" id={labelledBy}>
+            {/* 呼び出し元の見出しIDとは別の一意なID（同じIDを2箇所に付けない：F5） */}
+            <div className="sheet-title" id={titleId}>
               {title}
             </div>
             <div className="sheet-bar-side right">{right}</div>

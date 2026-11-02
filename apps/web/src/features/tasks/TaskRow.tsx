@@ -11,7 +11,9 @@ import { Icon } from '../../components/Icon';
 import { useUIActions } from '../../app/ui';
 import { repo } from '../../data/repo';
 import { blockTouchScrollWhile, gestureLock } from '../../gestures/gestureLock';
-import { ItemIcon } from '../../components/ItemIcon';
+import { TaskBadge } from '../../components/Identity';
+import { useData } from '../../app/data';
+import { progressOf } from '../../app/progress';
 
 const LONG_PRESS_MS = 380;
 
@@ -52,6 +54,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
   const label = rowTimeLabel(task, subtasks, now);
   const delay = delayInfo(task, now);
   const ap = actualProgress(task, subtasks);
+  const { studioTypes } = useData();
+  const pr = progressOf(task, subtasks, studioTypes, now);
 
   const activate = () => {
     const p = press.current;
@@ -183,7 +187,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
             aria-label={`${task.title}をチェック`}
             tabIndex={0}
             data-row-control
-            className={`check-circle ${task.checked ? 'on' : ''}`}
+            className="check-badge"
             onClick={(e) => {
               e.stopPropagation();
               void repo.toggleCheck(task.id);
@@ -196,10 +200,10 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
               }
             }}
           >
-            {task.checked ? <Icon name="check" size={16} strokeWidth={3} /> : <ItemIcon value={task.icon} size={16} className="check-glyph" />}
+            <TaskBadge icon={task.icon} kind="check" size={36} done={!!task.checked} />
           </span>
         ) : (
-          <TaskIcon task={task} now={now} />
+          <TaskIcon task={task} now={now} size={40} progress={pr.value} />
         )}
         <span className="task-row-text">
           <span className="task-row-title">

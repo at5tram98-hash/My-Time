@@ -185,15 +185,23 @@ export async function openNewEvent(page: Page) {
   await page.getByTestId('editor-mode-event').click();
 }
 
-/** 日付ピッカーで年月日を選んで「完了」 */
+/** 日付ピッカー（年・月・日のホイール）で選んで「完了」 */
 export async function pickDate(page: Page, buttonTestId: string, y: number, m: number, d: number) {
   await page.getByTestId(buttonTestId).click();
   const p = page.getByTestId('date-picker');
   await expect(p).toBeVisible();
-  await p.getByTestId('dp-ym').click();
-  await p.getByRole('group', { name: '年と月' }).getByRole('button', { name: String(y), exact: true }).click();
-  await p.getByRole('group', { name: '年と月' }).getByRole('button', { name: `${m}月`, exact: true }).click();
-  await p.getByTestId(`dp-day-${d}`).click();
+  const spin = async (name: string, label: string) => {
+    await p.getByRole('listbox', { name }).evaluate((el, lb) => {
+      const opts = [...el.querySelectorAll('[role="option"]')];
+      const i = opts.findIndex((o) => o.textContent === lb);
+      el.scrollTop = i * 40;
+      el.dispatchEvent(new Event('scroll'));
+    }, label);
+    await expect(p.getByRole('listbox', { name }).getByRole('option', { name: label, exact: true })).toHaveAttribute('aria-selected', 'true');
+  };
+  await spin('年', `${y}年`);
+  await spin('月', `${m}月`);
+  await spin('日', `${d}日`);
   await p.getByRole('button', { name: '完了' }).click();
   await expect(p).toHaveCount(0);
 }

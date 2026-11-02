@@ -25,12 +25,18 @@
 .wheel-colon { font-size: 1.4rem; font-weight: 600; }
 .wheel-opts { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 
-.hstrip { display: flex; gap: 10px; overflow-x: auto; padding: 8px 2px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.hstrip { display: flex; gap: 4px; overflow-x: auto; padding: 10px 14px; scroll-padding-inline: 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .hstrip::-webkit-scrollbar { display: none; }
-.hcircle { flex: none; width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; background: var(--fill); color: var(--label-2); position: relative; transition: transform 160ms var(--spring); }
-.hcircle.on { color: var(--blue); box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--blue); transform: scale(1.06); }
-.hcircle.color { background: var(--c); }
-.hcircle.color.on { box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--c); }
+/* 操作領域 44px、見た目の円 40px（C13）。選択枠・フォーカス枠は円の内側の余白に収め、先頭・末尾で切れない */
+.hcircle { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--label-2); position: relative; background: none; isolation: isolate; }
+.hcircle::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--fill); z-index: -1; transition: transform 160ms var(--spring); }
+.hcircle.on { color: var(--blue); }
+.hcircle.on::before { background: color-mix(in srgb, var(--blue) 14%, var(--bg-elev)); box-shadow: inset 0 0 0 2px var(--blue); }
+.hcircle.color::before { background: var(--c); }
+.hcircle.color.on::before { box-shadow: inset 0 0 0 2px var(--bg-elev); outline: 2px solid var(--c); outline-offset: 0; inset: 4px; }
+.hcircle:focus-visible { outline: none; }
+.hcircle:focus-visible::before { box-shadow: inset 0 0 0 2px var(--blue), 0 0 0 2px var(--blue); }
+.hcircle.more::before { background: transparent; box-shadow: inset 0 0 0 1px var(--separator); }
 .hcircle.custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 
 .seg-mini { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; }
@@ -76,8 +82,10 @@
 .type-card[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--blue); }
 .type-card .sub-label { display: block; }
 .ring { position: relative; display: inline-grid; place-items: center; flex: none; }
-.ring svg { position: absolute; inset: 0; }
-.ring-inner { position: relative; display: grid; place-items: center; color: var(--label); }
+/* 外周の円弧だけを重ねる。中央の図形の svg には配置指定を継承しない（C05・C25・C28） */
+.ring > .ring-arc { position: absolute; inset: 0; }
+.ring-inner { position: relative; display: grid; place-items: center; color: var(--label); line-height: 0; }
+.ring-inner > svg { display: block; }
 .studio-progress { display: flex; align-items: center; gap: 12px; padding: 4px 4px 10px; font-weight: 600; }
 .studio-ml { padding: 8px 16px; display: flex; flex-direction: column; gap: 6px; }
 .studio-note { padding: 10px 16px; }
@@ -130,3 +138,20 @@
 .ed-seg button, .ed-tabs button { display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; padding: 0 16px; flex: none; }
 .ed-tabs { max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none; }
 .ed-tabs::-webkit-scrollbar { display: none; }
+.ed-kind-row { padding: 6px 16px; }
+.wheel.wide { width: 104px; }
+.wheel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 10px; }
+.picker-summary { text-align: center; font-weight: 600; font-size: 1.06rem; font-variant-numeric: tabular-nums; margin: 2px 0 8px; min-height: 1.5em; }
+
+/* ---- 日時の行（C09）：行の実幅で1行／2段を切り替える ---- */
+.ed-dt { container-type: inline-size; }
+.ed-dt + .ed-dt, .ed-row + .ed-dt, .ed-dt + .ed-row { box-shadow: inset 52px 0.5px 0 0 var(--bg-elev), inset 0 0.5px 0 0 var(--separator); }
+.ed-dt-in { display: grid; grid-template-columns: 28px auto 1fr; align-items: center; column-gap: 12px; row-gap: 6px; min-height: 52px; padding: 6px 16px; }
+.ed-dt-label { white-space: nowrap; }
+.ed-dt-values { display: flex; justify-content: flex-end; gap: 6px; min-width: 0; }
+.ed-dt-values .ed-chipbtn { min-height: 44px; white-space: nowrap; flex: none; }
+.ed-chipbtn.time { min-width: 4.2em; }
+@container (max-width: 340px) {
+  .ed-dt-in { grid-template-columns: 28px 1fr; }
+  .ed-dt-values { grid-column: 1 / -1; justify-content: flex-start; padding-left: 40px; }
+}
