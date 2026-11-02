@@ -74,7 +74,7 @@ function IslandCircle({ task: t, subtasks, now }: { task: Task; subtasks: Subtas
     >
       <Ring value={pr.value} ideal={ideal} size={32} icon={t.icon} kind="do" running={running} done={t.status === 'done'} />
       <span className="icap-text" aria-hidden>
-        <span className="icap-title">{t.title}</span>
+        <span className="icap-title" data-user-text>{t.title}</span>
         <span className="icap-sub">{running && <span className="icap-dot" />}{short}</span>
       </span>
     </button>
