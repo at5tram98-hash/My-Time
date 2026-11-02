@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { formatDayLabel, formatHm, startOfDay } from '@my-time/domain';
 import { Icon } from '../../components/Icon';
-import { ItemIcon } from '../../components/ItemIcon';
+import { EventBadge, TaskBadge } from '../../components/Identity';
 import { useData } from '../../app/data';
 import { useUIActions } from '../../app/ui';
 import { SPRING } from '../../ui/motion';
@@ -12,7 +12,7 @@ import { SPRING } from '../../ui/motion';
  * 全画面の別画面には切り替えない。結果をタップすると該当日へ移動し、情報確認を開く。
  */
 export function InlineSearch({ target, scope = 'all' }: { target: 'home' | 'calendar' | 'tasks'; scope?: 'all' | 'tasks' }) {
-  const { tasks, events } = useData();
+  const { tasks, events, calendarById } = useData();
   const { setHomeDate, setCalDate, openSheet } = useUIActions();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -24,10 +24,10 @@ export function InlineSearch({ target, scope = 'all' }: { target: 'home' | 'cale
     if (!k) return [];
     const m = (s: string | null | undefined) => (s ?? '').toLowerCase().includes(k);
     return [
-      ...tasks.filter((t) => m(t.title) || m(t.notes) || m(t.category)).map((t) => ({ type: 'task' as const, id: t.id, title: t.title, icon: t.icon, at: t.plannedStart ?? t.checkAt })),
-      ...(scope === 'all' ? events.filter((e) => m(e.title) || m(e.notes) || m(e.extra?.place?.name)).map((e) => ({ type: 'event' as const, id: e.id, title: e.title, icon: 'calendar', at: e.start as number | null })) : []),
+      ...tasks.filter((t) => m(t.title) || m(t.notes) || m(t.category)).map((t) => ({ type: 'task' as const, id: t.id, title: t.title, icon: t.icon, kind: t.kind, color: '', at: t.plannedStart ?? t.checkAt })),
+      ...(scope === 'all' ? events.filter((e) => m(e.title) || m(e.notes) || m(e.extra?.place?.name)).map((e) => ({ type: 'event' as const, id: e.id, title: e.title, icon: calendarById.get(e.calendarId)?.icon ?? 'calendar', kind: 'do' as const, color: e.extra?.color ?? calendarById.get(e.calendarId)?.color ?? 'var(--blue)', at: e.start as number | null })) : []),
     ].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 30);
-  }, [q, tasks, events, scope]);
+  }, [q, tasks, events, scope, calendarById]);
 
   const go = (r: (typeof results)[number]) => {
     setOpen(false);
@@ -51,7 +51,7 @@ export function InlineSearch({ target, scope = 'all' }: { target: 'home' | 'cale
                 {results.length === 0 && <div className="row muted">見つかりません</div>}
                 {results.map((r) => (
                   <button key={`${r.type}-${r.id}`} type="button" role="option" aria-selected={false} className="row row-button" onClick={() => go(r)} data-testid="search-result">
-                    <ItemIcon value={r.icon} size={18} className={r.type === 'task' ? 'tint' : 'muted'} />
+                    {r.type === 'task' ? <TaskBadge icon={r.icon} kind={r.kind === 'check' ? 'check' : 'do'} size={28} /> : <EventBadge icon={r.icon} color={r.color} size={28} />}
                     <span className="row-label">{r.title}<span className="sub-label">{r.type === 'task' ? 'タスク' : '予定'}</span></span>
                     <span className="row-value small muted">{r.at != null ? `${formatDayLabel(r.at)} ${formatHm(r.at)}` : '未設定'}</span>
                   </button>

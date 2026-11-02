@@ -125,12 +125,13 @@ test.describe('2. 長押し進捗', () => {
     await mouseLongPressDrag(page, { x: c.x - 100, y: c.y }, { x: c.x - 100, y: c.y }, 600, 1);
     const bar = page.getByTestId('progress-scrubber');
     await page.waitForTimeout(400); // 展開アニメーションの収束
-    const w = await bar.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+    // v3（C26）：浮遊パネルのバー（.sp-track）に対して1:1
+    const w = await bar.locator('.sp-track').evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
     const v0 = Number(await bar.getAttribute('data-value'));
     for (const frac of [0.1, 0.25, 0.4]) {
       await page.mouse.move(c.x - 100 + w * frac, c.y);
       expect(Number(await bar.getAttribute('data-value'))).toBeCloseTo(v0 + frac, 2);
-      const fill = await bar.locator('.scrub-fill').evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+      const fill = await bar.locator('.sp-fill').evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
       expect(Math.abs(fill - (v0 + frac) * w)).toBeLessThan(1.5);
     }
     await page.mouse.up();

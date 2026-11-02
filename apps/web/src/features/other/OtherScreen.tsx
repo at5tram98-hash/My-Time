@@ -6,7 +6,6 @@ import { useAttention, useData, useSync } from '../../app/data';
 import { useUIActions } from '../../app/ui';
 import { Group } from '../../components/Controls';
 import { Icon, type IconName } from '../../components/Icon';
-import { MenuButton } from '../../components/Menu';
 import { db, type TextSizePref, type ThemePref } from '../../data/db';
 import { repo } from '../../data/repo';
 import { api } from '../../sync/api';
@@ -23,7 +22,7 @@ import { useEdgeSwipeBack } from '../../ui/gestures';
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits' | 'categories' | 'studio' | 'timetree' | 'advanced';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits' | 'categories' | 'studio' | 'timetree' | 'advanced' | 'appearance' | 'textsize';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
   root: 'その他',
@@ -40,6 +39,8 @@ const PAGE_TITLE: Record<OtherPage, string> = {
   studio: 'Create Studio',
   timetree: 'TimeTree の読み込み',
   advanced: '詳細設定',
+  appearance: '外観',
+  textsize: '文字サイズ',
 };
 
 export function SettingIcon({ name, color }: { name: IconName; color: string }) {
@@ -171,22 +172,9 @@ export function OtherScreen() {
         <Group header="通知と外観">
           <NavRow icon="bell" color="#FF2D55" label="通知" onClick={() => setPage('notifications')} testId="nav-notifications" />
           <NavRow icon="tray" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
-          <div className="row">
-            <SettingIcon name="paint" color="#5856D6" />
-            <span className="row-label">外観</span>
-            <MenuButton label="外観" className="row-menu-btn" testId="theme-menu" items={(Object.keys(THEME_LABEL) as ThemePref[]).map((k) => ({ label: THEME_LABEL[k], checked: settings.theme === k, onSelect: () => void repo.updateSettings({ theme: k }) }))}>
-              {THEME_LABEL[settings.theme]}
-              <Icon name="arrowUpDown" size={14} />
-            </MenuButton>
-          </div>
-          <div className="row">
-            <SettingIcon name="textsize" color="#007AFF" />
-            <span className="row-label">文字サイズ</span>
-            <MenuButton label="文字サイズ" className="row-menu-btn" testId="size-menu" items={(Object.keys(SIZE_LABEL) as TextSizePref[]).map((k) => ({ label: SIZE_LABEL[k], checked: settings.textSize === k, onSelect: () => void repo.updateSettings({ textSize: k }) }))}>
-              {SIZE_LABEL[settings.textSize]}
-              <Icon name="arrowUpDown" size={14} />
-            </MenuButton>
-          </div>
+          {/* 設定は一覧から直接変えず、詳細画面に入って選ぶ（C35） */}
+          <NavRow icon="paint" color="#5856D6" label="外観" value={THEME_LABEL[settings.theme]} onClick={() => setPage('appearance')} testId="nav-appearance" />
+          <NavRow icon="textsize" color="#007AFF" label="文字サイズ" value={SIZE_LABEL[settings.textSize]} onClick={() => setPage('textsize')} testId="nav-textsize" />
         </Group>
 
         <Group header="データとバックアップ" footer={`30日後の期限削除：${sync.config?.retentionMode === 'on' ? '有効' : sync.config?.retentionMode === 'dry-run' ? '試運転（削除しない）' : '停止中（自動では削除しません）'}`}>
@@ -227,6 +215,8 @@ export function OtherScreen() {
             {page === 'studio' && <StudioPage />}
             {page === 'timetree' && <TimeTreePage />}
             {page === 'advanced' && <AdvancedPage logCount={logCount} />}
+            {page === 'appearance' && <ChoicePage label="外観" value={settings.theme} options={(Object.keys(THEME_LABEL) as ThemePref[]).map((k) => ({ value: k, label: THEME_LABEL[k] }))} onPick={(k) => void repo.updateSettings({ theme: k })} preview={<AppearancePreview />} footer="システムに合わせると、iPhone の設定（ライト／ダーク）に従います。" testId="theme" />}
+            {page === 'textsize' && <ChoicePage label="文字サイズ" value={settings.textSize} options={(Object.keys(SIZE_LABEL) as TextSizePref[]).map((k) => ({ value: k, label: SIZE_LABEL[k] }))} onPick={(k) => void repo.updateSettings({ textSize: k })} preview={<p className="text-preview">今日のタスク・財政学レポート 10:00〜12:00</p>} footer="システムに合わせると、iPhone の「さらに大きな文字」の設定に従います。" testId="size" />}
           </SubPage>
         )}
       </AnimatePresence>
@@ -235,3 +225,31 @@ export function OtherScreen() {
 }
 
 export const fmtDate = (t: number) => formatDayLabel(t);
+
+/** 選ぶだけの設定の詳細画面（C35）。選んだ時点で保存し、戻ると一覧の要約に反映 */
+function ChoicePage<T extends string>({ label, value, options, onPick, preview, footer, testId }: { label: string; value: T; options: { value: T; label: string }[]; onPick: (v: T) => void; preview?: ReactNode; footer?: string; testId: string }) {
+  return (
+    <>
+      {preview && <div className="setting-preview" aria-hidden>{preview}</div>}
+      <Group footer={footer}>
+        <div role="radiogroup" aria-label={label}>
+          {options.map((o) => (
+            <button key={o.value} type="button" role="radio" aria-checked={value === o.value} className="row row-button" onClick={() => onPick(o.value)} data-testid={`${testId}-${o.value}`}>
+              <span className="row-label">{o.label}</span>
+              {value === o.value && <Icon name="check" size={18} strokeWidth={2.6} className="tint" />}
+            </button>
+          ))}
+        </div>
+      </Group>
+    </>
+  );
+}
+
+function AppearancePreview() {
+  return (
+    <div className="ap-prev">
+      <div className="ap-card light"><span className="ap-bar" /><span className="ap-line" /><span className="ap-line short" /><span className="ap-name">ライト</span></div>
+      <div className="ap-card dark"><span className="ap-bar" /><span className="ap-line" /><span className="ap-line short" /><span className="ap-name">ダーク</span></div>
+    </div>
+  );
+}

@@ -1,86 +1,78 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addDays, CALENDAR_ICON_CHOICES, ITEM_ICONS, resolveItemIcon, startOfDay, TASK_ICON_CHOICES, weekday, type ItemIconId, type PlaceValue, type RecurrenceRule } from '@my-time/domain';
+import { addDays, CALENDAR_ICON_CHOICES, ITEM_ICONS, resolveItemIcon, startOfDay, TASK_ICON_CHOICES, weekday, type ItemIconId, type RecurrenceRule } from '@my-time/domain';
 import { Icon } from '../../components/Icon';
 import { Popup } from '../../ui/Popup';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const pad = (n: number) => String(n).padStart(2, '0');
 
-// ---------------- 日付ピッカー（Q73） ----------------
-/** 月カレンダー。左右スワイプ・矢印で月移動、年月タップで素早く選ぶ。今日・選択中・範囲外を区別 */
+// ---------------- 日付ピッカー（Q73・C27） ----------------
+const daysIn = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+
+/**
+ * 年・月・日の3列ホイール（C27）。年月グリッドやカード状の日付選択は使わない。
+ * 月の日数は年月に追従し、1月31日→2月は月末へ寄せてその値を要約に表示。完了までは元の値を変えない。
+ */
 export function DatePickerPopup({ open, value, min, onClose, onPick, title = '日付' }: { open: boolean; value: number; min?: number | null; onClose: () => void; onPick: (day: number) => void; title?: string }) {
-  const [month, setMonth] = useState(() => { const d = new Date(value); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); });
-  const [sel, setSel] = useState(startOfDay(value));
-  const [ym, setYm] = useState(false);
-  useEffect(() => { if (open) { const d = new Date(value); setMonth(new Date(d.getFullYear(), d.getMonth(), 1).getTime()); setSel(startOfDay(value)); setYm(false); } }, [open, value]);
-  const m = new Date(month);
-  const first = startOfDay(month);
-  const gridStart = addDays(first, -weekday(first));
-  const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
-  const today = startOfDay(Date.now());
-  const step = (dir: number) => setMonth(new Date(m.getFullYear(), m.getMonth() + dir, 1).getTime());
-  const sx = useRef<number | null>(null);
+  const init = () => { const d = new Date(value); return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() }; };
+  const [v, setV] = useState(init);
+  useEffect(() => { if (open) setV(init()); }, [open, value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const maxD = daysIn(v.y, v.m);
+  const day = Math.min(v.d, maxD);
+  const picked = startOfDay(new Date(v.y, v.m, day).getTime());
+  const tooEarly = min != null && picked < startOfDay(min);
+  const y0 = new Date(value).getFullYear();
+  const years = Array.from({ length: 21 }, (_, i) => y0 - 10 + i);
+  const today = () => { const t = new Date(); setV({ y: t.getFullYear(), m: t.getMonth(), d: t.getDate() }); };
   return (
-    <Popup open={open} title={title} onClose={onClose} onDone={() => onPick(sel)} testId="date-picker">
-      <div className="dp-head">
-        <button type="button" className="dp-ym" onClick={() => setYm((v) => !v)} aria-expanded={ym} data-testid="dp-ym">{m.getFullYear()}年{m.getMonth() + 1}月 <Icon name="chevronDown" size={14} strokeWidth={2.4} /></button>
-        <span className="dp-nav">
-          <button type="button" className="gbtn glass glass-i" aria-label="前の月" onClick={() => step(-1)}><Icon name="chevronLeft" size={18} /></button>
-          <button type="button" className="gpill glass glass-i" onClick={() => { setMonth(new Date(new Date(today).getFullYear(), new Date(today).getMonth(), 1).getTime()); setSel(today); }}>今日</button>
-          <button type="button" className="gbtn glass glass-i" aria-label="次の月" onClick={() => step(1)}><Icon name="chevronRight" size={18} /></button>
-        </span>
+    <Popup open={open} title={title} onClose={onClose} onDone={tooEarly ? undefined : () => onPick(picked)} testId="date-picker">
+      <div className="picker-summary" aria-live="polite" data-testid="date-summary">{v.y}年{v.m + 1}月{day}日（{WD[new Date(v.y, v.m, day).getDay()]}）{day !== v.d ? <span className="muted small"> {v.m + 1}月は{maxD}日まで</span> : null}</div>
+      <div className="wheel-wrap" key={`d-${open}`}>
+        <div className="wheel-band" aria-hidden />
+        <Wheel values={years} value={v.y} onChange={(y) => setV((o) => ({ ...o, y }))} label="年" format={(x) => `${x}年`} wide />
+        <Wheel values={Array.from({ length: 12 }, (_, i) => i)} value={v.m} onChange={(m) => setV((o) => ({ ...o, m }))} label="月" format={(x) => `${x + 1}月`} />
+        <Wheel values={Array.from({ length: maxD }, (_, i) => i + 1)} value={day} onChange={(d) => setV((o) => ({ ...o, d }))} label="日" format={(x) => `${x}日`} />
       </div>
-      {ym ? (
-        <div className="dp-ymgrid" role="group" aria-label="年と月">
-          <div className="dp-years">
-            {Array.from({ length: 9 }, (_, i) => m.getFullYear() - 4 + i).map((y) => (
-              <button key={y} type="button" aria-pressed={y === m.getFullYear()} onClick={() => setMonth(new Date(y, m.getMonth(), 1).getTime())}>{y}</button>
-            ))}
-          </div>
-          <div className="dp-months">
-            {Array.from({ length: 12 }, (_, i) => i).map((i) => (
-              <button key={i} type="button" aria-pressed={i === m.getMonth()} onClick={() => { setMonth(new Date(m.getFullYear(), i, 1).getTime()); setYm(false); }}>{i + 1}月</button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="dp-grid" role="grid" aria-label={`${m.getFullYear()}年${m.getMonth() + 1}月`}
-          onPointerDown={(e) => (sx.current = e.clientX)}
-          onPointerUp={(e) => { if (sx.current != null && Math.abs(e.clientX - sx.current) > 50) step(e.clientX < sx.current ? 1 : -1); sx.current = null; }}>
-          {WD.map((w) => <span key={w} className="dp-wd" aria-hidden>{w}</span>)}
-          {cells.map((d) => {
-            const out = new Date(d).getMonth() !== m.getMonth();
-            const disabled = min != null && d < startOfDay(min);
-            return (
-              <button key={d} type="button" role="gridcell" disabled={disabled} aria-selected={d === sel} aria-current={d === today ? 'date' : undefined}
-                className={`dp-day ${out ? 'out' : ''} ${d === sel ? 'sel' : ''} ${d === today ? 'today' : ''}`} onClick={() => setSel(d)} data-testid={out ? undefined : `dp-day-${new Date(d).getDate()}`}>
-                {new Date(d).getDate()}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {tooEarly && <p className="form-error">開始より前の日付は選べません</p>}
+      <div className="wheel-opts"><button type="button" className="gpill glass glass-i" onClick={today}>今日</button></div>
     </Popup>
   );
 }
 
-// ---------------- 時刻ホイール（Q74） ----------------
-function Wheel({ values, value, onChange, label, format }: { values: number[]; value: number; onChange: (v: number) => void; label: string; format: (v: number) => string }) {
+// ---------------- ホイール（時刻・日付・時間量で共通：C27） ----------------
+/**
+ * スクロール吸着のホイール。指・マウスのスクロール、行のタップ、キーボード（上下・PageUp/Down・Home/End）で選べる。
+ * 外から値が変わったとき（日数の変化・「今日」など）は位置を合わせ直す。
+ */
+export function Wheel({ values, value, onChange, label, format, wide }: { values: number[]; value: number; onChange: (v: number) => void; label: string; format: (v: number) => string; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const ROW = 40;
   const idx = Math.max(0, values.indexOf(value));
-  useEffect(() => { const el = ref.current; if (el) el.scrollTop = idx * ROW; }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const settling = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || settling.current) return;
+    if (Math.abs(el.scrollTop - idx * ROW) > 2) el.scrollTop = idx * ROW;
+  }, [idx, values.length]);
   const t = useRef(0);
+  const step = (n: number) => { const i = Math.min(values.length - 1, Math.max(0, idx + n)); onChange(values[i]!); };
   return (
-    <div className="wheel" role="listbox" aria-label={label} ref={ref}
+    <div className={`wheel ${wide ? 'wide' : ''}`} role="listbox" aria-label={label} tabIndex={0} ref={ref}
+      onKeyDown={(e) => {
+        const map: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 5, PageUp: -5, Home: -1e6, End: 1e6 };
+        if (map[e.key] == null) return;
+        e.preventDefault();
+        step(map[e.key]!);
+      }}
       onScroll={(e) => {
         const el = e.currentTarget;
+        settling.current = true;
         window.clearTimeout(t.current);
-        t.current = window.setTimeout(() => { const i = Math.min(values.length - 1, Math.max(0, Math.round(el.scrollTop / ROW))); if (values[i] !== value) onChange(values[i]!); }, 80);
+        t.current = window.setTimeout(() => { settling.current = false; const i = Math.min(values.length - 1, Math.max(0, Math.round(el.scrollTop / ROW))); if (values[i] !== value) onChange(values[i]!); }, 80);
       }}>
       <div className="wheel-pad" />
       {values.map((v, i) => (
-        <button key={v} type="button" role="option" aria-selected={i === idx} className={`wheel-item ${i === idx ? 'on' : ''}`} onClick={() => { ref.current?.scrollTo({ top: i * ROW, behavior: 'smooth' }); onChange(v); }}>{format(v)}</button>
+        <button key={v} type="button" role="option" tabIndex={-1} aria-selected={i === idx} className={`wheel-item ${i === idx ? 'on' : ''}`} onClick={() => { ref.current?.scrollTo({ top: i * ROW, behavior: 'smooth' }); onChange(v); }}>{format(v)}</button>
       ))}
       <div className="wheel-pad" />
     </div>
@@ -217,7 +209,7 @@ export function IconStrip({ value, onChange, recent, target }: { value: string; 
     <>
       <div className="hstrip" role="radiogroup" aria-label="アイコン" data-testid="icon-strip">
         {strip.map((id) => (
-          <button key={id} type="button" role="radio" aria-checked={id === sel} aria-label={ITEM_ICONS[id]} className={`hcircle ${id === sel ? 'on' : ''}`} onClick={() => onChange(id)} data-testid={`icon-${id}`}>
+          <button key={id} type="button" role="radio" aria-checked={id === sel} aria-label={ITEM_ICONS[id]} className={`hcircle ${id === sel ? 'on' : ''}`} onClick={(e) => { onChange(id); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }} data-testid={`icon-${id}`}>
             <Icon name={id} size={20} strokeWidth={id === sel ? 2.2 : 1.8} />
           </button>
         ))}
@@ -248,7 +240,7 @@ export function ColorStrip({ value, onChange, recent }: { value: string | null; 
     <div className="hstrip" role="radiogroup" aria-label="色" data-testid="color-strip">
       <button type="button" role="radio" aria-checked={value == null} className={`hcircle ${value == null ? 'on' : ''}`} aria-label="カレンダーの色" onClick={() => onChange(null)}><Icon name="calendar" size={18} /></button>
       {list.map((c) => (
-        <button key={c} type="button" role="radio" aria-checked={value?.toLowerCase() === c.toLowerCase()} aria-label={`色 ${c}`} className={`hcircle color ${value?.toLowerCase() === c.toLowerCase() ? 'on' : ''}`} style={{ ['--c' as string]: c }} onClick={() => onChange(c)} />
+        <button key={c} type="button" role="radio" aria-checked={value?.toLowerCase() === c.toLowerCase()} aria-label={`色 ${c}`} className={`hcircle color ${value?.toLowerCase() === c.toLowerCase() ? 'on' : ''}`} style={{ ['--c' as string]: c }} onClick={(e) => { onChange(c); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }} />
       ))}
       <label className="hcircle custom" aria-label="カスタムの色">
         <Icon name="paint" size={18} />
@@ -258,97 +250,67 @@ export function ColorStrip({ value, onChange, recent }: { value: string | null; 
   );
 }
 
-// ---------------- 通知（Q79） ----------------
+// ---------------- 通知（Q79・C18） ----------------
 const NOTIFY_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440];
-export const notifyLabel = (m: number) => (m === 0 ? '開始時刻' : m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : m >= 60 ? `${Math.floor(m / 60)}時間${m % 60}分前` : `${m}分前`);
-export function NotifyPopup({ open, value, onClose, onPick, permission }: { open: boolean; value: number[]; onClose: () => void; onPick: (v: number[]) => void; permission: string }) {
+export const notifyLabel = (m: number) => (m === 0 ? '開始時刻' : m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : m >= 1440 ? `${Math.floor(m / 1440)}日${Math.floor((m % 1440) / 60) ? `${Math.floor((m % 1440) / 60)}時間` : ''}${m % 60 ? `${m % 60}分` : ''}前` : m >= 60 ? `${Math.floor(m / 60)}時間${m % 60}分前` : `${m}分前`);
+/** 複数の通知の要約（情報確認・編集で共通：F1）。重複を除き、早い順 */
+export const notifySummary = (v: readonly number[]) => (v.length ? [...new Set(v)].sort((a, b) => b - a).map(notifyLabel).join('・') : 'なし');
+
+/**
+ * 通知（C18）：現在の選択の要約 → よく使う時刻の複数選択 → カスタム追加 → 完了。
+ * シート内は仮の値で、「完了」で反映、「キャンセル」で元のまま。権限がなくても設定は保存できる（届くとは偽らない）。
+ */
+export function NotifyPopup({ open, value, onClose, onPick, permission, hint }: { open: boolean; value: number[]; onClose: () => void; onPick: (v: number[]) => void; permission: string; hint?: string }) {
   const [v, setV] = useState<number[]>(value);
+  const [custom, setCustom] = useState(false);
   const [d, setD] = useState(0);
   const [h, setH] = useState(0);
   const [m, setM] = useState(30);
-  useEffect(() => { if (open) setV(value); }, [open, value]);
+  useEffect(() => { if (open) { setV(value); setCustom(false); } }, [open, value]);
   const toggle = (x: number) => setV((l) => (l.includes(x) ? l.filter((y) => y !== x) : [...l, x].sort((a, b) => a - b).slice(0, 10)));
+  const total = d * 1440 + h * 60 + m;
+  if (custom) {
+    return (
+      <Popup open={open} title="カスタム時刻" onClose={() => setCustom(false)} onDone={() => { if (!v.includes(total)) toggle(total); setCustom(false); }} doneLabel="追加" testId="notify-custom">
+        <div className="picker-summary" aria-live="polite">{notifyLabel(total)}</div>
+        <div className="wheel-wrap">
+          <div className="wheel-band" aria-hidden />
+          <Wheel values={Array.from({ length: 28 }, (_, i) => i)} value={d} onChange={setD} label="日" format={(x) => `${x}日`} />
+          <Wheel values={Array.from({ length: 24 }, (_, i) => i)} value={h} onChange={setH} label="時間" format={(x) => `${x}時間`} wide />
+          <Wheel values={Array.from({ length: 60 }, (_, i) => i)} value={m} onChange={setM} label="分" format={(x) => `${x}分`} />
+        </div>
+        <p className="muted small center">開始の何日・何時間・何分前に通知するかを選びます。</p>
+      </Popup>
+    );
+  }
   return (
     <Popup open={open} title="通知" onClose={onClose} onDone={() => onPick(v)} testId="notify-popup" tall>
-      {permission !== 'granted' && <p className="note-text" role="status">{permission === 'denied' ? '通知はブラウザーの設定でオフになっています。設定は保存されますが、届きません。' : permission === 'unsupported' ? 'この環境は通知に対応していません。設定は保存されます。' : '通知を受け取るには「その他」の「通知とお知らせ」で許可してください。'}</p>}
+      <div className="notify-summary" aria-live="polite" data-testid="notify-summary">
+        {v.length ? v.map((x) => <span key={x} className="nchip">{notifyLabel(x)}<button type="button" aria-label={`${notifyLabel(x)}を外す`} onClick={() => toggle(x)}><Icon name="close" size={11} strokeWidth={2.8} /></button></span>) : <span className="muted">通知なし</span>}
+      </div>
+      {hint && <p className="note-text">{hint}</p>}
+      {permission !== 'granted' && (
+        <div className="perm-card" role="status">
+          <Icon name="bell" size={18} />
+          <span>{permission === 'denied' ? '通知はブラウザーの設定でオフです。設定は保存されますが、届きません。' : permission === 'unsupported' ? 'この環境は通知に対応していません。設定は保存されます。' : '通知は未許可です。「その他」→「通知」で許可できます。'}</span>
+        </div>
+      )}
+      <div className="group-header">よく使う時刻</div>
       <div className="group"><div className="group-body">
         {NOTIFY_PRESETS.map((x) => (
-          <button key={x} type="button" role="menuitemcheckbox" aria-checked={v.includes(x)} className="row row-button" onClick={() => toggle(x)}>
+          <button key={x} type="button" role="menuitemcheckbox" aria-checked={v.includes(x)} className={`row row-button sel-row ${v.includes(x) ? 'on' : ''}`} onClick={() => toggle(x)}>
             <span className="row-label">{notifyLabel(x)}</span>
-            {v.includes(x) && <Icon name="check" size={18} strokeWidth={2.6} className="tint" />}
+            <span className="sel-mark" aria-hidden>{v.includes(x) && <Icon name="check" size={14} strokeWidth={3} />}</span>
           </button>
         ))}
         {v.filter((x) => !NOTIFY_PRESETS.includes(x)).map((x) => (
-          <button key={x} type="button" role="menuitemcheckbox" aria-checked className="row row-button" onClick={() => toggle(x)}>
-            <span className="row-label">{notifyLabel(x)}</span><Icon name="check" size={18} strokeWidth={2.6} className="tint" />
+          <button key={x} type="button" role="menuitemcheckbox" aria-checked className="row row-button sel-row on" onClick={() => toggle(x)}>
+            <span className="row-label">{notifyLabel(x)}<span className="sub-label">カスタム</span></span><span className="sel-mark" aria-hidden><Icon name="check" size={14} strokeWidth={3} /></span>
           </button>
         ))}
+        <button type="button" className="row row-button tint-row" onClick={() => setCustom(true)} data-testid="notify-add-custom"><Icon name="plus" size={18} /><span className="row-label">カスタム時刻を追加</span><Icon name="chevronRight" size={16} className="chev" /></button>
       </div></div>
-      <div className="group-header">自由に指定</div>
-      <div className="group"><div className="group-body"><div className="row">
-        <span className="dur-inputs">
-          <label><input type="number" inputMode="numeric" min={0} max={27} value={d} onChange={(e) => setD(Math.max(0, Math.min(27, Number(e.target.value) || 0)))} aria-label="日" />日</label>
-          <label><input type="number" inputMode="numeric" min={0} max={23} value={h} onChange={(e) => setH(Math.max(0, Math.min(23, Number(e.target.value) || 0)))} aria-label="時間" />時間</label>
-          <label><input type="number" inputMode="numeric" min={0} max={59} value={m} onChange={(e) => setM(Math.max(0, Math.min(59, Number(e.target.value) || 0)))} aria-label="分" />分前</label>
-        </span>
-        <button type="button" className="gpill glass glass-i" onClick={() => toggle(d * 1440 + h * 60 + m)} data-testid="notify-add-custom">追加</button>
-      </div></div></div>
     </Popup>
   );
 }
 
-// ---------------- 場所（Q78）：履歴と手入力。地図検索は OpenStreetMap（Nominatim）を検索ボタンのときだけ ----------------
-interface NominatimHit { display_name: string; name?: string; lat: string; lon: string }
-export function PlacePopup({ open, value, history, onClose, onPick }: { open: boolean; value: PlaceValue | null; history: PlaceValue[]; onClose: () => void; onPick: (p: PlaceValue | null) => void }) {
-  const [q, setQ] = useState('');
-  const [hits, setHits] = useState<PlaceValue[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const [manual, setManual] = useState<PlaceValue>({ name: '', address: '', lat: null, lng: null });
-  const last = useRef(0);
-  useEffect(() => { if (open) { setQ(value?.name ?? ''); setHits(null); setErr(''); setManual(value ?? { name: '', address: '', lat: null, lng: null }); } }, [open, value]);
-  const search = async () => {
-    const k = q.trim();
-    if (!k) return;
-    // 利用規約：1秒に1回まで・入力のたびには問い合わせない
-    const wait = 1100 - (Date.now() - last.current);
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    last.current = Date.now();
-    setBusy(true); setErr('');
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=ja&q=${encodeURIComponent(k)}`, { headers: { accept: 'application/json' } });
-      if (!res.ok) throw new Error(String(res.status));
-      const list = (await res.json()) as NominatimHit[];
-      setHits(list.map((h) => ({ name: h.name || h.display_name.split(',')[0]!.trim(), address: h.display_name, lat: Number(h.lat), lng: Number(h.lon) })));
-    } catch {
-      setErr('地図の検索に失敗しました。下の欄に手で入力できます。');
-    } finally { setBusy(false); }
-  };
-  const k = q.trim();
-  const fromHistory = history.filter((h) => !k || h.name.includes(k) || h.address.includes(k)).slice(0, 8);
-  return (
-    <Popup open={open} title="場所" onClose={onClose} testId="place-popup" tall>
-      <form className="search-field" onSubmit={(e) => { e.preventDefault(); void search(); }}>
-        <Icon name="search" size={17} />
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="場所の名前・住所" aria-label="場所を検索" data-testid="place-query" />
-        <button type="submit" className="gpill glass glass-i" disabled={!k || busy} data-testid="place-search">{busy ? '検索中' : '地図で検索'}</button>
-      </form>
-      <p className="muted small">地図の検索には OpenStreetMap を使います（入力した語が送られます）。</p>
-      {fromHistory.length > 0 && <><div className="group-header">履歴</div><div className="group"><div className="group-body">
-        {fromHistory.map((p, i) => <button key={i} type="button" className="row row-button" onClick={() => onPick(p)}><Icon name="clock" size={18} className="muted" /><span className="row-label">{p.name}<span className="sub-label">{p.address}</span></span></button>)}
-      </div></div></>}
-      {err && <p className="form-error" role="alert">{err}</p>}
-      {hits && <><div className="group-header">検索結果</div><div className="group"><div className="group-body" data-testid="place-hits">
-        {hits.length === 0 && <div className="row muted">見つかりませんでした</div>}
-        {hits.map((p, i) => <button key={i} type="button" className="row row-button" onClick={() => onPick(p)}><Icon name="flag" size={18} className="tint" /><span className="row-label">{p.name}<span className="sub-label">{p.address}</span></span></button>)}
-      </div></div></>}
-      <div className="group-header">手で入力</div>
-      <div className="group"><div className="group-body">
-        <input className="row-input" value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} placeholder="名称" aria-label="場所の名称" data-testid="place-name" />
-        <input className="row-input" value={manual.address} onChange={(e) => setManual({ ...manual, address: e.target.value })} placeholder="住所（任意）" aria-label="住所" />
-        <button type="button" className="row row-button center tint" disabled={!manual.name.trim()} onClick={() => onPick({ ...manual, name: manual.name.trim(), address: manual.address.trim() })} data-testid="place-use-manual">この場所にする</button>
-      </div></div>
-      {value && <button type="button" className="row row-button center destructive" onClick={() => onPick(null)}>場所を外す</button>}
-    </Popup>
-  );
-}

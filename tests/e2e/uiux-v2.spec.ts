@@ -38,7 +38,7 @@ test.describe('UI/UX v2：共通エディター', () => {
     await openNewTask(page);
     await page.getByTestId('editor-title').fill('通知テスト');
     await pickTime(page, 'editor-start-time', 15, 0);
-    await page.getByTestId('editor-tab-option').click();
+    // v3：通知は基本タブ（C23）
     await page.getByTestId('editor-notify').click();
     const pop = page.getByTestId('notify-popup');
     await expect(pop).toBeVisible();

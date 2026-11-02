@@ -14,6 +14,7 @@ import { TaskRow } from '../tasks/TaskRow';
 import { Timeline } from '../timeline/Timeline';
 import { useTimelineActions } from '../timeline/useTimelineActions';
 import { FloatingCards, CARDS_H, islandOrder } from './FloatingCards';
+import { DatePickerPopup } from '../editor/pickers';
 
 const HANDLE_H = 22;
 const SPRING = { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 } as const;
@@ -21,7 +22,7 @@ const SPRING = { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 } as con
 export function HomeScreen() {
   const { tasks, subtasksByTask, calendarById, settings } = useData();
   const { homeDate } = useUIDates();
-  const { setHomeDate, openSheet, setTab } = useUIActions();
+  const { setHomeDate, openSheet, setTab, setCalDate } = useUIActions();
   const now = useNow();
   const reduce = useReducedMotion() ?? false;
   const actions = useTimelineActions();
@@ -43,8 +44,9 @@ export function HomeScreen() {
   const normalH = Math.round(Math.min(maxH, Math.max(MIN_LIST, bodyH * settings.homeSplit)));
   // 拡張時に残すカードがないときは帯そのものを出さない（空のカードは表示しない）
   const island = useMemo(() => islandOrder(tasks, now), [tasks, now]);
-  // 島は常に出す（空のときは小さな案内）。完全収納はカレンダータブへの切替で表す
-  const collapsedH = island.length ? CARDS_H : 44;
+  // コンパクト表示は円だけ。対象がなければ空の帯を出さず高さ0（C01）
+  const collapsedH = island.length ? CARDS_H : 0;
+  const [datePick, setDatePick] = useState(false);
 
   useLayoutEffect(() => {
     const el = bodyRef.current;
@@ -115,13 +117,7 @@ export function HomeScreen() {
     const first = recent[0] ?? d.samples[0]!;
     const v = (e.clientY - first.y) / Math.max(16, nowT - first.t); // px/ms（負＝上方向）
     const h = paneH.get();
-    // 島の状態からさらに上へ：タスクを完全に収納してカレンダータブへ（Q12）
-    if (expandedRef.current && h < collapsedH - 40) {
-      setTab('calendar');
-      settle(true);
-      return;
-    }
-    // 小さくすると島（Dynamic Island 風）へ。それ以外は離した位置を保持して保存
+    // 小さくするとコンパクト表示（円だけ）へ。カレンダーへの移動はコンパクト表示から始めた上スワイプだけ（1回の操作で2段階進めない：C01）。それ以外は離した位置を保持して保存
     if (v < -0.9 || h < MIN_LIST - 30) return settle(true);
     if (expandedRef.current && v > 0.6 && h < MIN_LIST) return settle(false);
     const fixed = Math.min(maxH, Math.max(MIN_LIST, h));
@@ -139,6 +135,47 @@ export function HomeScreen() {
     if (d && d.id === e.pointerId) settle(expandedRef.current);
   };
 
+  // ---- コンパクト表示（円の列）での縦スワイプ：上へ＝カレンダーへ、下へ＝一覧を戻す（C01） ----
+  // 判定は生のポインター差分（圧縮後の座標ではない）。初動8pxまではタップ・横スクロールのまま
+  const cg = useRef<{ id: number; x: number; y: number; t: number; vertical: boolean; samples: { y: number; t: number }[] } | null>(null);
+  const goCalendar = () => {
+    setCalDate(homeDate);
+    void repo.updateSettings({ calendarView: settings.homeDays === 1 ? 'day' : '2day' });
+    setTab('calendar');
+  };
+  const onCompactDown = (e: RPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !expandedRef.current) return;
+    cg.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), vertical: false, samples: [{ y: e.clientY, t: performance.now() }] };
+  };
+  const onCompactMove = (e: RPointerEvent<HTMLDivElement>) => {
+    const g = cg.current;
+    if (!g || g.id !== e.pointerId) return;
+    const dx = e.clientX - g.x;
+    const dy = e.clientY - g.y;
+    g.samples.push({ y: e.clientY, t: performance.now() });
+    if (g.samples.length > 6) g.samples.shift();
+    if (!g.vertical) {
+      if (Math.hypot(dx, dy) < 8) return;
+      if (Math.abs(dx) > Math.abs(dy)) { cg.current = null; return; } // 横は円の列のスクロール
+      if (!gestureLock.acquire('split')) { cg.current = null; return; }
+      g.vertical = true;
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    }
+  };
+  const onCompactUp = (e: RPointerEvent<HTMLDivElement>) => {
+    const g = cg.current;
+    cg.current = null;
+    if (!g || g.id !== e.pointerId || !g.vertical) return;
+    gestureLock.release('split');
+    const dy = e.clientY - g.y;
+    const nowT = performance.now();
+    const first = g.samples.find((p) => nowT - p.t < 100) ?? g.samples[0]!;
+    const v = (e.clientY - first.y) / Math.max(16, nowT - first.t);
+    if (dy <= -36 || v <= -0.65) return goCalendar();
+    if (dy >= 36 || v >= 0.65) return settle(false);
+  };
+  const onCompactCancel = () => { if (cg.current?.vertical) gestureLock.release('split'); cg.current = null; };
+
   // ホームは1日・2日だけ（3〜7日表示は廃止：Q22）
   const days = settings.homeDays;
   const events = useVisibleEvents(addDays(homeDate, -1), addDays(homeDate, days + 1), now);
@@ -155,8 +192,10 @@ export function HomeScreen() {
   const narrow = navW < 360;
   const moreItems: (MenuItem | 'separator')[] = [
     { label: '今日へ移動', icon: 'today', disabled: isToday, onSelect: () => setHomeDate(startOfDay(Date.now())) },
-    { label: expanded ? 'タスク一覧を戻す' : 'タスクを島にする', icon: 'expand', onSelect: () => settle(!expanded) },
-    { label: settings.homeDays === 1 ? '2日表示にする' : '1日表示にする', icon: settings.homeDays === 1 ? 'days2' : 'days1', onSelect: () => void repo.updateSettings({ homeDays: settings.homeDays === 1 ? 2 : 1 }) },
+    // 1日／2日の切替はヘッダーのボタンだけ（二重にしない：C02）。代わりに日付を選ぶ
+    { label: '日付を選択', icon: 'calendar', onSelect: () => setDatePick(true) },
+    { label: expanded ? 'タスク一覧を表示' : 'タスクをコンパクト表示', icon: 'expand', onSelect: () => settle(!expanded) },
+    { label: 'カレンダーで表示', icon: 'calendar', onSelect: goCalendar },
   ];
   const hd = new Date(homeDate);
 
@@ -209,33 +248,45 @@ export function HomeScreen() {
               </motion.div>
             </div>
           </motion.div>
-          <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive ? 'auto' : 'none' }} aria-hidden={!cardsInteractive}>
+          <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive ? 'auto' : 'none' }} aria-hidden={!cardsInteractive}
+            onPointerDown={onCompactDown} onPointerMove={onCompactMove} onPointerUp={onCompactUp} onPointerCancel={onCompactCancel} data-testid="compact-row">
             <FloatingCards tasks={tasks} subtasksByTask={subtasksByTask} now={now} />
           </motion.div>
         </motion.section>
 
-        <div
-          className="split-handle"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="タスクとカレンダーの境界。上下にドラッグして表示を切り替え"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={expanded ? 100 : 0}
-          tabIndex={0}
-          style={{ height: HANDLE_H }}
-          data-testid="split-handle"
-          onPointerDown={onHandleDown}
-          onPointerMove={onHandleMove}
-          onPointerUp={onHandleUp}
-          onPointerCancel={onHandleCancel}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowUp') settle(true);
-            if (e.key === 'ArrowDown') settle(false);
-          }}
-        >
-          <span className="split-grip" />
-        </div>
+        {/* コンパクト表示ではつまみ・線・その余白を描かない（C01）。戻すのは円の列の下スワイプかメニュー */}
+        {!expanded && (
+          <div
+            className="split-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="タスクとカレンダーの境界。上下キーで高さを変更、Home でコンパクト表示"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round((normalH / Math.max(1, bodyH)) * 100)}
+            aria-valuetext={`タスク一覧 ${Math.round((normalH / Math.max(1, bodyH)) * 100)}%`}
+            tabIndex={0}
+            style={{ height: HANDLE_H }}
+            data-testid="split-handle"
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+            onPointerCancel={onHandleCancel}
+            onKeyDown={(e) => {
+              // 無段階の比率をキーボードでも変えられる（R3）
+              const step = Math.round(bodyH * 0.05);
+              let h: number | null = null;
+              if (e.key === 'ArrowUp') h = Math.max(MIN_LIST, normalH - step);
+              if (e.key === 'ArrowDown') h = Math.min(maxH, normalH + step);
+              if (e.key === 'Home') { e.preventDefault(); return settle(true); }
+              if (h == null) return;
+              e.preventDefault();
+              void repo.updateSettings({ homeSplit: Math.round((h / Math.max(1, bodyH)) * 1000) / 1000 });
+            }}
+          >
+            <span className="split-grip" />
+          </div>
+        )}
 
         <div className="home-timeline">
           <Timeline
@@ -253,6 +304,7 @@ export function HomeScreen() {
           />
         </div>
       </div>
+      <DatePickerPopup open={datePick} value={homeDate} title="日付を選択" onClose={() => setDatePick(false)} onPick={(d) => { setDatePick(false); setHomeDate(d); }} />
     </div>
   );
 }

@@ -43,3 +43,17 @@ describe('複数の通知（v2）', () => {
     expect(planNotices([t], [e], [], start - 1440 * MINUTE, 5 * MINUTE)[0]?.body).toContain('1日後');
   });
 });
+
+describe('分析の追加指標（v3 C31）', () => {
+  it('予定時間・中断・カテゴリー別・ヒートマップの合計が実行時間と一致し、二重計上しない', () => {
+    const now = fromWall(2026, 10, 10);
+    const a = makeTask({ title: 'A', kind: 'do', category: 'ゼミ', plannedStart: fromWall(2026, 10, 2, 9), plannedEnd: fromWall(2026, 10, 2, 11), status: 'done', actualEnd: fromWall(2026, 10, 2, 11), intervals: [{ start: fromWall(2026, 10, 2, 9), end: fromWall(2026, 10, 2, 10) }, { start: fromWall(2026, 10, 2, 10, 30), end: fromWall(2026, 10, 2, 11) }] }, now);
+    const b = makeTask({ title: 'B', kind: 'do', plannedStart: fromWall(2026, 10, 3, 14), plannedEnd: fromWall(2026, 10, 3, 15), intervals: [{ start: fromWall(2026, 10, 3, 14), end: fromWall(2026, 10, 3, 15) }] }, now);
+    const st = periodStats([a, b], periodRange('week', fromWall(2026, 10, 2)), now);
+    expect(st.buckets.reduce((s, x) => s + x.plannedMs, 0)).toBe(3 * HOUR);
+    expect(st.buckets.reduce((s, x) => s + x.interruptions, 0)).toBe(1);
+    expect(st.heat.flat().reduce((s, x) => s + x, 0)).toBe(st.workedMs);
+    expect(st.byCategory.reduce((s, x) => s + x.workedMs, 0)).toBe(st.workedMs);
+    expect(st.byCategory.find((c) => c.category === 'ゼミ')).toMatchObject({ done: 1, total: 1 });
+  });
+});

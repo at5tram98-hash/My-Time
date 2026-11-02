@@ -1,20 +1,20 @@
-import { resolveItemIcon } from '@my-time/domain';
-import { Icon } from '../components/Icon';
+import { RingArc, TaskBadge, kindColor, type TaskKindTone } from '../components/Identity';
 
-/** 進捗リング（中央にアイコン：Q36・Q86・Q94）。100% でチェックへ変わる */
-export function Ring({ value, size = 40, icon, color = 'var(--blue)', done }: { value: number; size?: number; icon?: string; color?: string; done?: boolean }) {
-  const stroke = Math.max(3, size / 12);
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const v = Math.max(0, Math.min(1, value));
-  const complete = done ?? v >= 1;
+/**
+ * 進捗リング（Q36・Q86・Q94・C05・C25・C28）。
+ * アイコン付きはタスクの識別バッジ（円・種別色）として描き、外周に実績の円弧、中央に図形を置く。
+ * 100%（完了）はチェック。value が null のときは未入力として円弧を描かない（0%にすり替えない）。
+ */
+export function Ring({ value, size = 40, icon, color, done, kind = 'do', ideal, delayed, running, label }: { value: number | null; size?: number; icon?: string; color?: string; done?: boolean; kind?: TaskKindTone; ideal?: number | null; delayed?: boolean; running?: boolean; label?: string }) {
+  const v = value == null ? null : Math.max(0, Math.min(1, value));
+  const complete = done ?? (v != null && v >= 1);
+  const name = label ?? (v == null ? '進捗 未入力' : `進捗 ${Math.round(v * 100)}%`);
+  if (icon !== undefined) {
+    return <TaskBadge icon={icon} kind={kind} size={size} progress={v} ideal={ideal} done={complete} delayed={delayed} running={running} label={name} className="ring" />;
+  }
   return (
-    <span className="ring" style={{ width: size, height: size }} role="img" aria-label={`進捗 ${Math.round(v * 100)}%`}>
-      <svg width={size} height={size} aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--ring-track)" strokeWidth={stroke} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={complete ? 'var(--green)' : color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: 'stroke-dasharray 400ms var(--spring)' }} />
-      </svg>
-      <span className="ring-inner" aria-hidden>{complete ? <Icon name="check" size={size * 0.42} strokeWidth={3} /> : icon ? <Icon name={resolveItemIcon(icon).id} size={size * 0.46} strokeWidth={2} /> : null}</span>
+    <span className="ring" style={{ width: size, height: size }} role="img" aria-label={name}>
+      <RingArc value={complete ? 1 : v} size={size} color={color ?? kindColor(kind)} />
     </span>
   );
 }

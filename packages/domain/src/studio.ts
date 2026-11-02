@@ -99,3 +99,47 @@ export function studioImpact(prev: Pick<StudioType, 'fields'>, next: Pick<Studio
   const affected = records.filter((r) => [...removed, ...retyped].some((f) => r.values[f.id] != null && r.values[f.id] !== '')).length;
   return { removed, retyped, affected };
 }
+
+/** 進捗の根拠（D3・F2・R1）。全画面（リング・説明・実績欄・進捗パネル）で同じ結果を使う */
+export type ResolvedProgressSource = 'done' | 'studio' | 'subtasks' | 'manual' | 'none';
+export interface ResolvedProgress {
+  /** 0〜1。根拠がないときは null（0%へすり替えない） */
+  value: number | null;
+  source: ResolvedProgressSource;
+  /** 表示用の短い値（例：20/100ページ、2/3件、45%） */
+  label: string;
+  /** 根拠の説明 */
+  basis: string;
+  /** 未完了のサブタスク件数（親が完了でも残件を見せる：R1） */
+  openSubtasks: number;
+  totalSubtasks: number;
+  /** Studio 数値進捗のとき、クイック入力で更新する項目（C26） */
+  studioField?: StudioField;
+  studioTarget?: number | null;
+  over?: boolean;
+}
+
+/**
+ * 進捗の根拠を1つに決める。優先順：完了 → Studio の進捗方式 → サブタスク → 手動 → 未入力。
+ * 理想進捗は別の指標なので、ここには含めない。
+ */
+export function resolveProgress(
+  task: { status: string; manualProgress: { value: number } | null; extra?: { studio?: { typeId: string; values: Record<string, unknown> } | null } | null },
+  subtasks: readonly { done: boolean }[],
+  studioType: Pick<StudioType, 'progress' | 'fields'> | null | undefined,
+  workedMinutes = 0,
+): ResolvedProgress {
+  const total = subtasks.length;
+  const open = subtasks.filter((s) => !s.done).length;
+  const base = { openSubtasks: open, totalSubtasks: total };
+  if (task.status === 'done') return { ...base, value: 1, source: 'done', label: '100%', basis: open ? `完了済み（未完了のサブタスク${open}件）` : '完了済み' };
+  if (studioType && studioType.progress.mode !== 'none' && task.extra?.studio) {
+    const sp = studioProgress(studioType, task.extra.studio.values ?? {}, workedMinutes);
+    const f = studioType.fields.find((x) => x.id === studioType.progress.fieldId);
+    const modeJa = { number: '入力した数値', time: '実行時間', checklist: 'チェック項目', manual: '手動の進捗' } as Record<string, string>;
+    return { ...base, value: sp.value, source: 'studio', label: sp.value == null ? sp.label || '未入力' : sp.label, basis: `専用の項目（${modeJa[studioType.progress.mode] ?? '進捗'}）から計算`, ...(f ? { studioField: f } : {}), studioTarget: studioType.progress.target, over: sp.over };
+  }
+  if (total) return { ...base, value: (total - open) / total, source: 'subtasks', label: `${total - open}/${total}件`, basis: 'サブタスクの完了数から計算' };
+  if (task.manualProgress) return { ...base, value: task.manualProgress.value, source: 'manual', label: `${Math.round(task.manualProgress.value * 100)}%`, basis: '手動で入力した実績' };
+  return { ...base, value: null, source: 'none', label: '未入力', basis: '実績はまだ入力されていません' };
+}

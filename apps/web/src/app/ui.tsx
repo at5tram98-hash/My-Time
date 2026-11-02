@@ -19,7 +19,7 @@ export type SheetState =
   /** 共通の作成・編集（Q38・Q63）。mode が初期の種類、id があれば編集 */
   | { kind: 'edit'; mode: 'event' | 'task'; id?: string; defaults?: Record<string, unknown> }
   /** 実行パネル（Q35・Q92） */
-  | { kind: 'run'; id: string }
+  | { kind: 'run'; id: string; progress?: boolean }
   /** 表示するカレンダーの切替（Q31） */
   | { kind: 'calendarFilter' }
   /** 同期の詳細（Q57） */

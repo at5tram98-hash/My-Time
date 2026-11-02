@@ -86,9 +86,9 @@ export function CategoriesPage() {
           <>
             <div className="group"><div className="group-body"><input className="row-input big" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="カテゴリー名" aria-label="カテゴリー名" maxLength={40} data-testid="category-name" /></div></div>
             <div className="group-header">アイコン</div>
-            <div className="group"><div className="group-body padded"><IconStrip value={editing.icon} onChange={(id) => setEditing({ ...editing, icon: id })} recent={settings.recentIcons} target="task" /></div></div>
+            <div className="group"><div className="group-body"><IconStrip value={editing.icon} onChange={(id) => setEditing({ ...editing, icon: id })} recent={settings.recentIcons} target="task" /></div></div>
             <div className="group-header">色</div>
-            <div className="group"><div className="group-body padded"><ColorStrip value={editing.color} onChange={(col) => setEditing({ ...editing, color: col ?? '#0A84FF' })} recent={settings.recentColors} /></div></div>
+            <div className="group"><div className="group-body"><ColorStrip value={editing.color} onChange={(col) => setEditing({ ...editing, color: col ?? '#0A84FF' })} recent={settings.recentColors} /></div></div>
           </>
         )}
       </Popup>
@@ -103,7 +103,7 @@ function CategoryRow({ c, count, onEdit, onDelete, onDrag }: { c: TaskCategory; 
     <div className="row" ref={ref} data-cat-id={c.id} {...lp} data-testid={`category-${c.name}`}>
       <span className="cal-chip small" style={{ background: c.color }} aria-hidden><Icon name={resolveItemIcon(c.icon).id} size={14} /></span>
       <button type="button" className="row-label link-like" onClick={() => { if (!lp.consumedClick()) onEdit(); }}>{c.name}<span className="sub-label">{count}件</span></button>
-      <span className="drag-handle" role="button" tabIndex={0} aria-label={`${c.name}の並び替え`} onPointerDown={onDrag}><Icon name="arrowUpDown" size={18} /></span>
+      <span className="drag-handle" role="button" tabIndex={0} aria-label={`${c.name}の並び替え`} onPointerDown={onDrag}><Icon name="reorder" size={20} /></span>
     </div>
   );
 }

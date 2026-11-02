@@ -83,3 +83,66 @@ export function MiniBars({ values, labels, testId, title }: { values: number[]; 
     </div>
   );
 }
+
+/** 予定と実績を並べた棒（C31 ③）。予定は枠線のみ、実績は塗り。色だけでなく線種と凡例で区別 */
+export function PairBars({ items, testId }: { items: { label: string; a: number; b: number }[]; testId?: string }) {
+  const [sel, setSel] = useState<number | null>(null);
+  const [table, setTable] = useState(false);
+  const max = Math.max(1, ...items.flatMap((i) => [i.a, i.b]));
+  const every = items.length > 14 ? Math.ceil(items.length / 7) : 1;
+  const s = sel != null ? items[sel] : null;
+  return (
+    <div className="chart" data-testid={testId}>
+      <div className="chart-tip" aria-live="polite">
+        {s ? <><b>{s.label}</b><span className="chart-key plan">予定 {formatDuration(s.a)}</span><span className="chart-key bar">実績 {formatDuration(s.b)}</span></> : <><span className="chart-key plan">予定時間</span><span className="chart-key bar">実行時間</span></>}
+      </div>
+      <div className="pairbars" role="img" aria-label={`予定と実績の比較。予定合計 ${formatDuration(items.reduce((x, i) => x + i.a, 0))}、実績合計 ${formatDuration(items.reduce((x, i) => x + i.b, 0))}`} style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }}>
+        {items.map((it, i) => (
+          <button key={i} type="button" className={`pb-col ${sel === i ? 'on' : ''}`} onClick={() => setSel(sel === i ? null : i)} aria-label={`${it.label} 予定${formatDuration(it.a)} 実績${formatDuration(it.b)}`}>
+            <span className="pb-bars"><span className="pb-plan" style={{ height: `${(it.a / max) * 100}%` }} /><span className="pb-act" style={{ height: `${(it.b / max) * 100}%` }} /></span>
+            <span className="pb-label">{i % every === 0 ? it.label : ''}</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="link-btn small" aria-expanded={table} onClick={() => setTable(!table)}>{table ? '表を閉じる' : '表で見る'}</button>
+      {table && <table className="chart-table"><thead><tr><th scope="col">区切り</th><th scope="col">予定</th><th scope="col">実績</th></tr></thead><tbody>{items.map((it, i) => <tr key={i}><th scope="row">{it.label}</th><td>{formatDuration(it.a)}</td><td>{formatDuration(it.b)}</td></tr>)}</tbody></table>}
+    </div>
+  );
+}
+
+const WDJ = ['日', '月', '火', '水', '木', '金', '土'];
+/** 曜日×時間帯のヒートマップ（C31 ⑤）。濃さと数値（タップで表示）で示す */
+export function Heatmap({ heat, testId }: { heat: number[][]; testId?: string }) {
+  const [sel, setSel] = useState<[number, number] | null>(null);
+  const max = Math.max(1, ...heat.flat());
+  return (
+    <div className="heat" data-testid={testId}>
+      <div className="chart-tip" aria-live="polite">{sel ? <><b>{WDJ[sel[0]]}曜 {sel[1] * 3}〜{sel[1] * 3 + 3}時</b><span>{formatDuration(heat[sel[0]]![sel[1]]!)}</span></> : <span className="muted">マスをタップすると時間を表示します</span>}</div>
+      <div className="heat-grid" role="table" aria-label="曜日と時間帯ごとの実行時間">
+        <span className="heat-corner" aria-hidden />
+        {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => <span key={h} className="heat-h" aria-hidden>{h}</span>)}
+        {heat.map((row, d) => (
+          <div key={d} className="heat-row" role="row">
+            <span className="heat-d" role="rowheader">{WDJ[d]}</span>
+            {row.map((v, i) => <button key={i} type="button" role="cell" className={`heat-cell ${sel && sel[0] === d && sel[1] === i ? 'on' : ''}`} style={{ ['--a' as string]: v ? 0.12 + 0.88 * (v / max) : 0 }} aria-label={`${WDJ[d]}曜 ${i * 3}時から ${formatDuration(v)}`} onClick={() => setSel([d, i])} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** カテゴリー別の実行時間と完了件数（C31 ④） */
+export function CategoryBars({ rows, colorOf, onPick }: { rows: { category: string | null; workedMs: number; done: number; total: number }[]; colorOf: (c: string | null) => string; onPick?: (c: string | null) => void }) {
+  const max = Math.max(1, ...rows.map((r) => r.workedMs));
+  return (
+    <div className="catbars" data-testid="by-category">
+      {rows.map((r) => (
+        <button key={r.category ?? '__none'} type="button" className="catbar" onClick={() => onPick?.(r.category)}>
+          <span className="catbar-head"><span className="catbar-name"><span className="dot" style={{ background: colorOf(r.category) }} aria-hidden />{r.category ?? 'カテゴリーなし'}</span><span className="catbar-val">{formatDuration(r.workedMs)} · 完了 {r.done}/{r.total}</span></span>
+          <span className="catbar-track"><span className="catbar-fill" style={{ width: `${(r.workedMs / max) * 100}%`, background: colorOf(r.category) }} /></span>
+        </button>
+      ))}
+    </div>
+  );
+}

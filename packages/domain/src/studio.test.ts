@@ -42,3 +42,21 @@ describe('Create Studio の単位と進捗', () => {
     expect(r.affected).toBe(2);
   });
 });
+
+import { resolveProgress } from './index';
+describe('進捗の根拠の一本化（F2・R1）', () => {
+  const st = { fields: [f('p', 'number', { unit: 'page' })], progress: { mode: 'number' as const, fieldId: 'p', target: 100 } };
+  it('Studio 数値 20/100 はリングも実績も同じ 20%', () => {
+    const r = resolveProgress({ status: 'notStarted', manualProgress: null, extra: { studio: { typeId: 't', values: { p: 20 } } } }, [], st);
+    expect(r).toMatchObject({ value: 0.2, source: 'studio', label: '20/100ページ' });
+  });
+  it('完了でも未完了のサブタスクの残件を示す', () => {
+    const r = resolveProgress({ status: 'done', manualProgress: null }, [{ done: true }, { done: false }], null);
+    expect(r).toMatchObject({ value: 1, source: 'done', openSubtasks: 1 });
+  });
+  it('根拠がなければ null（0%にしない）', () => {
+    expect(resolveProgress({ status: 'running', manualProgress: null }, [], null).value).toBeNull();
+    expect(resolveProgress({ status: 'running', manualProgress: { value: 0.4 } }, [], null)).toMatchObject({ value: 0.4, source: 'manual' });
+    expect(resolveProgress({ status: 'running', manualProgress: { value: 0.4 } }, [{ done: true }, { done: false }], null)).toMatchObject({ value: 0.5, source: 'subtasks' });
+  });
+});

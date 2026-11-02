@@ -209,6 +209,12 @@ export interface Subtask {
   order: number;
   createdAt: EpochMs;
   updatedAt: EpochMs;
+  /** 予定開始（C07）。省略＝時刻未設定（旧データはフィールドなし） */
+  plannedStart?: EpochMs | null;
+  /** 予定終了（任意。終了だけは不可） */
+  plannedEnd?: EpochMs | null;
+  /** 見積時間（分） */
+  estimateMinutes?: number | null;
 }
 
 export type TaskAction = 'start' | 'pause' | 'resume' | 'finish' | 'undoFinish' | 'undoStart';

@@ -14,7 +14,11 @@ import { repo } from '../../data/repo';
 import { api } from '../../sync/api';
 import { useAskScope } from '../timeline/useTimelineActions';
 import { Popup } from '../../ui/Popup';
-import { ColorStrip, DatePickerPopup, describeRule, IconStrip, NotifyPopup, notifyLabel, PlacePopup, RecurrencePopup, TimeWheelPopup } from './pickers';
+import { KindButtons } from '../../ui/KindButtons';
+import { EventBadge, TaskBadge } from '../../components/Identity';
+import { ColorStrip, DatePickerPopup, describeRule, IconStrip, NotifyPopup, notifySummary, RecurrencePopup, TimeWheelPopup } from './pickers';
+import { PlaceTravelPopup, placeSummary } from './place';
+import { ChoicePopup, normalizeTags, PriorityButtons, PRIO_TONE, TagInput } from './inputs';
 import { StudioFieldsForm } from '../studio/StudioFieldsForm';
 
 type Page = 'basic' | 'option' | 'special';
@@ -42,6 +46,25 @@ function Row({ icon, color, label, children, onClick, testId, expanded }: { icon
   return onClick ? <button type="button" className="ed-row" onClick={onClick} data-testid={testId} aria-expanded={expanded}>{inner}</button> : <div className="ed-row" data-testid={testId}>{inner}</div>;
 }
 
+/**
+ * 日時の行（C09）：ラベル・日付ボタン・時刻ボタンの3役。幅が足りれば1行、足りなければ「ラベル」と「日付・時刻」の2段。
+ * 判定は端末名ではなく行の実幅（コンテナクエリ）。日付・時刻は折り返さず、各ボタンは44px以上。
+ */
+function DateTimeRow({ icon, label, date, time, onDate, onTime, danger, testIds }: { icon: IconName; label: string; date: string; time?: string | null; onDate: () => void; onTime?: () => void; danger?: boolean; testIds: [string, string?] }) {
+  return (
+    <div className="ed-dt">
+      <div className="ed-dt-in">
+        <span className="ed-row-icon" style={{ background: '#0A84FF' }} aria-hidden><Icon name={icon} size={17} strokeWidth={2.1} /></span>
+        <span className="ed-dt-label">{label}</span>
+        <span className="ed-dt-values">
+          <button type="button" className={`ed-chipbtn ${danger ? 'danger' : ''}`} onClick={onDate} aria-label={`${label}の日付 ${date}`} data-testid={testIds[0]}>{date}</button>
+          {time != null && onTime && <button type="button" className={`ed-chipbtn time ${danger ? 'danger' : ''}`} onClick={onTime} aria-label={`${label}の時刻 ${time}`} data-testid={testIds[1]}>{time}</button>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 interface Draft {
   mode: 'event' | 'task';
   title: string;
@@ -65,7 +88,7 @@ interface Draft {
   hideAfterEnd: boolean;
   place: PlaceValue | null; travelMinutes: number | null; meetingUrl: string; notifies: number[]; urls: LinkValue[]; attachments: Attachment[];
   notes: string;
-  priority: 0 | 1 | 2 | 3; flagged: boolean; tags: string;
+  priority: 0 | 1 | 2 | 3; flagged: boolean; tags: string[];
   studioTypeId: string | null; studioValues: Record<string, unknown>;
 }
 
@@ -80,7 +103,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   const sync = useSync();
   const { homeDate, calDate } = useUIDates();
   const { tab } = useUI();
-  const { closeSheet, confirm, showToast, openSheet } = useUIActions();
+  const { closeSheet, confirm, choose, showToast, openSheet } = useUIActions();
   const guard = usePlacementGuard();
   const askScope = useAskScope();
 
@@ -124,7 +147,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
       notifies: x.notifies ?? (exTask?.notifyMinutesBefore != null ? [exTask.notifyMinutesBefore] : isNew && initialMode === 'task' && settings.defaultNotifyMinutes != null ? [settings.defaultNotifyMinutes] : []),
       urls: x.urls ?? [], attachments: x.attachments ?? [],
       notes: instance?.notes ?? exEvent?.notes ?? exTask?.notes ?? '',
-      priority: exTask?.priority ?? 0, flagged: exTask?.flagged ?? false, tags: (exTask?.tags ?? []).join(' '),
+      priority: exTask?.priority ?? 0, flagged: exTask?.flagged ?? false, tags: exTask?.tags ?? [],
       studioTypeId: x.studio?.typeId ?? (initialMode === 'event' ? calendarById.get(cal0)?.studioTypeId ?? null : null), studioValues: x.studio?.values ?? {},
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -136,7 +159,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [restorable, setRestorable] = useState<Draft | null>(null);
-  const [pick, setPick] = useState<null | 'sDate' | 'sTime' | 'eDate' | 'eTime' | 'cDate' | 'cTime' | 'rule' | 'notify' | 'place' | 'type' | 'asgDate' | 'examDate'>(null);
+  const [pick, setPick] = useState<null | 'sDate' | 'sTime' | 'eDate' | 'eTime' | 'cDate' | 'cTime' | 'rule' | 'notify' | 'place' | 'type' | 'category' | 'calendar' | 'asgDate' | 'examDate'>(null);
   const scrollMem = useRef<Record<Page, number>>({ basic: 0, option: 0, special: 0 });
 
   // 下書き：開いたときに前回の未保存入力があれば復元を提案。入力中は少し待って保存（Q81）
@@ -272,7 +295,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
       testPrep: v.special === 'testPrep' ? { examAt: v.examAt, subjectId: subjects.find((x) => x.name === v.prepSubject.trim())?.id ?? null, subjectName: v.prepSubject.trim() } : null,
       estimateMinutes: v.estimate != null ? Math.max(1, Math.min(10_000, Math.round(v.estimate))) : null,
       priority: v.priority, flagged: v.flagged,
-      tags: [...new Set(v.tags.split(/[\s,、]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean))].slice(0, 30),
+      tags: normalizeTags(v.tags),
       notifyMinutesBefore: v.notifies[0] ?? null,
       location: v.place?.name ?? null,
       repeat: v.rule ? { freq: v.rule.freq, interval: v.rule.interval } : null,
@@ -289,8 +312,18 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           if (!(await confirm({ title: v.taskKind === 'check' ? '確認タスクに変更しますか？' : '実行タスクに変更しますか？', message: pv.warnings.join('\n') || '実績の記録は保持されます。', confirmLabel: '変更' }))) return;
           await repo.convertTask(exTask.id, v.taskKind);
         }
+        // 親の日時を動かしたとき、日時のあるサブタスクをどうするか明示的に選ぶ（C07）。取消なら何も保存しない
+        const delta = isDo && exTask.plannedStart != null && ps != null ? ps - exTask.plannedStart : 0;
+        const timedSubs = delta ? (await db.subtasks.where('taskId').equals(exTask.id).toArray()).filter((x) => x.plannedStart != null).length : 0;
+        let moveSubs = false;
+        if (timedSubs) {
+          const c = await choose({ title: 'サブタスクの日時', message: `日時を設定したサブタスクが${timedSubs}件あります。`, actions: [{ label: '同じだけ一緒に移動', value: 'move' }, { label: 'サブタスクの日時はそのまま', value: 'keep' }, { label: 'キャンセル', value: 'cancel', style: 'cancel' }] });
+          if (c == null || c === 'cancel') return;
+          moveSubs = c === 'move';
+        }
         const fresh = (await db.tasks.get(exTask.id)) ?? exTask;
         await repo.saveTask({ ...fresh, ...fields }, false);
+        if (moveSubs) await repo.shiftSubtaskTimes(exTask.id, delta);
         showToast('保存しました');
       }
       await finish();
@@ -336,9 +369,9 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
     } catch (e) { showToast(e instanceof Error ? e.message : '添付できませんでした'); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
   const removeAttachment = async (a: Attachment) => {
-    if (!(await confirm({ title: '添付を外しますか？', message: `「${a.name}」を外します。Googleドライブではゴミ箱に移ります（30日間は戻せます）。`, confirmLabel: '外す', destructive: true }))) return;
+    // 外すのはこの予定・タスクからの参照だけ。ドライブのファイル本体は消さない（C24）
+    if (!(await confirm({ title: '添付を外しますか？', message: `「${a.name}」をこの${v.mode === 'event' ? '予定' : 'タスク'}から外します。Googleドライブのファイルは残ります。`, confirmLabel: '外す' }))) return;
     set('attachments', v.attachments.filter((x) => x.id !== a.id));
-    if (a.driveFileId) void api.trashAttachment(a.driveFileId).catch(() => undefined);
   };
 
   const remove = async () => {
@@ -403,7 +436,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           </div>
         )}
         <div className="ed-preview">
-          <span className="ed-preview-icon" style={{ ['--c' as string]: previewColor }} aria-hidden><Icon name={resolveItemIcon(v.icon).id} size={24} strokeWidth={2} /></span>
+          {v.mode === 'task' ? <TaskBadge icon={v.icon} kind={v.taskKind} size={48} /> : <EventBadge icon={v.icon} color={previewColor} size={48} />}
           <input className="ed-title" value={v.title} onChange={(e) => set('title', e.target.value)} placeholder={v.mode === 'event' ? '予定のタイトル' : 'タスクのタイトル'} aria-label="タイトル" autoFocus={isNew} data-testid="editor-title" />
         </div>
 
@@ -412,12 +445,14 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           <div className="group"><div className="group-body">
             <Row icon="stack" color="#8E8E93" label="種類" onClick={() => setPick('type')} testId="editor-type">{typeLabel}</Row>
             {v.mode === 'task' && (
-              <Row icon={v.taskKind === 'do' ? 'play' : 'check'} color="#34C759" label="タスクの種類">
-                <span className="seg-mini" role="group" aria-label="タスクの種類">
-                  <button type="button" aria-pressed={v.taskKind === 'do'} onClick={() => set('taskKind', 'do')} data-testid="editor-kind-do">実行</button>
-                  <button type="button" aria-pressed={v.taskKind === 'check'} onClick={() => set('taskKind', 'check')} data-testid="editor-kind-check">確認</button>
-                </span>
-              </Row>
+              <div className="row ed-kind-row">
+                <KindButtons
+                  label="タスクの種類"
+                  value={v.taskKind}
+                  onChange={(k) => set('taskKind', k)}
+                  options={[{ value: 'do', label: '実行', tone: 'do', icon: 'play', testId: 'editor-kind-do' }, { value: 'check', label: '確認', tone: 'check', icon: 'check', testId: 'editor-kind-check' }]}
+                />
+              </div>
             )}
           </div></div>
 
@@ -430,14 +465,8 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
             )}
             {(v.mode === 'event' || (v.taskKind === 'do' && v.timed)) && (
               <>
-                <Row icon="play" color="#0A84FF" label="開始">
-                  <button type="button" className="ed-chipbtn" onClick={() => setPick('sDate')} data-testid="editor-start-date">{fmtDate(v.start)}</button>
-                  {!(v.mode === 'event' && v.allDay) && <button type="button" className="ed-chipbtn" onClick={() => setPick('sTime')} data-testid="editor-start-time">{fmtTime(v.start)}</button>}
-                </Row>
-                <Row icon="flag" color="#0A84FF" label="終了">
-                  <button type="button" className={`ed-chipbtn ${v.end <= v.start ? 'danger' : ''}`} onClick={() => setPick('eDate')} data-testid="editor-end-date">{fmtDate(v.end)}</button>
-                  {!(v.mode === 'event' && v.allDay) && <button type="button" className={`ed-chipbtn ${v.end <= v.start ? 'danger' : ''}`} onClick={() => setPick('eTime')} data-testid="editor-end-time">{fmtTime(v.end)}</button>}
-                </Row>
+                <DateTimeRow icon="play" label="開始" date={fmtDate(v.start)} time={!(v.mode === 'event' && v.allDay) ? fmtTime(v.start) : null} onDate={() => setPick('sDate')} onTime={() => setPick('sTime')} testIds={['editor-start-date', 'editor-start-time']} />
+                <DateTimeRow icon="flag" label="終了" date={fmtDate(v.end)} time={!(v.mode === 'event' && v.allDay) ? fmtTime(v.end) : null} onDate={() => setPick('eDate')} onTime={() => setPick('eTime')} danger={v.end <= v.start} testIds={['editor-end-date', 'editor-end-time']} />
               </>
             )}
             {conflicts.length > 0 && (
@@ -451,72 +480,58 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
               </div>
             )}
             {v.mode === 'task' && v.taskKind === 'check' && (
-              <Row icon="check" color="#0A84FF" label="確認日時">
-                <button type="button" className="ed-chipbtn" onClick={() => setPick('cDate')}>{v.checkAt != null ? fmtDate(v.checkAt) : '未設定'}</button>
-                {v.checkAt != null && <button type="button" className="ed-chipbtn" onClick={() => setPick('cTime')}>{fmtTime(v.checkAt)}</button>}
-              </Row>
+              <DateTimeRow icon="check" label="確認日時" date={v.checkAt != null ? fmtDate(v.checkAt) : '未設定'} time={v.checkAt != null ? fmtTime(v.checkAt) : null} onDate={() => setPick('cDate')} onTime={() => setPick('cTime')} testIds={['editor-check-date', 'editor-check-time']} />
             )}
             <Row icon="undo" color="#5E5CE6" label="繰り返し" onClick={() => setPick('rule')} testId="editor-repeat">{describeRule(v.rule)}</Row>
             {v.mode === 'task' && (
               <Row icon="clock" color="#30B0C7" label="見積時間">
-                <span className="dur-inputs"><label><input type="number" inputMode="numeric" min={1} max={10000} value={v.estimate ?? ''} placeholder="未設定" onChange={(e) => set('estimate', e.target.value === '' ? null : Number(e.target.value))} aria-label="見積時間（分）" data-testid="editor-estimate" />分</label></span>
+                <span className="dur-inputs"><label><input type="number" inputMode="numeric" min={1} max={10000} value={v.estimate ?? ''} placeholder="" onChange={(e) => set('estimate', e.target.value === '' ? null : Number(e.target.value))} aria-label="見積時間（分）" data-testid="editor-estimate" />分</label></span>
               </Row>
             )}
           </div>
           {v.end <= v.start && (v.mode === 'event' || v.timed) && <div className="ed-section-note form-error">終了は開始より後にしてください</div>}
           </div>
 
+          {/* 場所と移動・通知は基本タブ（C14・C23）。オプションには重複して置かない */}
+          <div className="group"><div className="group-body">
+            <Row icon="pin" color="#FF3B30" label="場所と移動" onClick={() => setPick('place')} testId="editor-place">{placeSummary(v.place, v.travelMinutes)}</Row>
+            <Row icon="bell" color="#FF2D55" label="通知" onClick={() => setPick('notify')} testId="editor-notify">{notifySummary(v.notifies)}</Row>
+          </div>
+          {v.mode === 'task' && ((v.taskKind === 'do' && !v.timed) || (v.taskKind === 'check' && v.checkAt == null)) && <div className="group-footer">日時を設定すると、通知を受け取れます。</div>}
+          </div>
+
           <div className="group-header">アイコン</div>
-          <div className="group"><div className="group-body padded"><IconStrip value={v.icon} onChange={(id) => set('icon', id)} recent={settings.recentIcons} target={v.mode} /></div></div>
+          <div className="group"><div className="group-body"><IconStrip value={v.icon} onChange={(id) => set('icon', id)} recent={settings.recentIcons} target={v.mode} /></div></div>
           <div className="group-header">色</div>
-          <div className="group"><div className="group-body padded"><ColorStrip value={v.color} onChange={(c) => set('color', c)} recent={settings.recentColors} /></div></div>
+          <div className="group"><div className="group-body"><ColorStrip value={v.color} onChange={(c) => set('color', c)} recent={settings.recentColors} /></div></div>
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 
         {/* ---------------- オプション ---------------- */}
         <div className="ed-page" hidden={page !== 'option'} data-testid="editor-page-option">
-          <div className="group-header">場所と移動</div>
           <div className="group"><div className="group-body">
-            <Row icon="flag" color="#FF3B30" label="場所" onClick={() => setPick('place')} testId="editor-place">{v.place ? v.place.name : 'なし'}</Row>
-            {v.place?.lat != null && <a className="ed-row" href={`https://www.openstreetmap.org/?mlat=${v.place.lat}&mlon=${v.place.lng}#map=17/${v.place.lat}/${v.place.lng}`} target="_blank" rel="noreferrer noopener"><span className="ed-row-icon" style={{ background: '#34C759' }} aria-hidden><Icon name="link" size={17} /></span><span className="ed-row-label tint">マップで開く</span></a>}
-            <Row icon="run" color="#FF9500" label="移動時間">
-              <span className="dur-inputs"><label><input type="number" inputMode="numeric" min={0} max={1440} value={v.travelMinutes ?? ''} placeholder="なし" onChange={(e) => set('travelMinutes', e.target.value === '' ? null : Math.max(0, Math.min(1440, Number(e.target.value))))} aria-label="移動時間（分）" />分</label></span>
-            </Row>
             <Row icon="link" color="#5E5CE6" label="会議URL">
-              <input className="row-input right" type="url" inputMode="url" value={v.meetingUrl} onChange={(e) => set('meetingUrl', e.target.value)} placeholder="なし" aria-label="オンライン会議のURL" />
+              <input className="row-input right" type="url" inputMode="url" value={v.meetingUrl} onChange={(e) => set('meetingUrl', e.target.value)} placeholder="" aria-label="オンライン会議のURL" />
             </Row>
           </div>
           {v.meetingUrl && !/^https?:\/\//.test(v.meetingUrl.trim()) && <div className="ed-section-note form-error">https:// から始まるURLを入力してください</div>}
           </div>
 
-          <div className="group-header">通知</div>
-          <div className="group"><div className="group-body">
-            <Row icon="bell" color="#FF3B30" label="通知" onClick={() => setPick('notify')} testId="editor-notify">{v.notifies.length ? v.notifies.map(notifyLabel).join('・') : 'なし'}</Row>
-          </div></div>
-
           {v.mode === 'task' && (
             <>
               <div className="group-header">整理</div>
               <div className="group"><div className="group-body">
-                <Row icon="tray" color="#A2845E" label="カテゴリー">
-                  <select className="select-input" value={v.category} onChange={(e) => set('category', e.target.value)} aria-label="カテゴリー" data-testid="editor-category">
-                    <option value="">なし</option>
-                    {[...new Set([...categories.map((c) => c.name), ...tasks.map((t) => t.category).filter((c): c is string => !!c), v.category].filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Row>
-                <Row icon="calendar" color="#0A84FF" label="カレンダー">
-                  <select className="select-input" value={v.taskCalendarId} onChange={(e) => set('taskCalendarId', e.target.value)} aria-label="カレンダー">
-                    <option value="">なし</option>
-                    {calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </Row>
-                <Row icon="exclamation" color="#FF3B30" label="優先度">
-                  <span className="seg-mini" role="group" aria-label="優先度">
-                    {(['なし', '低', '中', '高'] as const).map((l, i) => <button key={l} type="button" aria-pressed={v.priority === i} onClick={() => set('priority', i as 0 | 1 | 2 | 3)}>{l}</button>)}
-                  </span>
-                </Row>
+                <Row icon="tray" color="#A2845E" label="カテゴリー" onClick={() => setPick('category')} testId="editor-category">{v.category || 'なし'}</Row>
+                <Row icon="calendar" color="#0A84FF" label="カレンダー" onClick={() => setPick('calendar')} testId="editor-task-calendar">{calendars.find((c) => c.id === v.taskCalendarId)?.name ?? 'なし'}</Row>
+                <div className="ed-row ed-row-stack">
+                  <span className="ed-row-head"><span className="ed-row-icon" style={{ background: PRIO_TONE(v.priority) === 'var(--label-2)' ? '#8E8E93' : PRIO_TONE(v.priority) }} aria-hidden><Icon name="exclamation" size={17} strokeWidth={2.1} /></span><span className="ed-row-label">優先度</span></span>
+                  <PriorityButtons value={v.priority} onChange={(p) => set('priority', p)} />
+                </div>
                 <Row icon="flag" color="#FF9500" label="フラグ"><Toggle label="フラグ" checked={v.flagged} onChange={(b) => set('flagged', b)} /></Row>
-                <Row icon="tray" color="#8E8E93" label="タグ"><input className="row-input right" value={v.tags} onChange={(e) => set('tags', e.target.value)} placeholder="#ゼミ #レポート" aria-label="タグ" /></Row>
+              </div></div>
+              <div className="group-header">タグ</div>
+              <div className="group"><div className="group-body">
+                <TagInput value={v.tags} onChange={(t) => set('tags', t)} />
               </div></div>
             </>
           )}
@@ -526,28 +541,40 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
             <textarea className="row-input notes-input" value={v.notes} onChange={(e) => set('notes', e.target.value)} placeholder="メモ" aria-label="メモ" rows={4} data-testid="editor-notes" />
           </div></div>
 
+          {/* リンクと添付（C24）：左アイコン・中央の名前とURL・右の削除の3列。長いURLでも画面幅を広げない */}
           <div className="group-header">リンク</div>
           <div className="group"><div className="group-body">
-            {v.urls.map((u, i) => (
-              <div className="ed-row" key={u.id}>
-                <span className="ed-row-icon" style={{ background: '#30B0C7' }} aria-hidden><Icon name="link" size={17} /></span>
-                <span className="ed-row-label link-fields">
-                  <input className="row-input" value={u.title} onChange={(e) => set('urls', v.urls.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} placeholder="名前" aria-label="リンクの名前" />
-                  <input className="row-input small" type="url" value={u.url} onChange={(e) => set('urls', v.urls.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))} placeholder="https://" aria-label="URL" />
-                </span>
-                <button type="button" className="icon-btn subtle" aria-label="リンクを外す" onClick={() => set('urls', v.urls.filter((_, j) => j !== i))}><Icon name="close" size={16} /></button>
-              </div>
-            ))}
+            {v.urls.map((u, i) => {
+              const bad = !!u.url.trim() && !/^https?:\/\//i.test(u.url.trim());
+              return (
+                <div className="link-card" key={u.id} data-testid="link-card">
+                  <span className="link-ico" aria-hidden><Icon name="link" size={17} /></span>
+                  <span className="link-fields">
+                    <label className="sr-only" htmlFor={`ln-${u.id}`}>リンクの名前</label>
+                    <input id={`ln-${u.id}`} className="link-name" value={u.title} onChange={(e) => set('urls', v.urls.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} placeholder="名前（任意）" />
+                    <label className="sr-only" htmlFor={`lu-${u.id}`}>URL</label>
+                    <input id={`lu-${u.id}`} className={`link-url ${bad ? 'bad' : ''}`} type="url" inputMode="url" value={u.url} onChange={(e) => set('urls', v.urls.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))} placeholder="https://" aria-invalid={bad} />
+                    {bad && <span className="form-error small">http:// または https:// から始めてください</span>}
+                  </span>
+                  <button type="button" className="link-del" aria-label={`リンク「${u.title || u.url || '無題'}」を外す`} onClick={() => set('urls', v.urls.filter((_, j) => j !== i))}><Icon name="close" size={14} strokeWidth={2.6} /></button>
+                </div>
+              );
+            })}
             <button type="button" className="row row-button tint-row" onClick={() => set('urls', [...v.urls, { id: newId(), title: '', url: '' }])} data-testid="editor-add-url"><Icon name="plus" size={18} /><span className="row-label">リンクを追加</span></button>
           </div></div>
 
           <div className="group-header">添付ファイル（画像・PDF）</div>
           <div className="group"><div className="group-body">
-            {v.attachments.length > 0 && <div className="att-grid">{v.attachments.map((a) => <AttachmentThumb key={a.id} a={a} onRemove={() => void removeAttachment(a)} />)}</div>}
-            <button type="button" className="row row-button tint-row" disabled={uploading} onClick={() => fileRef.current?.click()} data-testid="editor-add-file"><Icon name="plus" size={18} /><span className="row-label">{uploading ? 'Googleドライブへ保存中…' : 'ファイルを追加'}</span></button>
+            {v.attachments.map((a) => <AttachmentRow key={a.id} a={a} onRemove={() => void removeAttachment(a)} />)}
+            {uploading && <div className="att-row" aria-busy="true"><span className="att-ico skel" /><span className="att-text"><strong>Googleドライブへ保存中…</strong></span></div>}
+            {sync.me ? (
+              <button type="button" className="row row-button tint-row" disabled={uploading} onClick={() => fileRef.current?.click()} data-testid="editor-add-file"><Icon name="plus" size={18} /><span className="row-label">ファイルを追加</span></button>
+            ) : (
+              <div className="att-login" data-testid="attach-login"><Icon name="cloud" size={18} /><span>添付はGoogleドライブに保存します。使うには Google でログインしてください。</span><a className="link-btn" href={api.loginUrl()}>ログイン</a></div>
+            )}
             <input ref={fileRef} hidden type="file" accept="image/*,application/pdf" multiple aria-label="添付ファイル" onChange={(e) => void addFiles(e.target.files)} />
           </div>
-          <div className="group-footer">{sync.me ? 'Googleドライブの「My Time Attachments」に保存します（10MBまで）。' : '添付するには Google でログインしてください。'}</div></div>
+          {sync.me && <div className="group-footer">Googleドライブの「My Time Attachments」に保存します（10MBまで）。外すと、この予定・タスクからの参照だけを外し、ドライブのファイルは残します。</div>}</div>
 
           {v.mode === 'event' && crossesDate({ start: v.start, end: v.end }) && !v.rule && (
             <div className="group"><div className="group-body">
@@ -648,8 +675,12 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
       <DatePickerPopup open={pick === 'asgDate'} value={v.asgDeadline ?? addDays(startOfDay(v.start), 7) + 23 * HOUR} title="提出期限" onClose={() => setPick(null)} onPick={(d) => { setPick(null); set('asgDeadline', setDay(v.asgDeadline ?? d + 23 * HOUR + 59 * 60_000, d)); }} />
       <DatePickerPopup open={pick === 'examDate'} value={v.examAt ?? addDays(startOfDay(v.start), 7) + 9 * HOUR} title="試験日" onClose={() => setPick(null)} onPick={(d) => { setPick(null); set('examAt', setDay(v.examAt ?? d + 9 * HOUR, d)); }} />
       <RecurrencePopup open={pick === 'rule'} value={v.rule} start={v.start} onClose={() => setPick(null)} onPick={(r) => { setPick(null); set('rule', v.mode === 'task' && r ? { ...r, byWeekday: null, until: null } : r); }} />
-      <NotifyPopup open={pick === 'notify'} value={v.notifies} permission={permission} onClose={() => setPick(null)} onPick={(n) => { setPick(null); set('notifies', n); }} />
-      <PlacePopup open={pick === 'place'} value={v.place} history={settings.placeHistory} onClose={() => setPick(null)} onPick={(p) => { setPick(null); set('place', p); }} />
+      <NotifyPopup open={pick === 'notify'} value={v.notifies} permission={permission} hint={v.mode === 'event' ? '予定の開始時刻を基準に通知します。' : v.taskKind === 'check' ? '確認日時を基準に通知します。' : '予定開始の時刻を基準に通知します。'} onClose={() => setPick(null)} onPick={(n) => { setPick(null); set('notifies', n); }} />
+      <PlaceTravelPopup open={pick === 'place'} place={v.place} travel={v.travelMinutes} start={(v.mode === 'event' && !v.allDay) || (v.mode === 'task' && v.taskKind === 'do' && v.timed) ? v.start : null} history={settings.placeHistory} onClose={() => setPick(null)} onPick={(p, t) => { setPick(null); setV((o) => ({ ...o, place: p, travelMinutes: t })); }} />
+      <ChoicePopup open={pick === 'category'} title="カテゴリー" value={v.category} onClose={() => setPick(null)} onPick={(c) => { setPick(null); set('category', c); }} testId="category-popup"
+        items={[...new Set([...categories.map((c) => c.name), ...tasks.map((t) => t.category).filter((c): c is string => !!c), v.category].filter(Boolean))].map((name) => { const c = categories.find((x) => x.name === name); return { value: name, label: name, badge: c ? <EventBadge icon={c.icon} color={c.color} size={28} /> : undefined }; })} />
+      <ChoicePopup open={pick === 'calendar'} title="カレンダー" value={v.taskCalendarId} onClose={() => setPick(null)} onPick={(c) => { setPick(null); set('taskCalendarId', c); }} testId="calendar-popup"
+        items={calendars.map((c) => ({ value: c.id, label: c.name, badge: <EventBadge icon={c.icon} color={c.color} size={28} fallback={defaultCalendarIcon(c.kind)} /> }))} />
       <Popup open={pick === 'type'} title="種類" onClose={() => setPick(null)} testId="type-popup" tall>
         {v.mode === 'event' ? (
           <>
@@ -658,7 +689,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
               const desc = st ? `Create Studio：${st.fields.filter((f) => !f.hidden).length}項目` : c.kind === 'class' ? '科目・教室・課題・小テスト' : c.kind === 'job' ? '勤務先と勤務前の通知' : '一般の予定';
               return (
                 <button key={c.id} type="button" className="type-card" aria-pressed={v.calendarId === c.id} onClick={() => { setV((o) => ({ ...o, calendarId: c.id, studioTypeId: c.studioTypeId ?? null, icon: o.icon === resolveItemIcon(calendarById.get(o.calendarId)?.icon).id ? resolveItemIcon(c.icon, defaultCalendarIcon(c.kind)).id : o.icon })); setPick(null); }} data-testid={`type-cal-${c.id}`}>
-                  <span className="ed-preview-icon" style={{ ['--c' as string]: c.color }} aria-hidden><Icon name={resolveItemIcon(c.icon, defaultCalendarIcon(c.kind)).id} size={22} /></span>
+                  <EventBadge icon={st ? st.icon : c.icon} color={st ? st.color : c.color} size={40} fallback={defaultCalendarIcon(c.kind)} />
                   <span className="ed-row-label">{c.name}<span className="sub-label">{desc}</span></span>
                 </button>
               );
@@ -666,16 +697,18 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           </>
         ) : (
           <>
-            {([['normal', '一般', 'ふつうのタスク', 'checklist'], ['assignment', '課題', '提出方法・提出先・期限', 'note'], ['testPrep', 'テスト対策', '授業と試験日', 'graduation']] as const).map(([k, l, d, ic]) => (
+            {([['normal', '一般', '予定時間を決めて取り組む作業や、日時にチェックする用事に使えます。進捗・見積・サブタスクを設定できます。', 'checklist'], ['assignment', '課題', '提出方法・提出先・提出期限を記録し、期限に向けて作業します。', 'note'], ['testPrep', 'テスト対策', '科目と試験日を記録し、試験までの勉強を進めます。', 'graduation']] as const).map(([k, l, d, ic]) => (
               <button key={k} type="button" className="type-card" aria-pressed={!v.studioTypeId && v.special === k} onClick={() => { setV((o) => ({ ...o, special: k, studioTypeId: null })); setPick(null); }} data-testid={`type-task-${k}`}>
-                <span className="ed-preview-icon" aria-hidden><Icon name={ic} size={22} /></span>
-                <span className="ed-row-label">{l}<span className="sub-label">{d}</span></span>
+                <TaskBadge icon={ic} kind={v.taskKind} size={40} />
+                <span className="ed-row-label">{l}<span className="sub-label wrap">{d}{k === 'normal' ? (v.taskKind === 'do' ? '「実行」は開始・停止して作業時間を記録します。' : '「確認」は日時にチェックするだけの用事です。') : ''}</span></span>
+                {!v.studioTypeId && v.special === k && <span className="sel-mark on" aria-hidden><Icon name="check" size={14} strokeWidth={3} /></span>}
               </button>
             ))}
             {studioTypes.filter((t) => t.target === 'task' && t.status === 'active').map((t) => (
               <button key={t.id} type="button" className="type-card" aria-pressed={v.studioTypeId === t.id} onClick={() => { setV((o) => ({ ...o, special: 'normal', studioTypeId: t.id, icon: resolveItemIcon(t.icon).id })); setPick(null); }} data-testid={`type-studio-${t.id}`}>
-                <span className="ed-preview-icon" style={{ ['--c' as string]: t.color }} aria-hidden><Icon name={resolveItemIcon(t.icon).id} size={22} /></span>
+                <TaskBadge icon={t.icon} kind={v.taskKind} size={40} />
                 <span className="ed-row-label">{t.name}<span className="sub-label">Create Studio：{t.fields.filter((f) => !f.hidden).length}項目</span></span>
+                {v.studioTypeId === t.id && <span className="sel-mark on" aria-hidden><Icon name="check" size={14} strokeWidth={3} /></span>}
               </button>
             ))}
           </>
@@ -686,17 +719,20 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   );
 }
 
-function AttachmentThumb({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
+function AttachmentRow({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let u: string | null = null;
     if (a.driveFileId && a.mime.startsWith('image/')) void api.attachmentBlob(a.driveFileId).then((b) => { u = URL.createObjectURL(b); setUrl(u); }).catch(() => undefined);
     return () => { if (u) URL.revokeObjectURL(u); };
   }, [a.driveFileId, a.mime]);
+  const pdf = a.mime === 'application/pdf';
+  const kb = a.size != null ? (a.size >= 1_048_576 ? `${(a.size / 1_048_576).toFixed(1)}MB` : `${Math.max(1, Math.round(a.size / 1024))}KB`) : '';
   return (
-    <div className="att" data-testid="attachment">
-      {url ? <img src={url} alt={a.name} /> : <span><Icon name={a.mime === 'application/pdf' ? 'note' : 'paint'} size={22} /><br />{a.name}</span>}
-      <button type="button" className="att-del" aria-label={`${a.name}を外す`} onClick={onRemove}><Icon name="close" size={14} strokeWidth={2.6} /></button>
+    <div className="att-row" data-testid="attachment">
+      <span className={`att-ico ${pdf ? 'pdf' : 'img'}`} aria-hidden>{url ? <img src={url} alt="" /> : <Icon name={pdf ? 'note' : 'paint'} size={18} />}</span>
+      <span className="att-text"><strong>{a.name}</strong><span className="muted small">{pdf ? 'PDF' : '画像'}{kb ? ` · ${kb}` : ''}</span></span>
+      <button type="button" className="link-del" aria-label={`${a.name}を外す（ドライブのファイルは残ります）`} onClick={onRemove}><Icon name="close" size={14} strokeWidth={2.6} /></button>
     </div>
   );
 }
