@@ -4,7 +4,7 @@ import { EventBadge } from '../../components/Identity';
 import { ColorStrip, IconStrip } from '../editor/pickers';
 import { blankStudioType, StudioDesigner } from '../studio/StudioPage';
 import { useDragReorder } from '../../ui/reorder';
-import { type Calendar, CALENDAR_ICON_CHOICES, type CalendarKind, defaultCalendarIcon, makeEmployer, makeSubject, newId } from '@my-time/domain';
+import { type Calendar, type CalendarKind, defaultCalendarIcon, makeEmployer, makeSubject, newId } from '@my-time/domain';
 import { useData } from '../../app/data';
 import { useUIActions } from '../../app/ui';
 import { Group, Toggle } from '../../components/Controls';
