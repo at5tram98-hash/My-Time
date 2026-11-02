@@ -133,7 +133,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
           <div className="run-time" aria-live="polite" data-testid="run-time">
             {task.status === 'running' || task.status === 'paused' ? <><span className="run-elapsed">{formatElapsed(worked)}</span><span className="muted small">{task.status === 'paused' ? '一時停止中' : '実行中'}</span></>
               : task.status === 'done' ? <><span className="run-elapsed">{formatElapsed(worked)}</span><span className="muted small">完了</span></>
-              : <><span className="run-elapsed">{task.estimateMinutes != null ? `${task.estimateMinutes}分` : '—'}</span><span className="muted small">{task.estimateMinutes != null ? '見積時間' : '見積なし'}</span></>}
+              : <><span className="run-elapsed">{task.estimateMinutes != null ? `${task.estimateMinutes}分` : '0:00'}</span><span className="muted small">{task.estimateMinutes != null ? '見積時間' : '見積なし'}</span></>}
             <span className="muted small" data-testid="run-progress">{pr.source === 'none' ? '実績 未入力' : `${pr.label}${pr.source === 'studio' ? '' : ''}`}</span>
           </div>
           <div className="run-actions">

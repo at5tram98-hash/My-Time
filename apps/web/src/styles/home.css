@@ -17,7 +17,7 @@
 
 /* ---- Task row ---- */
 .task-row { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.task-row + .task-row::before { content: ''; position: absolute; top: 0; left: 64px; right: 0; height: 0.5px; background: var(--separator); z-index: 1; }
+.task-row + .task-row::before { content: ''; position: absolute; top: 0; left: 68px; right: 0; height: 0.5px; background: var(--separator); z-index: 1; }
 .task-row-main { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 8px 14px 8px 12px; transition: transform 220ms var(--spring), opacity 150ms; }
 .task-row-main:active { background: var(--fill); }
 .task-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -123,3 +123,23 @@
 .sp-num span { font-size: 0.76rem; color: var(--label-2); margin-top: 3px; }
 .sp-track { height: 10px; border-radius: 5px; background: var(--fill-strong); overflow: hidden; }
 .sp-fill { height: 100%; border-radius: 5px; background: var(--do); transition: width 60ms linear; }
+
+/* ---- コンパクト表示：円だけ（C01） ---- */
+.home[data-expanded='true'] .task-pane { background: transparent; box-shadow: none; border-radius: 0; margin: 0; }
+.island-circles { display: flex; align-items: center; gap: 0; height: 100%; padding: 0 12px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
+.island-circles::-webkit-scrollbar { display: none; }
+.icircle { flex: none; width: 44px; height: 44px; margin-right: 0; display: grid; place-items: center; border-radius: 50%; -webkit-tap-highlight-color: transparent; transition: transform 140ms var(--spring); }
+.icircle + .icircle { margin-left: 0; }
+.icircle:active { transform: scale(0.92); }
+.icircle:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.cards-wrap { touch-action: pan-x; }
+
+/* ---- 今日のタスク（C03）：見出し17px・件数13px・行60px・区切りは本文の開始位置から ---- */
+.home .list-heading { font-size: 1.0625rem; font-weight: 600; color: var(--label); padding: 10px 16px 6px; align-items: center; }
+.home .list-count { font-size: 0.8125rem; font-weight: 500; color: var(--label-2); }
+.home .task-row-main { min-height: 60px; padding-left: 16px; padding-right: 16px; gap: 12px; }
+.home .task-row-title { font-size: 1.0625rem; font-weight: 500; }
+.home .task-row-sub { font-size: 0.8125rem; font-weight: 400; color: var(--label-2); }
+.home .task-row-time .time-val { font-size: 0.9375rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+.home .task-row.done .task-row-title { color: var(--label-2); text-decoration: line-through; text-decoration-color: var(--label-3); }
+.home .task-row.done .task-row-time { opacity: 0.6; }
