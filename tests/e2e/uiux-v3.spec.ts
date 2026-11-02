@@ -290,3 +290,32 @@ test('R1：未完了のサブタスクがある親を完了するときは確認
 
 void event;
 void pickDate;
+
+test.describe('v3.1 回帰：入力中にフォーカスが外れない', () => {
+  test('タスク・予定のタイトル、メモ、場所検索で1文字ずつ入力しても入力欄にフォーカスが残る', async ({ page }) => {
+    await openApp(page);
+    await openNewTask(page);
+    const title = page.getByTestId('editor-title');
+    await title.click();
+    await page.keyboard.type('レポート提出', { delay: 60 });
+    await page.waitForTimeout(600);
+    await expect(title).toHaveValue('レポート提出');
+    await expect(title).toBeFocused();
+    await page.getByTestId('editor-place').click();
+    const q = page.getByTestId('place-query');
+    await q.click();
+    await page.keyboard.type('kyoto', { delay: 80 });
+    await page.waitForTimeout(1500);
+    await expect(q).toHaveValue('kyoto');
+    await expect(q).toBeFocused();
+    await page.getByTestId('place-popup').getByRole('button', { name: 'キャンセル' }).click();
+    await saveEditor(page);
+    await page.getByTestId('home-add').click();
+    await page.getByRole('tab', { name: '予定' }).or(page.getByRole('button', { name: '予定', exact: true })).first().click();
+    const et = page.getByTestId('editor-title');
+    await et.click();
+    await page.keyboard.type('ゼミ発表', { delay: 60 });
+    await expect(et).toHaveValue('ゼミ発表');
+    await expect(et).toBeFocused();
+  });
+});

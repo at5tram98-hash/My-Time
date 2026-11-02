@@ -92,16 +92,20 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
     onClose();
   }, [confirm, current, offsetFor, onClose, y]);
 
+  // フォーカスの移動は開いたときの1回だけ。再描画（入力の1文字ごと）でパネルへ戻すと、
+  // 入力欄からフォーカスが外れて iPhone のキーボードが閉じる（v3.1 の不具合）
+  const closeRef = useRef(requestClose);
+  closeRef.current = requestClose;
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && void requestClose();
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && void closeRef.current();
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
       prev?.focus?.();
     };
-  }, [requestClose]);
+  }, []);
 
   const onDragEnd = (_: unknown, info: { offset: { y: number }; velocity: { y: number } }) => {
     const pos = y.get();
