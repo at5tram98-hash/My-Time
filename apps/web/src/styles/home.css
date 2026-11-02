@@ -175,3 +175,5 @@
 .add-cal-colors { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
 .add-cal-colors .color-dot { border: 0; padding: 0; min-height: 0; max-width: 28px; }
 .add-cal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.home[data-hidden='true'] .home-body { padding-top: 0; }
+.home[data-hidden='true'] .task-pane { box-shadow: none; }
