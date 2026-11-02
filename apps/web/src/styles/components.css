@@ -207,3 +207,24 @@ form.row .row-input { padding: 0; }
 .sheet-footer > * { pointer-events: auto; }
 .sheet-slide { position: relative; width: 100%; max-width: 640px; height: calc(100% - env(safe-area-inset-top) - 12px); display: flex; }
 .sheet-slide > .sheet { max-width: none; height: 100%; max-height: none; }
+
+/* ---- その他の設定一覧（C34）：inset grouped・行52px・アイコン28px・区切りは本文の開始位置から ---- */
+.other-body { padding-left: 16px; padding-right: 16px; }
+.other-body .group { margin-top: 26px; }
+.other-body .group-header { padding: 0 16px 8px; font-size: 0.8125rem; }
+.other-body .group-body { border-radius: 12px; }
+.other-body .row { min-height: 52px; padding: 8px 16px; gap: 12px; }
+.other-body .row + .row, .subpage .row + .row { box-shadow: inset 56px 0.5px 0 0 var(--bg-elev), inset 0 0.5px 0 0 var(--separator); }
+.other-body .row-value { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-icon { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: none; }
+.other-body .scroll-end, .other-body::after { content: ''; display: block; height: calc(96px + env(safe-area-inset-bottom)); }
+.setting-preview { margin: 16px 16px 0; }
+.ap-prev { display: flex; gap: 16px; justify-content: center; }
+.ap-card { position: relative; width: 96px; height: 130px; border-radius: 14px; padding: 12px 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 0 0 0.5px var(--separator); }
+.ap-card.light { background: #f2f2f7; }
+.ap-card.dark { background: #1c1c1e; }
+.ap-bar { height: 10px; border-radius: 5px; background: #0a84ff; width: 60%; }
+.ap-line { height: 8px; border-radius: 4px; background: rgba(128,128,128,0.4); }
+.ap-line.short { width: 60%; }
+.ap-name { position: absolute; bottom: -22px; left: 0; right: 0; text-align: center; font-size: 0.8rem; color: var(--label-2); }
+.text-preview { padding: 14px 16px; border-radius: 12px; background: var(--bg-elev); margin: 0; }

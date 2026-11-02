@@ -14,10 +14,15 @@ import { Popup } from '../../ui/Popup';
 function NeedsLogin() {
   const sync = useSync();
   if (sync.me) return null;
+  const off = sync.phase === 'notConfigured' || sync.phase === 'unavailable';
+  // 未ログインでも案内だけで止めず、ログインへの導線を出す（バックアップ・復元はまだ何も実行していない）
   return (
-    <Group>
-      <div className="row"><span className="row-label muted">{sync.phase === 'notConfigured' || sync.phase === 'unavailable' ? 'サーバーが未設定のため利用できません。' : 'Googleでログインすると利用できます。'}</span></div>
-    </Group>
+    <div className="empty-state" data-testid="needs-login">
+      <Icon name="cloud" size={36} />
+      <strong>{off ? 'この配信先では利用できません' : 'Googleでログインすると使えます'}</strong>
+      <span>{off ? 'サーバーが未設定のため、データはこの端末内だけに保存されます。' : 'バックアップと復元は、ログインしたGoogleドライブを使います。まだ何も実行していません。この端末のデータはそのまま残ります。'}</span>
+      {!off && <a className="gbtn-primary glass-i" href={api.loginUrl()} data-testid="needs-login-btn">Googleでログイン</a>}
+    </div>
   );
 }
 
