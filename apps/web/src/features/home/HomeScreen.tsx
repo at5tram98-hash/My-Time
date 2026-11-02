@@ -28,6 +28,7 @@ export function HomeScreen() {
   const actions = useTimelineActions();
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [bodyH, setBodyH] = useState(600);
   const [navW, setNavW] = useState(390);
@@ -61,6 +62,18 @@ export function HomeScreen() {
     ro.observe(el);
     setBodyH(el.clientHeight);
     setNavW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  // 浮かぶタスク部分の高さを、カレンダーの上余白（--ov）として渡す。カレンダーはその下にも描かれ、ガラス越しに透ける
+  useLayoutEffect(() => {
+    const ov = overlayRef.current;
+    const body = bodyRef.current;
+    if (!ov || !body) return;
+    const apply = () => body.style.setProperty('--ov', `${Math.round(ov.getBoundingClientRect().height)}px`);
+    const ro = new ResizeObserver(apply);
+    ro.observe(ov);
+    apply();
     return () => ro.disconnect();
   }, []);
 
@@ -257,6 +270,9 @@ export function HomeScreen() {
       </header>
 
       <div className="home-body" ref={bodyRef}>
+        {/* タスク部分はカレンダーの上に浮かぶガラス。下のカレンダーがぼやけて透ける（v3.2） */}
+        <div className="task-overlay" ref={overlayRef}>
+        <div className="task-glass">
         <motion.section className="task-pane" data-density={density} style={{ height: paneH }} aria-label="タスク一覧" data-testid="task-pane">
           <motion.div className="task-list-wrap" style={{ opacity: listOpacity, pointerEvents: cardsInteractive ? 'none' : 'auto' }} aria-hidden={cardsInteractive}>
             <div className="task-list" ref={listRef} data-testid="home-task-list">
@@ -286,13 +302,6 @@ export function HomeScreen() {
           </motion.div>
         </motion.section>
 
-        {hidden && (
-          <button type="button" className="hidden-line" aria-label="タスク表示を戻す（下へスライド）" data-testid="tasks-hidden-line"
-            onPointerDown={onLineDown} onPointerMove={onLineMove} onPointerUp={onLineUp} onPointerCancel={() => { hg.current = null; settle(true, true); }}
-            onClick={(e) => { if (e.detail === 0) restore(); }}>
-            <span className="hidden-line-bar" />
-          </button>
-        )}
         {/* コンパクト表示ではつまみ・線・その余白を描かない（C01）。戻すのは円の列の下スワイプかメニュー */}
         {!expanded && (
           <div
@@ -326,7 +335,16 @@ export function HomeScreen() {
             <span className="split-grip" />
           </div>
         )}
+        </div>
+        {hidden && (
+          <button type="button" className="hidden-line" aria-label="タスク表示を戻す（下へスライド）" data-testid="tasks-hidden-line"
+            onPointerDown={onLineDown} onPointerMove={onLineMove} onPointerUp={onLineUp} onPointerCancel={() => { hg.current = null; settle(true, true); }}
+            onClick={(e) => { if (e.detail === 0) restore(); }}>
+            <span className="hidden-line-bar" />
+          </button>
+        )}
 
+        </div>
         <div className="home-timeline">
           <Timeline
             testId="home-timeline"

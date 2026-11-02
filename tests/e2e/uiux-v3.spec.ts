@@ -14,7 +14,9 @@ test.describe('v3 ホーム', () => {
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
     await expect(page.getByTestId('split-handle')).toHaveCount(0);
-    await expect(page.getByTestId('floating-cards')).not.toContainText('実行中');
+    // v3.2：Dynamic Island ほどのカプセル。名前と経過時間を出す
+    await expect(page.getByTestId('fcard-running')).toContainText('実行中');
+    expect((await page.getByTestId('fcard-running').boundingBox())!.width).toBeGreaterThan(120);
     await page.waitForTimeout(500);
     const row = await center(page.getByTestId('compact-row'));
     await touchDrag(page, { x: row.x, y: row.y }, { x: row.x, y: row.y - 60 }, { steps: 8 });
