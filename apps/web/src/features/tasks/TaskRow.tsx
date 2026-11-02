@@ -105,7 +105,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
     // 浮いたセルの拡大率（scale）も含めた、画面上の実際のバー幅で割る
     const row = rowRef.current;
     const rowScale = row && row.clientWidth > 0 ? row.getBoundingClientRect().width / row.clientWidth : 1;
-    const width = (barRef.current?.clientWidth ?? Math.max(1, (row?.clientWidth ?? 320) - 24)) * rowScale;
+    // 浮遊パネルのバー（拡大していない）の画面上の幅で割り、指の移動とバーの端を1:1にする
+    const width = barRef.current ? barRef.current.getBoundingClientRect().width : Math.max(1, (row?.clientWidth ?? 320) - 24) * rowScale;
     const v = Math.min(1, Math.max(0, m.initial + dx / width));
     const dragged = m.dragged || Math.abs(dx) > 4;
     if ((v >= 1 && m.value < 1) || (v <= 0 && m.value > 0)) navigator.vibrate?.(6);

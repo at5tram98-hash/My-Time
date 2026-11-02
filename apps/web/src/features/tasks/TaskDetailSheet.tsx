@@ -237,7 +237,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
           <div className="group-header">進捗</div>
           <div className="group-body padded">
             <ProgressLine label="理想（予定の時間から）" value={ideal} tone="ideal" />
-            <ProgressLine label={`実績（${PR_SRC[pr.source]}）`} value={pr.value} tone="actual" text={pr.source === 'none' ? '未入力' : pr.label} />
+            <ProgressLine label={`実績（${PR_SRC[pr.source]}）`} value={pr.value} tone="actual" text={pr.source === 'none' ? '未入力' : pr.source === 'subtasks' || pr.source === 'studio' ? `${pr.label}（${Math.round((pr.value ?? 0) * 100)}%）` : pr.label} />
           </div>
           <div className="group-footer">{pr.basis}。{pr.source === 'done' && pr.openSubtasks ? `未完了のサブタスク${pr.openSubtasks}件。` : ''}リングをタップすると変更できます。</div>
         </div>

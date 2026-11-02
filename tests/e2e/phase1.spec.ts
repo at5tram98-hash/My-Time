@@ -113,12 +113,15 @@ test.describe('境界ハンドル', () => {
     const h = await center(page.getByTestId('split-handle'));
     await touchDrag(page, h, { x: h.x, y: h.y - 220 });
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
+    // v3（C01）：コンパクト表示は円だけ。名前・状態は読み上げ名に含める。つまみは描かない
     await expect(page.getByTestId('fcard-running')).toBeVisible();
-    await expect(page.getByTestId('fcard-next').first()).toContainText('次のタスク');
-    await expect(page.getByTestId('fcard-running')).toContainText('実行中タスク');
+    await expect(page.getByTestId('fcard-next').first()).toHaveAttribute('aria-label', /次のタスク/);
+    await expect(page.getByTestId('fcard-running')).toHaveAttribute('aria-label', /実行中タスク/);
+    await expect(page.getByTestId('split-handle')).toHaveCount(0);
     await page.waitForTimeout(600); // スプリングの収束を待つ
-    const h2 = await center(page.getByTestId('split-handle'));
-    await touchDrag(page, h2, { x: h2.x, y: h2.y + 260 });
+    // 円の列を下へスワイプで一覧に戻る
+    const row = await center(page.getByTestId('compact-row'));
+    await touchDrag(page, { x: row.x, y: row.y }, { x: row.x, y: row.y + 120 });
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
     await expect(page.getByTestId('task-row-r1')).toBeVisible();
   });
@@ -290,6 +293,7 @@ test.describe('進捗ジェスチャーと状態', () => {
     const t = await readTask(page, 'p1');
     expect(t?.status).toBe('paused');
     expect(t?.actualEnd).toBeNull();
+    await page.getByTestId('log-toggle').click(); // v3（C08）：実績ログは初期は閉じている
     for (const label of ['一時停止', '再開', '終了', '完了を取り消し']) {
       await expect(page.getByRole('dialog').locator('.log-row', { hasText: label }).first()).toBeVisible();
     }
