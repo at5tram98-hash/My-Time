@@ -125,6 +125,8 @@ test.describe('2. 長押し進捗', () => {
     await mouseLongPressDrag(page, { x: c.x - 100, y: c.y }, { x: c.x - 100, y: c.y }, 600, 1);
     const bar = page.getByTestId('progress-scrubber');
     await page.waitForTimeout(400); // 展開アニメーションの収束
+    // 負荷が高いと拡大のアニメーションが続くことがあるので、拡大率が1に戻る（見た目の幅＝本来の幅）まで待つ
+    await expect.poll(() => bar.locator('.sp-track').evaluate((el) => Math.abs((el as HTMLElement).getBoundingClientRect().width - (el as HTMLElement).offsetWidth))).toBeLessThan(0.5);
     // v3（C26）：浮遊パネルのバー（.sp-track）に対して1:1
     const w = await bar.locator('.sp-track').evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
     const v0 = Number(await bar.getAttribute('data-value'));
