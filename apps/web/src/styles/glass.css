@@ -221,3 +221,6 @@ button.tile:active { transform: scale(0.98); }
 .import-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; text-align: center; font-size: 0.72rem; color: var(--label-2); }
 .import-summary span { background: var(--bg-elev); border-radius: 10px; padding: 8px 2px; display: flex; flex-direction: column; gap: 2px; }
 .import-summary b { font-size: 1.15rem; color: var(--label); font-family: var(--font-rounded); }
+/* ダークでは選択中のセグメントを一段明るく（iOS の UISegmentedControl と同じ見え方） */
+:root[data-theme='dark'] .seg-full button[aria-selected='true'] { background: #636366; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .seg-full button[aria-selected='true'] { background: #636366; } }
