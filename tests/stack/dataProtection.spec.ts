@@ -305,7 +305,9 @@ test('ログイン CSRF：ログインを始めていないブラウザで callb
   await page.goto('/');
   await skipOnboarding(page);
   await page.goto(callbackUrl);
-  await page.waitForURL(/login=error/);
+  // 結果はどのタブでも通知で出し、URL からは消す（v3.1）
+  await expect(page.getByText(/ログインできませんでした/)).toBeVisible();
+  await expect(page).not.toHaveURL(/login=/);
   const cookies = await victim.cookies();
   expect(cookies.some((c) => c.name === 'mt_session')).toBe(false);
   expect((await page.request.get('/api/me')).status()).toBe(401);
