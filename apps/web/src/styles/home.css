@@ -142,3 +142,36 @@
 .home .task-row-time .time-val { font-size: 0.9375rem; font-variant-numeric: tabular-nums; font-weight: 600; }
 .home .task-row.done .task-row-title { color: var(--label-2); text-decoration: line-through; text-decoration-color: var(--label-3); }
 .home .task-row.done .task-row-time { opacity: 0.6; }
+
+/* v3.1：日付見出しを大きく、下に余白をとってカレンダーを少し下げる（ホーム・カレンダー共通） */
+.home-nav, .screen.calendar > .nav { align-items: flex-end; padding-top: calc(env(safe-area-inset-top) + 10px); padding-bottom: 14px; }
+.date-head { gap: 2px; }
+.date-month { font-size: 0.95rem; letter-spacing: 0.01em; }
+.date-main { gap: 10px; }
+.date-day { font-size: 2.25rem; line-height: 1.1; letter-spacing: -0.02em; }
+.date-wd { font-size: 1.12rem; }
+.screen.calendar .month-btn { gap: 2px; }
+.screen.calendar .month-year { font-size: 0.95rem; }
+.screen.calendar .month-name { font-size: 2.1rem; line-height: 1.1; letter-spacing: -0.02em; }
+.home-nav .nav-actions, .screen.calendar > .nav .nav-actions { padding-bottom: 4px; }
+.home-body { padding-top: 6px; }
+.screen.calendar .calendar-body { padding-top: 6px; }
+@media (max-width: 360px) {
+  .date-day { font-size: 1.9rem; }
+  .screen.calendar .month-name { font-size: 1.8rem; }
+}
+
+/* タスク表示を隠したときに上に残す線（下へスライドで戻す） */
+.hidden-line { flex: none; height: 22px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; touch-action: none; cursor: grab; }
+.hidden-line-bar { width: 40px; height: 5px; border-radius: 3px; background: var(--label-3, rgba(60, 60, 67, 0.3)); transition: width 160ms var(--spring), background 160ms; }
+.hidden-line:hover .hidden-line-bar, .hidden-line:focus-visible .hidden-line-bar { width: 52px; background: var(--label-2); }
+
+/* カレンダー選択からの追加 */
+.add-row .cal-chip.add { background: var(--fill-strong); color: var(--blue); }
+.tint-text { color: var(--blue); font-weight: 600; }
+.add-cal-form { flex-direction: column; align-items: stretch; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+.add-cal-top { display: flex; align-items: center; gap: 10px; }
+.add-cal-top .row-input { flex: 1; min-width: 0; text-align: left; font-size: 1.05rem; }
+.add-cal-colors { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.add-cal-colors .color-dot { border: 0; padding: 0; min-height: 0; max-width: 28px; }
+.add-cal-actions { display: flex; justify-content: flex-end; gap: 8px; }

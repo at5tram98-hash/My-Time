@@ -311,3 +311,9 @@ button.tile:active { transform: scale(0.98); }
 .filter-bar { padding: 0 16px 6px; }
 .choice-dot { width: 14px; height: 14px; border-radius: 50%; margin: 0 7px; flex: none; }
 .analysis-note.tight { margin: 6px 0 0; }
+/* 新規作成の実行／確認は小さめ（v3.1）。見た目は34px、押せる範囲は44pxを保つ */
+.kind-buttons.xs { gap: 8px; min-height: 44px; }
+.kind-buttons.xs .kind-btn { position: relative; min-height: 32px; min-width: 60px; padding: 0 13px; border-radius: 16px; font-size: 0.86rem; gap: 4px; }
+.kind-buttons.xs .kind-btn.on { min-height: 34px; padding: 0 15px; box-shadow: 0 3px 10px color-mix(in srgb, var(--t) 28%, transparent); }
+.kind-buttons.xs .kind-btn::after { content: ''; position: absolute; inset: -6px -2px; }
+.ed-kind-row { padding-top: 6px; padding-bottom: 6px; min-height: 0; }

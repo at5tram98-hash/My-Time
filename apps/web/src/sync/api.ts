@@ -2,6 +2,11 @@ import { db, ownerOf } from '../data/db';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 
 /** API がない配信先（例：GitHub Pages の旧版）では 'unavailable' を返し、機能を「未設定」と表示する */
+/** サーバーと同じオリジンで配信している本体アプリ */
+export const APP_HOME = 'https://my-time.at5tram98.workers.dev/';
+/** API を持たない配信先（GitHub Pages） */
+export const NO_API_HOST = typeof location !== 'undefined' && location.hostname.endsWith('github.io');
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -108,7 +113,8 @@ export const api = {
   endRestore: (id: string) => call<{ removed: number }>(`/restore/${id}/end`, { method: 'POST' }),
   subscribePush: (sub: PushSubscriptionJSON) => call('/push/subscribe', { method: 'POST', body: JSON.stringify(sub) }),
   unsubscribePush: (endpoint: string) => call('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
-  loginUrl: () => `${import.meta.env.BASE_URL}api/auth/login`,
+  // GitHub Pages など API のない配信先では、サーバーのある本体（Cloudflare）でログインする
+  loginUrl: () => (NO_API_HOST ? `${APP_HOME}api/auth/login` : `${import.meta.env.BASE_URL}api/auth/login`),
   /** 添付ファイルを Google ドライブへ保存（Q80）。ログイン中のアカウントだけ */
   uploadAttachment: async (file: Blob, name: string) => {
     const account = ownerOf(db.name);

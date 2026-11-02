@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { formatDayLabel, formatHm } from '@my-time/domain';
@@ -8,7 +8,7 @@ import { Group } from '../../components/Controls';
 import { Icon, type IconName } from '../../components/Icon';
 import { db, type TextSizePref, type ThemePref } from '../../data/db';
 import { repo } from '../../data/repo';
-import { api } from '../../sync/api';
+import { api, APP_HOME, NO_API_HOST } from '../../sync/api';
 import { syncEngine } from '../../sync/engine';
 import { CalendarsPage, EmployersPage, SubjectsPage } from './ManagePages';
 import { BackupsPage, NoticesPage, RestorePage } from './DataPages';
@@ -111,22 +111,12 @@ function syncLabel(s: ReturnType<typeof useSync>, pending: number): string {
 
 export function OtherScreen() {
   const { settings, outboxPending } = useData();
-  const { openSheet, confirm, showToast } = useUIActions();
+  const { openSheet, confirm } = useUIActions();
   const sync = useSync();
   const attention = useAttention();
   const [page, setPage] = useState<OtherPage>('root');
   const logCount = useLiveQuery(() => db.operationLog.count(), []) ?? 0;
   const loggedIn = Boolean(sync.me);
-
-  // ログインから戻ったときの結果を知らせる
-  useEffect(() => {
-    const p = new URLSearchParams(location.search);
-    const r = p.get('login');
-    if (!r) return;
-    showToast(r === 'ok' ? 'ログインしました' : `ログインできませんでした（${p.get('reason') ?? '不明'}）`);
-    history.replaceState(null, '', location.pathname);
-    if (r === 'ok') void syncEngine.checkAccount();
-  }, [showToast]);
 
   const logout = async () => {
     if (outboxPending > 0 && !(await confirm({ title: 'ログアウトしますか？', message: `まだ送信していない変更が${outboxPending}件あります。この端末には残り、同じアカウントでログインし直すと送信します。`, confirmLabel: 'ログアウト', destructive: true }))) return;
@@ -153,13 +143,15 @@ export function OtherScreen() {
           </div>
           {loggedIn ? (
             <button type="button" className="gpill glass glass-i danger" onClick={() => void logout()} data-testid="logout">ログアウト</button>
-          ) : sync.phase === 'notConfigured' || sync.phase === 'unavailable' ? (
+          ) : sync.phase === 'notConfigured' || (sync.phase === 'unavailable' && !NO_API_HOST) ? (
             <span className="muted small">未設定</span>
           ) : (
             <a className="gbtn-primary glass-i" href={api.loginUrl()} data-testid="login">ログイン</a>
           )}
         </section>
-        {(sync.phase === 'unavailable') && <p className="note-text">この配信先にはサーバーがないため、データはこの端末内だけに保存されます。</p>}
+        {sync.phase === 'unavailable' && (NO_API_HOST
+          ? <p className="note-text" data-testid="pages-note">このページ（GitHub Pages）にはサーバーがないため、ここではログインできません。「ログイン」を押すと本体アプリ（{APP_HOME.replace('https://', '').replace(/\/$/, '')}）でログインします。iPhone のホーム画面には本体アプリの方を追加してください。</p>
+          : <p className="note-text">この配信先にはサーバーがないため、データはこの端末内だけに保存されます。</p>)}
 
         <Group header="カレンダーとタスクの管理">
           <NavRow icon="calendar" color="#FF3B30" label="カレンダー" onClick={() => setPage('calendars')} testId="nav-calendars" />

@@ -448,6 +448,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
               <div className="row ed-kind-row">
                 <KindButtons
                   label="タスクの種類"
+                  size="xs"
                   value={v.taskKind}
                   onChange={(k) => set('taskKind', k)}
                   options={[{ value: 'do', label: '実行', tone: 'do', icon: 'play', testId: 'editor-kind-do' }, { value: 'check', label: '確認', tone: 'check', icon: 'check', testId: 'editor-kind-check' }]}

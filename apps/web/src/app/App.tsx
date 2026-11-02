@@ -162,6 +162,23 @@ function RestoreBanner() {
   );
 }
 
+/** Google ログインから戻ったときの結果を、どのタブにいても知らせる（以前は「その他」を開いていないと出なかった） */
+function LoginReturn() {
+  const { showToast } = useUIActions();
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    const r = p.get('login');
+    if (!r) return;
+    p.delete('login');
+    const reason = p.get('reason');
+    p.delete('reason');
+    history.replaceState(null, '', location.pathname + (p.toString() ? `?${p}` : ''));
+    showToast(r === 'ok' ? 'ログインしました' : `ログインできませんでした（${reason ?? '不明'}）`);
+    void syncEngine.checkAccount();
+  }, [showToast]);
+  return null;
+}
+
 function Shell() {
   const { tab, setTab } = useUI();
   const { ready, settings } = useData();
@@ -170,6 +187,7 @@ function Shell() {
   return (
     <div className="app-shell">
       <AppearanceSync />
+      <LoginReturn />
       {ready && <Background />}
       <RestoreBanner />
       <main className="app-main">
