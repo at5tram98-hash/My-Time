@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { addDays, eventsForDay, isMultiDay, isSameDay, layoutWeekBars, startOfDay, tasksForDay, tasksForRange, weekday, type CalEvent } from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
@@ -11,9 +11,11 @@ import type { CalendarViewPref } from '../../data/db';
 import { repo } from '../../data/repo';
 import { usePager } from '../../gestures/usePager';
 import { Timeline } from '../timeline/Timeline';
+import { InlineSearch } from '../search/InlineSearch';
+import { DatePickerPopup } from '../editor/pickers';
 import { useTimelineActions } from '../timeline/useTimelineActions';
 
-const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '日', '2day': '2日', week: '週', month: '月' };
+const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '1日', '2day': '2日', '3day': '3日', week: '週', month: '月' };
 
 export function weekStart(t: number): number {
   const d = startOfDay(t);
@@ -27,38 +29,38 @@ export function CalendarScreen() {
   const now = useNow();
   const actions = useTimelineActions();
   const view = settings.calendarView;
+  const [monthPick, setMonthPick] = useState(false);
   const setView = (v: CalendarViewPref) => void repo.updateSettings({ calendarView: v });
 
-  const days = view === 'day' ? 1 : view === '2day' ? 2 : 7;
+  const days = view === 'day' ? 1 : view === '2day' ? 2 : view === '3day' ? 3 : 7;
   const startDay = view === 'week' ? weekStart(calDate) : calDate;
   const events = useVisibleEvents(addDays(startDay, -1), addDays(startDay, days + 1), now);
   const step = days;
   // 表示中の日付の前後だけを時間軸へ渡す（大量のタスクでも描画・計算を範囲内に限る）
   const rangeTasks = useMemo(() => tasksForRange(tasks, addDays(startDay, -1), addDays(startDay, days + 1), now), [tasks, startDay, days, now]);
 
-  const viewItems: MenuItem[] = (['day', '2day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
+  const viewItems: MenuItem[] = (['day', '2day', '3day', 'week', 'month'] as const).map((v) => ({ label: VIEW_LABEL[v], checked: v === view, onSelect: () => setView(v) }));
   const isTodayVisible = view === 'month' ? new Date(calDate).getMonth() === new Date(now).getMonth() && new Date(calDate).getFullYear() === new Date(now).getFullYear() : now >= startDay && now < addDays(startDay, days);
 
   return (
     <div className="screen calendar" data-testid="calendar-screen" data-view={view}>
       <header className="nav">
-        <h1 className="nav-title-left">{formatMonth(view === 'week' ? startDay : calDate)}</h1>
-        <div className="nav-actions">
-          <button type="button" className="nav-text-btn" disabled={isTodayVisible} onClick={() => setCalDate(Date.now())}>今日</button>
-          <MenuButton label={`表示：${VIEW_LABEL[view]}`} items={viewItems} className="nav-pill-btn" testId="view-menu">
+        {/* 月の表示をタップすると小型の月カレンダー（Q24） */}
+        <button type="button" className="nav-title-left month-btn" onClick={() => setMonthPick(true)} aria-label={`${formatMonth(view === 'week' ? startDay : calDate)}。タップで日付を選ぶ`} data-testid="cal-month">
+          <span className="month-year">{new Date(view === 'week' ? startDay : calDate).getFullYear()}年</span>
+          <span className="month-name">{new Date(view === 'week' ? startDay : calDate).getMonth() + 1}月<Icon name="chevronDown" size={14} strokeWidth={2.6} /></span>
+        </button>
+        <div className="nav-actions gap">
+          <button type="button" className="gpill glass glass-i" disabled={isTodayVisible} onClick={() => setCalDate(Date.now())}>今日</button>
+          <MenuButton label={`表示：${VIEW_LABEL[view]}`} items={viewItems} className="gpill glass glass-i" testId="view-menu">
             {VIEW_LABEL[view]}
             <Icon name="chevronDown" size={14} strokeWidth={2.4} />
           </MenuButton>
-          <button type="button" className="nav-icon-btn" aria-label="検索" onClick={() => openSheet({ kind: 'search' })}>
-            <Icon name="search" />
-          </button>
-          <MenuButton label="追加" testId="cal-add" items={[
-            { label: '新規予定', icon: 'calendar', onSelect: () => openSheet({ kind: 'editEvent' }) },
-            { label: '新規タスク', icon: 'checklist', onSelect: () => openSheet({ kind: 'editTask' }) },
-          ]}>
-            <Icon name="plus" />
-          </MenuButton>
+          <button type="button" className="gbtn glass glass-i" aria-label="表示するカレンダー" onClick={() => openSheet({ kind: 'calendarFilter' })} data-testid="cal-filter"><Icon name="stack" size={19} /></button>
+          <InlineSearch target="calendar" />
+          <button type="button" className="gbtn glass glass-i tint" aria-label="追加" onClick={() => openSheet({ kind: 'edit', mode: 'event' })} data-testid="cal-add"><Icon name="plus" size={20} strokeWidth={2.2} /></button>
         </div>
+        <DatePickerPopup open={monthPick} value={calDate} title="日付へ移動" onClose={() => setMonthPick(false)} onPick={(d) => { setMonthPick(false); setCalDate(d); }} />
       </header>
       <div className="calendar-body">
         {view === 'month' ? (

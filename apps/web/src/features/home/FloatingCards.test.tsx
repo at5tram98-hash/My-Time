@@ -15,6 +15,7 @@ describe('FloatingCards（拡張時の浮遊カード）', () => {
     const t = applyTaskAction(makeTask({ title: '実行中', plannedStart: day + 10 * HOUR, plannedEnd: day + 12 * HOUR }, day), 'start', day + 10 * HOUR).task;
     const { rerender } = render(<UIProvider><FloatingCards tasks={[t]} subtasksByTask={new Map()} now={day + 11 * HOUR} /></UIProvider>);
     expect(screen.getByTestId('fcard-running')).toHaveTextContent('50%');
+    expect(screen.getByTestId('fcard-running')).toHaveTextContent('実行中');
     const withActual = { ...t, manualProgress: { value: 0.8, at: day + 11 * HOUR, workedMsAtSample: HOUR } };
     rerender(<UIProvider><FloatingCards tasks={[withActual]} subtasksByTask={new Map()} now={day + 11 * HOUR} /></UIProvider>);
     expect(screen.getByTestId('fcard-running')).toHaveTextContent('80%');

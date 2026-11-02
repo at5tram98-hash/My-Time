@@ -82,3 +82,34 @@
 .fcard-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .fcard-kicker { font-size: 0.66rem; color: var(--label-2); font-weight: 600; }
 .fcard-time { font-size: 0.8rem; color: var(--blue); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ===== UI/UX v2 ホーム（Q08・Q12〜19）===== */
+.home-nav { align-items: center; }
+.date-head { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-height: 44px; text-align: left; }
+.date-month { font-size: 0.8rem; font-weight: 600; color: var(--red); letter-spacing: 0.02em; }
+.date-main { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.date-day { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.date-wd { font-size: 1rem; font-weight: 600; color: var(--label-2); }
+.nav-actions.gap { gap: 8px; }
+/* タスクパネル：ガラスの枠でカレンダーの上に重なる（Q13）。行の内容は不透明で読みやすく */
+.home .task-pane { margin: 0 8px; border-radius: 20px 20px 4px 4px; background: var(--bg-elev); box-shadow: inset 0 0 0 0.5px var(--glass-edge), 0 6px 20px rgba(0, 0, 0, 0.08); z-index: 4; }
+.home .split-handle { margin: 0 8px 6px; height: 22px; border-radius: 4px 4px 18px 18px; background: var(--glass-bg); -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); box-shadow: inset 0 0 0 0.5px var(--glass-edge), inset 0 -1px 0 var(--glass-highlight), 0 6px 16px rgba(0, 0, 0, 0.08); z-index: 4; }
+.home .split-handle:active { box-shadow: inset 0 0 0 1px var(--glass-touch-edge), 0 8px 22px rgba(0, 0, 0, 0.12); }
+.home .split-handle:active .split-grip { background: var(--blue); }
+.home[data-expanded='true'] .task-pane { border-radius: 26px 26px 6px 6px; }
+.home-timeline { border-top: 0; }
+/* 島（Q15） */
+.float-cards.island { gap: 6px; padding: 6px; }
+.fcard.primary { flex: 1 1 auto; min-width: 0; max-width: none; gap: 10px; padding: 0 12px 0 8px; border-radius: 22px; }
+.fcard.compact { flex: 0 1 auto; max-width: 34%; gap: 6px; padding: 0 10px 0 6px; border-radius: 18px; }
+.fcard-text { display: flex; flex-direction: column; min-width: 0; text-align: left; flex: 1; }
+.fcard-kicker { font-size: 0.68rem; font-weight: 700; color: var(--blue); }
+.fcard.running .fcard-kicker { color: var(--green); }
+.fcard-sub { font-size: 0.74rem; color: var(--label-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fcard-pct { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+@media (max-width: 360px) { .fcard.compact:nth-child(3) { display: none; } }
+/* 情報量の段階（Q17）：小さいとサブ行を省き名称・時刻・進捗だけ、大きいとカテゴリー等も */
+.task-pane[data-density='s'] .task-row-sub { display: none; }
+.task-pane[data-density='s'] .task-row-main { min-height: 48px; }
+.task-pane[data-density='l'] .task-row-sub { white-space: normal; }
+.ar-badge { display: inline-flex; align-items: center; }

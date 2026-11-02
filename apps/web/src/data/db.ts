@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { normalizeCalendar, normalizeEvent, normalizeTask, type CalEvent, type Calendar, type Employer, type Subject, type Subtask, type Task } from '@my-time/domain';
+import { normalizeCalendar, normalizeEvent, normalizeTask, type CalEvent, type Calendar, type Employer, type StudioType, type Subject, type Subtask, type Task, type TaskCategory } from '@my-time/domain';
 import type { EntityName } from '@my-time/contracts';
 
 export type SyncEntity = EntityName;
@@ -59,7 +59,10 @@ export interface LocalNotice {
 
 export type ThemePref = 'system' | 'light' | 'dark';
 export type TextSizePref = 'system' | 'small' | 'large' | 'xlarge';
-export type CalendarViewPref = 'day' | '2day' | 'week' | 'month';
+export type CalendarViewPref = 'day' | '2day' | '3day' | 'week' | 'month';
+export type TaskScope = 'today' | 'upcoming' | 'all';
+export type TaskSort = 'due' | 'priority' | 'manual';
+export type TaskKindFilter = 'all' | 'do' | 'check';
 
 export interface AppSettings {
   key: 'app';
@@ -81,6 +84,24 @@ export interface AppSettings {
   defaultNotifyMinutes: number | null;
   /** アルバイトの勤務前リマインダー（新しい勤務先の初期値） */
   defaultJobReminderHours: number;
+  /** ---- UI/UX v2 ---- */
+  /** ホーム：タスクパネルの高さの割合（0..1。離した位置をそのまま保持：Q14） */
+  homeSplit: number;
+  taskScope: TaskScope;
+  taskSort: TaskSort;
+  taskKind: TaskKindFilter;
+  /** 手動の並び順（タスクID の順。Q39） */
+  taskManualOrder: string[];
+  /** 分析の任意の目標（Q48） */
+  goalWeeklyMinutes: number | null;
+  goalCompletionRate: number | null;
+  /** 最近使ったアイコン・色・場所（Q76・Q78。アカウントごと） */
+  recentIcons: string[];
+  recentColors: string[];
+  placeHistory: { name: string; address: string; lat: number | null; lng: number | null }[];
+  /** TimeTree：読み込み専用の設定（Q52） */
+  timetreeAutoSkipDuplicates: boolean;
+  timetreeDefaultCalendarId: string | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -98,6 +119,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   suggestStepMin: 15,
   defaultNotifyMinutes: null,
   defaultJobReminderHours: 2,
+  homeSplit: 0.4,
+  taskScope: 'all',
+  taskSort: 'due',
+  taskKind: 'all',
+  taskManualOrder: [],
+  goalWeeklyMinutes: null,
+  goalCompletionRate: null,
+  recentIcons: [],
+  recentColors: [],
+  placeHistory: [],
+  timetreeAutoSkipDuplicates: true,
+  timetreeDefaultCalendarId: null,
 };
 
 export class MyTimeDB extends Dexie {
@@ -113,6 +146,10 @@ export class MyTimeDB extends Dexie {
   syncState!: EntityTable<SyncState, 'key'>;
   notices!: EntityTable<LocalNotice, 'key'>;
   settings!: EntityTable<AppSettings, 'key'>;
+  categories!: EntityTable<TaskCategory, 'id'>;
+  studioTypes!: EntityTable<StudioType, 'id'>;
+  /** 編集中の下書き（端末内だけ・同期しない。保存・破棄で消す：Q81・Q90） */
+  drafts!: EntityTable<{ key: string; at: number; data: Record<string, unknown> }, 'key'>;
   recovery!: EntityTable<{ key: string; entity: SyncEntity; id: string; at: number; reason: string; record: Record<string, unknown> }, 'key'>;
 
   constructor(name = 'my-time') {
@@ -145,6 +182,8 @@ export class MyTimeDB extends Dexie {
         await tx.table('settings').toCollection().modify((s: AppSettings) => Object.assign(s, { ...DEFAULT_SETTINGS, ...s, onboarded: true }));
       });
     this.version(3).stores({ recovery: 'key, at' });
+    // UI/UX v2：タスクのカテゴリーと Create Studio の種類（追加のみ。既存の表・データは変えない）
+    this.version(4).stores({ categories: 'id, order', studioTypes: 'id, target, status', drafts: 'key, at' });
   }
 }
 

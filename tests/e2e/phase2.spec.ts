@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, event, openApp, readStore, seed, task } from './helpers';
+import { at, event, openApp, openNewEvent, pickTime, readStore, saveEditor, seed, task } from './helpers';
 
 /** Phase 2 の画面操作（ローカルのみ。サーバー連携は fullstack.spec.ts） */
 
@@ -9,9 +9,8 @@ async function toOther(page: Page) {
 }
 
 async function newEvent(page: Page) {
-  await page.getByTestId('home-add').click();
-  await page.getByRole('menuitem', { name: '新規予定' }).click();
-  await expect(page.getByTestId('event-title-input')).toBeVisible();
+  await openNewEvent(page);
+  await expect(page.getByTestId('editor-title')).toBeVisible();
 }
 
 /** 見出しで今のカードを確かめてから、そのカードのボタンを押す（切り替え中の誤タップを避ける） */
@@ -70,19 +69,21 @@ test.describe('Phase 2', () => {
   test('授業の課題・小テストは確認してからタスク化し、再保存しても重複しない', async ({ page }) => {
     await openApp(page);
     await newEvent(page);
-    await page.getByTestId('event-title-input').fill('財政学');
-    await page.getByTestId('event-calendar').selectOption('cal-class');
-    await page.getByTestId('event-start').fill('2026-10-12T13:00');
-    await page.getByTestId('event-end').fill('2026-10-12T14:30');
-    await expect(page.getByTestId('class-fields')).toBeVisible();
+    await page.getByTestId('editor-title').fill('財政学');
+    await page.getByTestId('editor-type').click();
+    await page.getByTestId('type-cal-cal-class').click();
+    await pickTime(page, 'editor-start-time', 13, 0);
+    await pickTime(page, 'editor-end-time', 14, 30);
+    // 授業の課題・小テストは「授業」タブ（専用の入力）
+    await page.getByTestId('editor-tab-special').click();
     await page.getByTestId('add-assignment').click();
     await page.getByTestId('add-quiz').click();
     await page.getByTestId('quiz-row').getByPlaceholder(/小テスト/).fill('第3回小テスト');
-    await page.getByTestId('save-event').click();
+    await page.getByTestId('editor-save').click();
     const dlg = page.getByRole('alertdialog');
     await expect(dlg).toContainText('課題・テスト対策のタスクを作成しますか？');
     await dlg.getByRole('button', { name: '作成', exact: true }).click();
-    await expect(page.getByTestId('event-title-input')).toHaveCount(0);
+    await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
 
     const made = (await readStore(page, 'tasks')).filter((t) => t.sourceEventId);
     expect(made.map((t) => t.special).sort()).toEqual(['assignment', 'testPrep']);
@@ -95,8 +96,8 @@ test.describe('Phase 2', () => {
     // 同じ予定を開いて保存し直してもタスクは増えない（安定ID）
     await page.getByTestId('tab-home').click();
     await page.getByRole('button', { name: /予定 財政学/ }).click();
-    await page.getByTestId('save-event').click();
-    await expect(page.getByTestId('event-title-input')).toHaveCount(0);
+    await page.getByTestId('info-edit').click();
+    await saveEditor(page);
     expect((await readStore(page, 'tasks')).filter((t) => t.sourceEventId).length).toBe(2);
   });
 
@@ -106,7 +107,8 @@ test.describe('Phase 2', () => {
       events: [event({ id: 'wk', title: 'ゼミ', calendarId: 'cal-class', start: at(13, 0, -7), end: at(14, 0, -7), recurrence: { freq: 'weekly', interval: 1, byWeekday: null, until: null } })],
     });
     await page.getByRole('button', { name: /予定 ゼミ/ }).click();
-    await page.getByRole('button', { name: '削除' }).click();
+    await page.getByTestId('info-more').click();
+    await page.getByRole('button', { name: '削除', exact: true }).last().click();
     await expect(page.getByRole('dialog').or(page.getByRole('alertdialog')).last()).toContainText('繰り返しの予定を削除します');
     await page.getByRole('button', { name: 'この予定のみ' }).click();
     await expect(page.getByRole('button', { name: /予定 ゼミ/ })).toHaveCount(0);
@@ -118,7 +120,8 @@ test.describe('Phase 2', () => {
     await page.reload();
     await expect(page.getByRole('button', { name: /予定 ゼミ/ })).toBeVisible();
     await page.getByRole('button', { name: /予定 ゼミ/ }).click();
-    await page.getByRole('button', { name: '削除' }).click();
+    await page.getByTestId('info-more').click();
+    await page.getByRole('button', { name: '削除', exact: true }).last().click();
     await page.getByRole('button', { name: 'これ以降のすべての予定' }).click();
     await expect(page.getByRole('button', { name: /予定 ゼミ/ })).toHaveCount(0);
     wk = (await readStore(page, 'events')).find((e) => e.id === 'wk')!;
@@ -130,6 +133,7 @@ test.describe('Phase 2', () => {
     await openApp(page);
     await seed(page, { events: [event({ id: 'sh', title: 'シフト', calendarId: 'cal-job', start: at(17), end: at(21) })] });
     await page.getByRole('button', { name: /予定 シフト/ }).click();
+    await page.getByTestId('info-more').click();
     await page.getByRole('button', { name: '別の日にコピー' }).click();
     await expect(page.getByTestId('mini-cal')).toBeVisible();
     await page.getByTestId('copy-day-14-in').click();
@@ -159,7 +163,7 @@ test.describe('Phase 2', () => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'ar', title: '英単語', plannedStart: at(11), plannedEnd: at(11, 30) })] });
     await page.locator('[data-task-title="英単語"]').first().click();
-    await page.getByRole('button', { name: /開始/ }).first().click({ delay: 700 });
+    await page.getByTestId('run-ar').click();
     await page.getByTestId('ar-start').fill('2026-10-12T10:45');
     await page.getByTestId('save-ar').click();
     expect((await readStore(page, 'tasks')).find((t) => t.id === 'ar')!.autoStartAt).toBe(at(10, 45));
@@ -182,9 +186,9 @@ test.describe('Phase 2', () => {
     await expect(page.getByTestId('tile-completion')).toContainText('50');
     await expect(page.getByTestId('tile-completion')).toContainText('1 / 2 件');
     await expect(page.getByTestId('tile-work')).toContainText('1時間10分');
-    const label = await page.getByTestId('week-label').textContent();
-    await page.getByTestId('prev-week').click();
-    await expect(page.getByTestId('week-label')).not.toHaveText(label!);
+    const label = await page.getByTestId('period-label').textContent();
+    await page.getByTestId('prev-period').click();
+    await expect(page.getByTestId('period-label')).not.toHaveText(label!);
   });
 
   test('サーバー未接続でも「その他」は落ちずに状態を表示する', async ({ page }) => {

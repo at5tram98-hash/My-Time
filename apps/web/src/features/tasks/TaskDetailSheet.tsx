@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  actualProgress, availableActions, canAddSubtask, delayInfo, ETA_REASON_JA, subtaskLabel, estimateEnd, formatDuration, formatHm, idealProgress,
-  workedMs, type TaskAction,
+  actualProgress, canAddSubtask, delayInfo, ETA_REASON_JA, subtaskLabel, estimateEnd, formatDuration, formatHm, idealProgress,
+  workedMs, type Task, type TaskAction,
 } from '@my-time/domain';
 import { formatOverMinutes } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
@@ -14,15 +14,12 @@ import { useNow } from '../../app/useNow';
 import { formatFull, formatRange } from '../../app/format';
 import { db } from '../../data/db';
 import { repo } from '../../data/repo';
+import { Ring } from '../../ui/Ring';
+import { Popup } from '../../ui/Popup';
+import { deleteWithUndo } from '../../ui/undo';
+import { StudioValueView } from '../studio/StudioFieldsForm';
+import { studioProgress } from '@my-time/domain';
 
-const ACTION_UI: Record<TaskAction, { label: string; icon: IconName; tone: 'primary' | 'plain' | 'green' }> = {
-  start: { label: '開始', icon: 'play', tone: 'primary' },
-  pause: { label: '一時停止', icon: 'pause', tone: 'plain' },
-  resume: { label: '再開', icon: 'play', tone: 'primary' },
-  finish: { label: '終了', icon: 'check', tone: 'green' },
-  undoFinish: { label: '完了を取り消す', icon: 'undo', tone: 'plain' },
-  undoStart: { label: '開始を取り消す', icon: 'undo', tone: 'plain' },
-};
 
 const LOG_JA: Record<string, string> = {
   create: '作成', update: '編集', start: '開始', pause: '一時停止', resume: '再開', finish: '終了', undoFinish: '完了を取り消し',
@@ -31,7 +28,9 @@ const LOG_JA: Record<string, string> = {
 };
 
 export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
-  const { tasks, events, calendarById } = useData();
+  const { tasks, events, calendarById, studioTypes } = useData();
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [manual, setManual] = useState(0);
   const { closeSheet, openSheet, confirm, showToast } = useUIActions();
   const now = useNow(5_000);
   const task = tasks.find((t) => t.id === id);
@@ -63,13 +62,22 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
     }
   };
 
+  // 削除は数秒間取り消せる（Q41・Q101）
   const remove = async () => {
-    const ok = await confirm({ title: 'タスクを削除しますか？', message: `「${task.title}」とサブタスク、実績が削除されます。`, confirmLabel: '削除', destructive: true });
+    const ok = await confirm({ title: 'タスクを削除しますか？', message: `「${task.title}」とサブタスク、実績が削除されます。直後なら取り消せます。`, confirmLabel: '削除', destructive: true });
     if (!ok) return;
-    await repo.deleteTask(task.id);
     closeSheet();
-    showToast('削除しました');
+    deleteWithUndo(`task:${task.id}`, `「${task.title}」`, () => repo.deleteTask(task.id));
   };
+  // 完了は控えめに確定し、直後に取り消せる（Q92）
+  const finish = async () => {
+    await run('finish');
+    showToast('完了しました。取り消すには「完了を取り消す」');
+  };
+  const st = task.extra?.studio ? studioTypes.find((t) => t.id === task.extra!.studio!.typeId) : undefined;
+  const worked = workedMs(task, now);
+  const sp = st ? studioProgress(st, task.extra!.studio!.values, worked / 60_000) : null;
+  const ringValue = sp?.value ?? ap.value ?? (task.status === 'done' ? 1 : ideal ?? 0);
 
   const addSub = async () => {
     const title = newSub.trim();
@@ -88,13 +96,24 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
       depth={depth}
       labelledBy="task-detail-title"
       left={<button type="button" className="bar-btn" onClick={closeSheet}>閉じる</button>}
-      right={<button type="button" className="bar-btn bold" onClick={() => openSheet({ kind: 'editTask', taskId: task.id })}>編集</button>}
+      right={<button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={() => openSheet({ kind: 'edit', mode: 'task', id: task.id })} data-testid="info-edit"><Icon name="pencil" size={18} /></button>}
+      detent="medium"
+      detents={['medium', 'large']}
+      testId="task-info"
     >
+      <Popup open={progressOpen} title="進捗" onClose={() => setProgressOpen(false)} onDone={subtasks.length || st ? undefined : () => { setProgressOpen(false); void repo.recordProgress(task.id, manual / 100); }} testId="progress-popup">
+        {subtasks.length > 0 ? <p className="note-text">サブタスクの完了数から自動で計算します（{subtasks.filter((x) => x.done).length}/{subtasks.length}）。</p>
+          : st ? <p className="note-text">「{st.name}」の項目から計算します。値は編集画面の「{st.name}」で変更できます。{sp?.label}</p>
+          : (<>
+            <p className="note-text">実績の進捗を入力します（リングをなぞって変える操作はありません）。</p>
+            <div className="prog-input"><input type="range" min={0} max={100} step={5} value={manual} onChange={(e) => setManual(Number(e.target.value))} aria-label="進捗（%）" data-testid="progress-range" /><span className="run-elapsed">{manual}%</span></div>
+          </>)}
+      </Popup>
       <div className="detail-hero">
-        <TaskIcon task={task} now={now} size={56} />
+        {task.kind === 'check' && <TaskIcon task={task} now={now} size={56} />}
         <h2 id="task-detail-title" className="detail-title">{task.title}</h2>
         <div className="detail-meta">
-          {task.kind === 'check' ? '確認タスク' : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実施タスク'}
+          {task.kind === 'check' ? '確認タスク' : st ? st.name : task.special === 'assignment' ? '課題' : task.special === 'testPrep' ? 'テスト対策' : '実行タスク'}
           {task.category ? ` · ${task.category}` : ''}
           {task.flagged && <span className="flag-mark" role="img" aria-label="フラグ付き"><Icon name="flag" size={15} strokeWidth={2.2} /></span>}
           {task.priority > 0 && <span className="prio-mark" role="img" aria-label={`優先度${['', '低', '中', '高'][task.priority]}`}>{Array.from({ length: task.priority }, (_, i) => <Icon key={i} name="exclamation" size={14} strokeWidth={2.6} />)}</span>}
@@ -102,22 +121,33 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
         </div>
         {task.tags.length > 0 && <div className="tag-line">{task.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
       </div>
-
+      {/* 実行パネル（Q35・Q92）：名前と進捗リング → 見積／経過 → 大きな主ボタン */}
       {task.kind === 'do' && (
-        <div className="action-row" data-testid="task-actions">
-          {availableActions(task).map((a) => (
-            <ActionButton key={a} action={a} onRun={() => void run(a)} onLongPress={a === 'start' || a === 'finish' || a === 'resume' ? () => openSheet({ kind: 'autoReserve', taskId: task.id }) : undefined} />
-          ))}
+        <div className="run-panel" data-testid="run-panel">
+          <button type="button" className="run-ring" onClick={() => { setManual(Math.round((ap.value ?? 0) * 100)); setProgressOpen(true); }} aria-label="進捗の詳細" data-testid="run-ring">
+            <Ring value={ringValue} size={64} icon={task.icon} done={task.status === 'done'} />
+          </button>
+          <div className="run-time" aria-live="polite" data-testid="run-time">
+            {task.status === 'running' || task.status === 'paused' ? <><span className="run-elapsed">{formatElapsed(worked)}</span><span className="muted small">{task.status === 'paused' ? '一時停止中' : '実行中'}</span></>
+              : task.status === 'done' ? <><span className="run-elapsed">{formatElapsed(worked)}</span><span className="muted small">完了</span></>
+              : <><span className="run-elapsed">{task.estimateMinutes != null ? `${task.estimateMinutes}分` : '—'}</span><span className="muted small">{task.estimateMinutes != null ? '見積時間' : '見積なし'}</span></>}
+            {sp?.label && <span className="muted small">{sp.label}</span>}
+          </div>
+          <div className="run-actions">
+            {task.status === 'notStarted' && <button type="button" className="gbtn-primary big glass-i" onClick={() => void run('start')} data-testid="run-start"><Icon name="play" size={20} />開始</button>}
+            {task.status === 'running' && (<><button type="button" className="gbtn-primary big glass-i neutral" onClick={() => void run('pause')} data-testid="run-pause"><Icon name="pause" size={20} />停止</button><button type="button" className="gbtn-primary big green glass-i" onClick={() => void finish()} data-testid="run-finish"><Icon name="check" size={20} />完了</button></>)}
+            {task.status === 'paused' && (<><button type="button" className="gbtn-primary big glass-i" onClick={() => void run('resume')} data-testid="run-resume"><Icon name="play" size={20} />再開</button><button type="button" className="gbtn-primary big green glass-i" onClick={() => void finish()} data-testid="run-finish"><Icon name="check" size={20} />完了</button></>)}
+            {task.status === 'done' && <button type="button" className="gbtn-primary big glass-i neutral" onClick={() => void run('undoFinish')} data-testid="run-undo"><Icon name="undo" size={20} />完了を取り消す</button>}
+          </div>
+          {task.status !== 'done' && (
+            <button type="button" className="ar-btn glass glass-i" onClick={() => openSheet({ kind: 'autoReserve', taskId: task.id })} data-testid="run-ar">
+              <Icon name="clock" size={16} />
+              {task.autoStartAt != null || task.autoEndAt != null ? `予約 ${task.autoStartAt != null ? formatHm(task.autoStartAt) + ' 開始' : ''}${task.autoEndAt != null ? ' ' + formatHm(task.autoEndAt) + ' 終了' : ''}` : 'AR予約'}
+            </button>
+          )}
         </div>
       )}
-      {task.kind === 'do' && task.status !== 'done' && (
-        <p className="hint-line">
-          {task.autoStartAt != null || task.autoEndAt != null
-            ? `予約：${task.autoStartAt != null ? `${formatFull(task.autoStartAt)} に自動開始 ` : ''}${task.autoEndAt != null ? `${formatFull(task.autoEndAt)} に自動終了` : ''}`
-            : '開始・終了ボタンを長押しすると、自動開始・終了を予約できます。'}
-          <button type="button" className="link-btn inline" onClick={() => openSheet({ kind: 'autoReserve', taskId: task.id })} data-testid="open-ar">予約</button>
-        </p>
-      )}
+
       {task.kind === 'check' && (
         <div className="action-row">
           <button type="button" className={`pill-btn ${task.checked ? 'plain' : 'green'}`} onClick={() => void repo.toggleCheck(task.id)}>
@@ -160,7 +190,7 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
           {task.repeat && <div className="row"><span className="row-label">繰り返し</span><span className="row-value">{{ daily: '毎日', weekly: '毎週', monthly: '毎月' }[task.repeat.freq]}（完了すると次を作成）</span></div>}
           {task.location && <div className="row"><span className="row-label">場所</span><span className="row-value">{task.location}</span></div>}
           {source && (
-            <button type="button" className="row row-button" onClick={() => openSheet({ kind: 'editEvent', eventId: source.id })}>
+            <button type="button" className="row row-button" onClick={() => openSheet({ kind: 'info', entity: 'event', id: source.id })}>
               <span className="row-label">元の授業</span>
               <span className="row-value tint">{source.title}</span>
             </button>
@@ -235,6 +265,17 @@ export function TaskDetailSheet({ id, depth }: { id: string; depth: number }) {
         </div>
       )}
 
+      {st && (
+        <div className="group" data-testid="info-studio">
+          <div className="group-header">{st.name}</div>
+          <div className="group-body">
+            {st.fields.filter((f) => f.showInInfo && !f.hidden && f.type !== 'note').map((f) => (
+              <div className="row" key={f.id}><span className="row-label">{f.label}</span><span className="row-value"><StudioValueView f={f} value={task.extra!.studio!.values[f.id]} /></span></div>
+            ))}
+          </div>
+        </div>
+      )}
+      <InfoExtras extra={task.extra} />
       <div className="group">
         <div className="group-header">実績ログ</div>
         <div className="group-body">
@@ -286,36 +327,28 @@ function ProgressLine({ label, value, tone }: { label: string; value: number | n
   );
 }
 
-/** 開始・終了ボタン。長押しで AR（自動開始・終了）の予約を開く */
-function ActionButton({ action, onRun, onLongPress }: { action: TaskAction; onRun: () => void; onLongPress: (() => void) | undefined }) {
-  const timer = useRef<number | undefined>(undefined);
-  const fired = useRef(false);
-  const start = () => {
-    fired.current = false;
-    if (!onLongPress) return;
-    timer.current = window.setTimeout(() => {
-      fired.current = true;
-      navigator.vibrate?.(10);
-      onLongPress();
-    }, 500);
-  };
-  const cancel = () => window.clearTimeout(timer.current);
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/** 場所・会議URL・リンク・添付・通知など（予定とタスクで共通の表示：Q62） */
+export function InfoExtras({ extra }: { extra: Task['extra'] }) {
+  if (!extra) return null;
+  const rows: { icon: IconName; label: string; value: React.ReactNode }[] = [];
+  if (extra.place) rows.push({ icon: 'flag', label: '場所', value: extra.place.lat != null ? <a className="tint" href={`https://www.openstreetmap.org/?mlat=${extra.place.lat}&mlon=${extra.place.lng}#map=17/${extra.place.lat}/${extra.place.lng}`} target="_blank" rel="noreferrer noopener">{extra.place.name}</a> : extra.place.name });
+  if (extra.travelMinutes) rows.push({ icon: 'run', label: '移動', value: `${extra.travelMinutes}分` });
+  if (extra.meetingUrl) rows.push({ icon: 'link', label: '会議', value: <a className="tint" href={extra.meetingUrl} target="_blank" rel="noreferrer noopener">参加する</a> });
+  for (const u of extra.urls ?? []) rows.push({ icon: 'link', label: u.title || 'リンク', value: <a className="tint" href={u.url} target="_blank" rel="noreferrer noopener">開く</a> });
+  if (extra.attachments?.length) rows.push({ icon: 'paint', label: '添付', value: `${extra.attachments.length}件` });
+  if (!rows.length) return null;
   return (
-    <button
-      type="button"
-      className={`pill-btn ${ACTION_UI[action].tone}`}
-      onPointerDown={start}
-      onPointerUp={cancel}
-      onPointerLeave={cancel}
-      onPointerCancel={cancel}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={() => {
-        if (fired.current) return;
-        onRun();
-      }}
-    >
-      <Icon name={ACTION_UI[action].icon} size={18} strokeWidth={2.2} />
-      {ACTION_UI[action].label}
-    </button>
+    <div className="group" data-testid="info-extras"><div className="group-body">
+      {rows.map((r, i) => <div className="row" key={i}><Icon name={r.icon} size={18} className="muted" /><span className="row-label">{r.label}</span><span className="row-value">{r.value}</span></div>)}
+    </div></div>
   );
 }

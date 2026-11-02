@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { pickDate, pickTime } from '../e2e/helpers';
 
 /**
  * 同期とデータ保護ゲートの通し確認（ローカル Worker + 模擬 Google）。
@@ -89,22 +90,32 @@ async function readTitles(page: Page): Promise<string[]> {
 async function syncNow(page: Page) {
   await page.getByTestId('tab-other').click();
   if (await page.getByTestId('back').isVisible()) await page.getByTestId('back').click();
+  // v2：同期の行は詳細シートを開く。シートの「今すぐ同期」で送受信し、状態が同期済みになるのを待つ
   await page.getByTestId('sync-row').click();
+  await page.getByTestId('sync-retry').click();
+  await expect(page.getByTestId('sync-phase')).toHaveText('同期済み', { timeout: 20_000 });
+  await page.getByTestId('sync-sheet').getByRole('button', { name: '完了' }).click();
+  await expect(page.getByTestId('sync-sheet')).toHaveCount(0);
   await expect(page.getByTestId('sync-status')).toHaveText(/同期済み|最新/, { timeout: 20_000 });
 }
 
-/** アプリの操作でタスクを作る（作成画面から） */
+/** アプリの操作でタスクを作る（v2 の共通エディターから。start/end は "YYYY-MM-DDTHH:MM"） */
 async function addTask(page: Page, title: string, start: string, end: string) {
+  const parse = (v: string) => { const [d, t] = v.split('T'); const [y, mo, da] = d!.split('-').map(Number); const [h, mi] = t!.split(':').map(Number); return { y: y!, mo: mo!, da: da!, h: h!, mi: mi! }; };
+  const s = parse(start);
+  const e = parse(end);
   await page.getByTestId('tab-tasks').click();
-  await page.getByRole('button', { name: 'その他の操作' }).click();
-  await page.getByRole('menuitem', { name: '新規タスク' }).click();
-  await page.getByTestId('task-title-input').fill(title);
-  await page.getByTestId('task-start').fill(start);
-  await page.getByTestId('task-end').fill(end);
-  await page.getByTestId('save-task').click();
+  await page.getByTestId('tasks-add').click();
+  await expect(page.getByTestId('editor-sheet')).toBeVisible();
+  await page.getByTestId('editor-title').fill(title);
+  await pickDate(page, 'editor-start-date', s.y, s.mo, s.da);
+  await pickTime(page, 'editor-start-time', s.h, s.mi);
+  await pickDate(page, 'editor-end-date', e.y, e.mo, e.da);
+  await pickTime(page, 'editor-end-time', e.h, e.mi);
+  await page.getByTestId('editor-save').click();
   const alert = page.getByRole('alertdialog');
   if (await alert.isVisible().catch(() => false)) await alert.getByRole('button', { name: '重ねて保存' }).click();
-  await expect(page.getByTestId('task-title-input')).toHaveCount(0);
+  await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
 }
 
 test('ログイン→2台目へ同期→バックアップ失敗日は削除しない→検証後だけ期限削除→期間指定復元→閲覧終了', async ({ browser }, info) => {

@@ -3,7 +3,8 @@ import {
   editThisOccurrence, makeEvent, makeSubtask, newId, planClassTasks, recordManualProgress, splitFromOccurrence, toggleCheck, toggleSubtask,
   type CalEvent, type Calendar, type Employer, type ImportCandidate, type Subject, type Subtask, type Task, type TaskAction, type TaskKind, type TaskTransition,
 } from '@my-time/domain';
-import { calendarSchema, employerSchema, eventSchema, subjectSchema, subtaskSchema, taskSchema } from '@my-time/contracts';
+import { calendarSchema, categorySchema, employerSchema, eventSchema, studioTypeSchema, subjectSchema, subtaskSchema, taskSchema } from '@my-time/contracts';
+import type { StudioType, Subtask as SubtaskT, TaskCategory } from '@my-time/domain';
 import { db, DEFAULT_SETTINGS, type AppSettings, type MyTimeDB, type OperationLogEntry, type OutboxEntry } from './db';
 
 /** ローカルで書き込みがあったことを同期エンジンへ知らせる */
@@ -24,7 +25,7 @@ export function createRepo(database: MyTimeDB = db, clock: () => number = Date.n
   };
 
   const tx = <T>(fn: () => Promise<T>) =>
-    database.transaction('rw', [database.tasks, database.events, database.subtasks, database.calendars, database.subjects, database.employers, database.operationLog, database.outbox], fn);
+    database.transaction('rw', [database.tasks, database.events, database.subtasks, database.calendars, database.subjects, database.employers, database.categories, database.studioTypes, database.operationLog, database.outbox], fn);
 
   /** 繰り返しタスクを完了したら次の回を作る（Reminders と同じ考え方） */
   const nextRepeat = async (t: Task, now: number) => {
@@ -221,6 +222,91 @@ export function createRepo(database: MyTimeDB = db, clock: () => number = Date.n
         await database.calendars.delete(id);
         await record('calendar', id, 'delete', 'delete');
       });
+    },
+
+    // ---- UI/UX v2：カテゴリー（Q55）----
+    async saveCategory(c: TaskCategory, isNew: boolean) {
+      const v = { ...c, updatedAt: clock() };
+      categorySchema.parse(v);
+      return tx(async () => {
+        await database.categories.put(v);
+        await record('category', v.id, 'put', isNew ? 'create' : 'update');
+        return v;
+      });
+    },
+    /** カテゴリーを消しても、タスクに入っているカテゴリー名は残す（データを書き換えない） */
+    async deleteCategory(id: string) {
+      return tx(async () => {
+        await database.categories.delete(id);
+        await record('category', id, 'delete', 'delete');
+      });
+    },
+    async reorderCategories(ids: string[]) {
+      return tx(async () => {
+        const now = clock();
+        for (const [i, id] of ids.entries()) {
+          const c = await database.categories.get(id);
+          if (c && c.order !== i) {
+            await database.categories.put({ ...c, order: i, updatedAt: now });
+            await record('category', id, 'put', 'reorder');
+          }
+        }
+      });
+    },
+    // ---- Create Studio（Q82〜91）：定義の保存は版を上げ、旧版は変更履歴に残す ----
+    async saveStudioType(t: StudioType, isNew: boolean) {
+      return tx(async () => {
+        const prev = isNew ? undefined : await database.studioTypes.get(t.id);
+        const now = clock();
+        let v: StudioType = { ...t, updatedAt: now };
+        if (prev && JSON.stringify({ s: prev.sections, f: prev.fields, p: prev.progress }) !== JSON.stringify({ s: t.sections, f: t.fields, p: t.progress })) {
+          v = { ...v, version: prev.version + 1, revisions: [...prev.revisions, { version: prev.version, at: now, definition: { sections: prev.sections, fields: prev.fields, progress: prev.progress } }].slice(-50) };
+        }
+        studioTypeSchema.parse(v);
+        await database.studioTypes.put(v);
+        await record('studioType', v.id, 'put', isNew ? 'create' : 'update', { version: v.version });
+        return v;
+      });
+    },
+    /** 種類の削除は種類の定義だけ。既存の予定・タスクと入力済みの値は消さない（Q91） */
+    async deleteStudioType(id: string) {
+      return tx(async () => {
+        await database.studioTypes.delete(id);
+        await record('studioType', id, 'delete', 'delete');
+      });
+    },
+    // ---- サブタスク（Q37）----
+    async renameSubtask(id: string, title: string) {
+      return tx(async () => {
+        const s0 = await database.subtasks.get(id);
+        if (!s0) return;
+        const v: SubtaskT = { ...s0, title: title.trim() || s0.title, updatedAt: clock() };
+        subtaskSchema.parse(v);
+        await database.subtasks.put(v);
+        await record('subtask', id, 'put', 'update');
+      });
+    },
+    async reorderSubtasks(ids: string[]) {
+      return tx(async () => {
+        const now = clock();
+        for (const [i, id] of ids.entries()) {
+          const st = await database.subtasks.get(id);
+          if (st && st.order !== i) {
+            await database.subtasks.put({ ...st, order: i, updatedAt: now });
+            await record('subtask', id, 'put', 'reorder');
+          }
+        }
+      });
+    },
+    // ---- 編集の下書き（端末内だけ：Q81・Q90）----
+    async saveDraft(key: string, data: Record<string, unknown>) {
+      await database.drafts.put({ key, at: clock(), data });
+    },
+    async getDraft(key: string) {
+      return database.drafts.get(key);
+    },
+    async clearDraft(key: string) {
+      await database.drafts.delete(key);
     },
 
     async reorderCalendars(ids: string[]) {

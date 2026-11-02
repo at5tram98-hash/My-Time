@@ -342,6 +342,12 @@ describe('Driveバックアップ（読み戻し検証で初めて成功）', ()
     expect((await runDailyBackup(E, userId, NOW + 1)).ok).toBe(false);
     const notes = await (await api(cookie, '/notifications')).json<{ items: { title: string }[] }>();
     expect(notes.items.map((n) => n.title)).toEqual(['Googleドライブの権限がありません']);
+    // 未解決の警告は削除できない（対応が必要なため）
+    const id = (await (await api(cookie, '/notifications')).json<{ items: { id: string }[] }>()).items[0]!.id;
+    expect(await (await api(cookie, `/notifications/${id}`, { method: 'DELETE' })).json()).toMatchObject({ deleted: 0 });
+    await E.DB.prepare('UPDATE notifications SET resolved_at = ? WHERE id = ?').bind(NOW, id).run();
+    expect(await (await api(cookie, `/notifications/${id}`, { method: 'DELETE' })).json()).toMatchObject({ deleted: 1 });
+    expect((await (await api(cookie, '/notifications')).json<{ items: unknown[] }>()).items).toHaveLength(0);
   });
 
   it('容量が少なければ警告', async () => {
@@ -722,4 +728,27 @@ it('同じ操作IDの並行リクエストでもレコードは1回だけ反映�
   expect(row?.version).toBe(1);
   const logs = await E.DB.prepare("SELECT COUNT(*) AS n FROM operation_log WHERE user_id = ? AND entity_id = 'concurrent-retry' AND action = 'put'").bind(userId).first<{ n: number }>();
   expect(logs?.n).toBe(1);
+});
+
+describe('UI/UX v2 のデータ拡張（互換性）', () => {
+  it('タスク・予定の extra（場所・複数通知・URL・添付・Studio 値）を保持して同期し、カテゴリーと Studio 種類も同期・バックアップに含める', async () => {
+    const { cookie, userId } = await login('g-v2');
+    const task = { ...makeTask({ id: 'v2-task', title: 'extra 付き' }, NOW), extra: { color: '#FF9500', notifies: [10, 60], urls: [{ id: 'u1', title: '資料', url: 'https://example.com/a' }], place: { name: '図書館', address: '京都', lat: 35.06, lng: 135.75 }, studio: { typeId: 'st1', version: 1, values: { f1: 20 } } } };
+    const cat = { id: 'cat1', name: 'ゼミ', icon: 'books', color: '#5E5CE6', order: 0, createdAt: NOW, updatedAt: NOW };
+    const st = { id: 'st1', target: 'task', name: '読書', icon: 'book', color: '#34C759', status: 'active', version: 1, revisions: [], sections: [{ id: 's1', title: '基本' }], fields: [{ id: 'f1', type: 'number', label: '読んだページ', unit: 'page', showInInfo: true, sectionId: 's1' }], progress: { mode: 'number', fieldId: 'f1', target: 30 }, createdAt: NOW, updatedAt: NOW };
+    const r = await push(cookie, [putOp('task', task as unknown as Task), putOp('category' as SyncOp['entity'], cat), putOp('studioType' as SyncOp['entity'], st)]);
+    expect(r.results.map((x) => x.status)).toEqual(['applied', 'applied', 'applied']);
+    const pulled = await pullAll(cookie);
+    expect(pulled.changes.find((c) => c.id === 'v2-task')!.record).toMatchObject({ extra: task.extra });
+    expect(pulled.changes.find((c) => c.id === 'cat1')!.record).toMatchObject(cat);
+    expect(pulled.changes.find((c) => c.id === 'st1')!.record).toMatchObject({ fields: st.fields });
+    // 旧形式（extra なし）も引き続き受け付ける
+    expect((await push(cookie, [putOp('task', makeTask({ id: 'v1-task', title: '旧形式' }, NOW))])).results[0]!.status).toBe('applied');
+    expect((await runDailyBackup(E, userId, NOW)).ok).toBe(true);
+    const file = [...fg.files.values()].filter((f) => f.name.startsWith('MyTime-daily-')).at(-1)!;
+    const body = JSON.parse(file.content) as SnapshotBody;
+    expect(body.tables.category).toHaveLength(1);
+    expect(body.tables.studioType).toHaveLength(1);
+    expect(body.tables.task!.find((t) => t.id === 'v2-task')).toMatchObject({ extra: task.extra });
+  });
 });

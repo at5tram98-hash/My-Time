@@ -9,6 +9,8 @@ export const DATA_TABLES = {
   subtask: 'subtasks',
   subject: 'subjects',
   employer: 'employers',
+  category: 'categories',
+  studioType: 'studioTypes',
 } as const satisfies Record<SyncEntity, keyof MyTimeDB>;
 
 export interface LocalSummary {

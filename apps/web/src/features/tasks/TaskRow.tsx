@@ -5,6 +5,8 @@ import {
 } from '@my-time/domain';
 import { formatOverMinutes } from '@my-time/domain';
 import { TaskIcon } from '../../components/TaskIcon';
+import { openContextMenu, type CtxItem } from '../../ui/ContextMenu';
+import { deleteWithUndo } from '../../ui/undo';
 import { Icon } from '../../components/Icon';
 import { useUIActions } from '../../app/ui';
 import { repo } from '../../data/repo';
@@ -31,7 +33,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
   const modeRef = useRef<Mode>(mode);
   const press = useRef<{ x: number; y: number; id: number; timer: number } | null>(null);
   const suppressClick = useRef(false);
-  const [shake, setShake] = useState(false);
+  const shake = false;
   const lockId = `row-${task.id}`;
 
   const setModeBoth = (m: Mode) => {
@@ -54,12 +56,11 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
   const activate = () => {
     const p = press.current;
     if (!p) return;
-    if (task.kind !== 'do' || task.status === 'done') return;
-    if (!canScrubProgress(task, subtasks)) {
-      setShake(true);
-      window.setTimeout(() => setShake(false), 400);
-      showToast('サブタスクの完了数から自動で計算されます');
+    // 進捗を入力できないタスク（確認・完了・サブタスクあり）は、長押しで操作メニュー（Q07・Q99）
+    if (task.kind !== 'do' || task.status === 'done' || !canScrubProgress(task, subtasks)) {
       suppressClick.current = true;
+      press.current = null;
+      openMenu();
       return;
     }
     if (!gestureLock.acquire(lockId)) return;
@@ -113,7 +114,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
     const m = modeRef.current;
     setModeBoth({ kind: 'idle' });
     gestureLock.release(lockId);
-    if (m.kind !== 'scrub' || !commit || !m.dragged) return; // ドラッグなしの長押し・キャンセルは記録しない
+    if (m.kind === 'scrub' && commit && !m.dragged) return openMenu(); // 動かさない長押し：記録せず操作メニュー（Q99）
+    if (m.kind !== 'scrub' || !commit || !m.dragged) return; // キャンセルは記録しない
     try {
       if (m.value >= 0.995) {
         const ok = await confirm({ title: '終了しますか？', message: `「${task.title}」を100%で終了します。`, confirmLabel: '終了' });
@@ -129,12 +131,31 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
     }
   };
 
+  const openMenu = () => {
+    const el = rowRef.current;
+    if (!el) return;
+    const items: CtxItem[] = [];
+    if (task.kind === 'do') {
+      if (task.status === 'notStarted') items.push({ label: '開始', icon: 'play', onSelect: () => void repo.taskAction(task.id, 'start') });
+      if (task.status === 'running') items.push({ label: '停止', icon: 'pause', onSelect: () => void repo.taskAction(task.id, 'pause') }, { label: '完了', icon: 'check', onSelect: () => void repo.taskAction(task.id, 'finish') });
+      if (task.status === 'paused') items.push({ label: '再開', icon: 'play', onSelect: () => void repo.taskAction(task.id, 'resume') });
+      if (task.status === 'done') items.push({ label: '完了を取り消す', icon: 'undo', onSelect: () => void repo.taskAction(task.id, 'undoFinish') });
+    } else items.push({ label: task.checked ? 'チェックを外す' : '確認済みにする', icon: task.checked ? 'undo' : 'check', onSelect: () => void repo.toggleCheck(task.id) });
+    items.push({ label: '編集', icon: 'pencil', onSelect: () => openSheet({ kind: 'edit', mode: 'task', id: task.id }) });
+    openContextMenu({
+      anchor: el,
+      label: task.title,
+      preview: <div className="ctx-card"><strong>{task.title}</strong><span>{"at" in label ? formatHm(label.at) : task.category ?? ""}</span></div>,
+      items: [...items, 'separator', { label: '削除', icon: 'trash', destructive: true, onSelect: () => deleteWithUndo(`task:${task.id}`, `「${task.title}」`, () => repo.deleteTask(task.id)) }],
+    });
+  };
+
   const onClick = () => {
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
     }
-    openSheet({ kind: 'task', id: task.id });
+    openSheet({ kind: 'info', entity: 'task', id: task.id });
   };
 
   const scrubbing = mode.kind === 'scrub';
@@ -183,7 +204,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
         <span className="task-row-text">
           <span className="task-row-title">
             {task.title}
-            {task.autoReserved && <span className="ar-badge" aria-label="自動予約">AR</span>}
+            {task.autoReserved && <span className="ar-badge" role="img" aria-label="自動予約"><Icon name="clock" size={12} strokeWidth={2.4} /></span>}
           </span>
           <span className="task-row-sub">
             {showDate && (task.plannedStart ?? task.checkAt) != null ? `${formatDayLabel((task.plannedStart ?? task.checkAt)!)} ` : ''}

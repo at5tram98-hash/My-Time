@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CalEvent, Calendar, Employer, Subject, Subtask, Task } from '@my-time/domain';
+import type { CalEvent, Calendar, Employer, StudioType, Subject, Subtask, Task, TaskCategory } from '@my-time/domain';
 
 /**
  * 永続化・将来のAPI同期（Phase 2）で使う入力検証スキーマ。
@@ -14,14 +14,31 @@ export const calendarSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   icon: z.string().min(1).max(16),
   kind: z.enum(['general', 'class', 'job']),
+  studioTypeId: id.nullable().optional(),
   visible: z.boolean(),
   order: z.number().int(),
   createdAt: epoch,
   updatedAt: epoch,
 });
 
-const freq = z.enum(['daily', 'weekly', 'monthly']);
+
 const text = (n: number) => z.string().max(n);
+const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const urlText = z.string().max(2000);
+/** 予定・タスク共通の拡張項目（すべて任意：旧クライアント・旧データと互換） */
+export const extraSchema = z.object({
+  allDay: z.boolean().optional(),
+  color: color.nullable().optional(),
+  place: z.object({ name: text(200), address: text(500), lat: z.number().min(-90).max(90).nullable(), lng: z.number().min(-180).max(180).nullable() }).nullable().optional(),
+  travelMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  meetingUrl: urlText.nullable().optional(),
+  notifies: z.array(z.number().int().min(0).max(40_320)).max(10).optional(),
+  urls: z.array(z.object({ id, title: text(200), url: urlText })).max(30).optional(),
+  attachments: z.array(z.object({ id, name: text(255), mime: text(100), size: z.number().int().nonnegative().max(50 * 1024 * 1024), driveFileId: text(200).nullable(), sha256: text(64), createdAt: epoch })).max(30).optional(),
+  studio: z.object({ typeId: id, version: z.number().int().min(1), values: z.record(z.string().max(128), z.unknown()) }).nullable().optional(),
+}).optional();
+
+const freq = z.enum(['daily', 'weekly', 'monthly']);
 export const recurrenceSchema = z.object({ freq, interval: z.number().int().min(1).max(99), byWeekday: z.array(z.number().int().min(0).max(6)).max(7).nullable(), until: epoch.nullable() });
 const exceptionSchema = z.object({
   originalStart: epoch,
@@ -55,6 +72,7 @@ export const eventSchema = z
     employerId: id.nullable(),
     hideAfterEnd: z.boolean(),
     source: sourceSchema.nullable(),
+    extra: extraSchema,
     createdAt: epoch,
     updatedAt: epoch,
   })
@@ -99,6 +117,7 @@ export const taskSchema = z
     checked: z.boolean(),
     checkedAt: epoch.nullable(),
     notes: z.string().max(10_000),
+    extra: extraSchema,
     createdAt: epoch,
     updatedAt: epoch,
   })
@@ -121,6 +140,41 @@ export const subtaskSchema = z.object({
 export const subjectSchema = z.object({ id, name: z.string().min(1).max(100), createdAt: epoch, updatedAt: epoch });
 export const employerSchema = z.object({ id, name: z.string().min(1).max(100), reminderHours: z.number().min(0).max(48), createdAt: epoch, updatedAt: epoch });
 
+export const categorySchema = z.object({ id, name: z.string().min(1).max(40), icon: z.string().min(1).max(16), color, order: z.number().int(), createdAt: epoch, updatedAt: epoch });
+
+const studioFieldSchema = z.object({
+  id,
+  type: z.enum(['text', 'multiline', 'number', 'datetime', 'duration', 'toggle', 'check', 'select', 'multiselect', 'url', 'place', 'file', 'progress', 'worktime', 'note']),
+  label: z.string().min(1).max(60),
+  unit: text(40).nullable().optional(),
+  precision: z.number().int().min(0).max(4).optional(),
+  min: z.number().nullable().optional(),
+  max: z.number().nullable().optional(),
+  options: z.array(text(60)).max(50).optional(),
+  required: z.boolean().optional(),
+  showInInfo: z.boolean(),
+  sectionId: id,
+  body: text(2000).optional(),
+  hidden: z.boolean().optional(),
+});
+const studioDefinitionSchema = z.object({
+  sections: z.array(z.object({ id, title: text(60) })).max(20),
+  fields: z.array(studioFieldSchema).max(60),
+  progress: z.object({ mode: z.enum(['none', 'time', 'number', 'checklist', 'manual']), fieldId: id.nullable(), target: z.number().nullable() }),
+});
+export const studioTypeSchema = studioDefinitionSchema.extend({
+  id,
+  target: z.enum(['calendar', 'task']),
+  name: z.string().min(1).max(40),
+  icon: z.string().min(1).max(16),
+  color,
+  status: z.enum(['draft', 'active', 'hidden']),
+  version: z.number().int().min(1),
+  revisions: z.array(z.object({ version: z.number().int().min(1), at: epoch, definition: studioDefinitionSchema })).max(50),
+  createdAt: epoch,
+  updatedAt: epoch,
+});
+
 /** 同期でやり取りするエンティティ */
 export const ENTITY_SCHEMAS = {
   calendar: calendarSchema,
@@ -129,13 +183,15 @@ export const ENTITY_SCHEMAS = {
   subtask: subtaskSchema,
   subject: subjectSchema,
   employer: employerSchema,
+  category: categorySchema,
+  studioType: studioTypeSchema,
 } as const;
 export type EntityName = keyof typeof ENTITY_SCHEMAS;
 export const ENTITY_NAMES = Object.keys(ENTITY_SCHEMAS) as EntityName[];
 
 export const syncOpSchema = z.object({
   opId: z.string().min(8).max(64),
-  entity: z.enum(['calendar', 'event', 'task', 'subtask', 'subject', 'employer']),
+  entity: z.enum(['calendar', 'event', 'task', 'subtask', 'subject', 'employer', 'category', 'studioType']),
   entityId: id,
   op: z.enum(['put', 'delete']),
   /** put のときの最新レコード（検証は entity ごとのスキーマで行う） */
@@ -189,5 +245,7 @@ const _checks: [
   Same<z.infer<typeof eventSchema>, CalEvent>,
   Same<z.infer<typeof taskSchema>, Task>,
   Same<z.infer<typeof subtaskSchema>, Subtask>,
-] = [true, true, true, true, true, true];
+  Same<z.infer<typeof categorySchema>, TaskCategory>,
+  Same<z.infer<typeof studioTypeSchema>, StudioType>,
+] = [true, true, true, true, true, true, true, true];
 void _checks;

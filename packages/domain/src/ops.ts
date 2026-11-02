@@ -51,6 +51,13 @@ export const NOT_STARTED_BODY = 'タスク未開始。タスクを修正する�
  * - 未設定タスク：1日1回だけまとめて入力を促す（20時）
  * - 授業・アルバイトなど通常の予定には「未開始」通知を送らない
  */
+/** 「10分後」「2時間後」「1日後」 */
+export function beforeLabel(m: number): string {
+  if (m % 1440 === 0) return `${m / 1440}日後`;
+  if (m % 60 === 0) return `${m / 60}時間後`;
+  return `${m}分後`;
+}
+
 export function planNotices(tasks: readonly Task[], events: readonly CalEvent[], employers: readonly Employer[], now: EpochMs, windowMs: number): PlannedNotice[] {
   const inWin = (at: EpochMs) => at <= now && at > now - windowMs;
   const out: PlannedNotice[] = [];
@@ -60,13 +67,21 @@ export function planNotices(tasks: readonly Task[], events: readonly CalEvent[],
       if (inWin(at)) out.push({ key: `notstarted:${t.id}:${t.plannedStart}`, at, title: t.title, body: NOT_STARTED_BODY, target: { kind: 'task', id: t.id } });
     }
     const anchor = t.kind === 'check' ? t.checkAt : t.plannedStart;
-    if (t.notifyMinutesBefore != null && anchor != null && t.status !== 'done') {
-      const at = anchor - t.notifyMinutesBefore * MINUTE;
-      if (inWin(at)) out.push({ key: `remind:${t.id}:${anchor}:${t.notifyMinutesBefore}`, at, title: t.title, body: t.notifyMinutesBefore === 0 ? '時間になりました' : `${t.notifyMinutesBefore}分後に${t.kind === 'check' ? '確認' : '開始'}します`, target: { kind: 'task', id: t.id } });
+    // 複数の通知（v2：extra.notifies）。なければ従来の1件
+    const mins = t.extra?.notifies?.length ? t.extra.notifies : t.notifyMinutesBefore != null ? [t.notifyMinutesBefore] : [];
+    if (anchor != null && t.status !== 'done') {
+      for (const m of new Set(mins)) {
+        const at = anchor - m * MINUTE;
+        if (inWin(at)) out.push({ key: `remind:${t.id}:${anchor}:${m}`, at, title: t.title, body: m === 0 ? '時間になりました' : `${beforeLabel(m)}に${t.kind === 'check' ? '確認' : '開始'}します`, target: { kind: 'task', id: t.id } });
+      }
     }
   }
   const empById = new Map(employers.map((e) => [e.id, e]));
   for (const e of events) {
+    for (const m of new Set(e.extra?.notifies ?? [])) {
+      const at = e.start - m * MINUTE;
+      if (inWin(at)) out.push({ key: `event:${e.id}:${e.start}:${m}`, at, title: e.title, body: m === 0 ? '時間になりました' : `${beforeLabel(m)}に始まります（${formatHm(e.start)}）`, target: { kind: 'event', id: e.id } });
+    }
     if (!e.employerId) continue;
     const emp = empById.get(e.employerId);
     if (!emp) continue;

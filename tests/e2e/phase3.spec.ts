@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, mouseLongPressDrag, openApp, readStore, seed, task } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openNewTask, readStore, seed, task } from './helpers';
 
 /** 絵文字・絵文字風の記号（アプリが表示するアイコンとして出てはいけないもの） */
 const EMOJI = /[\p{Extended_Pictographic}←-⇿›✓✔]/u;
@@ -46,25 +46,25 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
 
     // 変更せずに保存しても元の値のまま
     await row('unknown').getByRole('button').first().click();
-    await page.getByRole('button', { name: '編集', exact: true }).click();
+    await page.getByTestId('info-edit').click();
     await expect(page.getByRole('radiogroup', { name: 'アイコン' }).getByRole('radio', { checked: true })).toHaveCount(0);
-    await page.getByTestId('save-task').click();
+    await page.getByTestId('editor-save').click();
     await expect.poll(async () => (await readStore(page, 'tasks')).find((t) => t.id === 'unknown')?.icon).toBe('🦄');
-    // 編集シートが閉じて詳細シートに戻ってから、詳細も閉じる（閉じきるまで待つ）
-    await expect(page.getByRole('radiogroup', { name: 'アイコン' })).toHaveCount(0);
+    // 編集シートが閉じて情報確認に戻ってから、情報確認も閉じる（閉じきるまで待つ）
+    await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // 旧値は対応するアイコンが選択済みとして表示され、別のアイコンを選ぶと新しい ID を保存
     await row('legacy').getByRole('button').first().click();
-    await expect(page.getByRole('dialog')).toContainText('旧アイコンのタスク');
-    await page.getByRole('button', { name: '編集', exact: true }).click();
+    await expect(page.getByRole('dialog').last()).toContainText('旧アイコンのタスク');
+    await page.getByTestId('info-edit').last().click();
     const group = page.getByRole('radiogroup', { name: 'アイコン' });
     await expect(group.getByRole('radio', { name: '実験' })).toHaveAttribute('aria-checked', 'true');
     expect(EMOJI.test((await group.textContent()) ?? '')).toBe(false);
     await group.getByRole('radio', { name: '目標' }).click();
     await expect(group.getByRole('radio', { name: '目標' })).toHaveAttribute('aria-checked', 'true');
-    await page.getByTestId('save-task').click();
+    await page.getByTestId('editor-save').click();
     await expect.poll(async () => (await readStore(page, 'tasks')).find((t) => t.id === 'legacy')?.icon).toBe('target');
     // 他の記録は一括で書き換えていない
     const all = await readStore(page, 'tasks');
@@ -74,10 +74,9 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
 
   test('新規タスクの既定アイコンは ID で保存する', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規タスク' }).click();
-    await page.getByTestId('task-title-input').fill('新規');
-    await page.getByTestId('save-task').click();
+    await openNewTask(page);
+    await page.getByTestId('editor-title').fill('新規');
+    await page.getByTestId('editor-save').click();
     await expect.poll(async () => (await readStore(page, 'tasks')).find((t) => t.title === '新規')?.icon).toBe('book');
   });
 });
@@ -118,8 +117,7 @@ test.describe('Phase 3：タブバー', () => {
     expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1);
     // シートを開くと、タブの位置にはシート（または背景）が来る
     await page.getByTestId('tab-home').click();
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規タスク' }).click();
+    await openNewTask(page);
     await page.waitForTimeout(500);
     const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.tabbar') != null, { x: bar.x + bar.width / 2, y: bar.y + bar.height / 2 });
     expect(hit).toBe(false);
@@ -211,15 +209,11 @@ test.describe('Phase 3：アクセシビリティ', () => {
       if (u.length) problems[t] = u;
     }
     await page.getByTestId('tab-home').click();
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規タスク' }).click();
+    await openNewTask(page);
     await page.waitForTimeout(400);
     const editor = await unnamedControls(page);
     if (editor.length) problems.taskEditor = editor;
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規予定' }).click();
+    await page.getByTestId('editor-mode-event').click();
     await page.waitForTimeout(400);
     const ev = await unnamedControls(page);
     if (ev.length) problems.eventEditor = ev;
@@ -237,16 +231,16 @@ test('閉じかけのシートの入力内容を、次に開いたシートへ�
   });
   for (let round = 0; round < 3; round++) {
     await page.getByTestId('task-row-sa').getByRole('button').first().click();
-    await page.getByRole('button', { name: '編集', exact: true }).last().click();
-    await expect(page.getByTestId('task-title-input').last()).toHaveValue('一つ目');
-    await page.getByTestId('save-task').last().click();
+    await page.getByTestId('info-edit').last().click();
+    await expect(page.getByTestId('editor-title').last()).toHaveValue('一つ目');
+    await page.getByTestId('editor-save').last().click();
     await page.keyboard.press('Escape');
     // 閉じるアニメーションを待たずに（閉じかけの前のシートはまだ DOM にあるので、最後に開いたシートを見る）、すぐ別のタスクを開いて編集
     await page.getByTestId('task-row-sb').getByRole('button').first().click();
-    await page.getByRole('button', { name: '編集', exact: true }).last().click();
-    await expect(page.getByTestId('task-title-input').last()).toHaveValue('二つ目');
+    await page.getByTestId('info-edit').last().click();
+    await expect(page.getByTestId('editor-title').last()).toHaveValue('二つ目');
     await expect(page.getByRole('radiogroup', { name: 'アイコン' }).last().getByRole('radio', { name: '目標' })).toHaveAttribute('aria-checked', 'true');
-    await page.getByTestId('save-task').last().click();
+    await page.getByTestId('editor-save').last().click();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
   }

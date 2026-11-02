@@ -99,6 +99,7 @@ export const api = {
   restoreDrill: (id: string) => call<RestoreDrill>(`/backups/${id}/drill`, { method: 'POST' }),
   notices: () => call<{ items: ServerNotice[] }>('/notifications'),
   readNotice: (id: string) => call(`/notifications/${id}/read`, { method: 'POST' }),
+  deleteNotice: (id: string) => call<{ ok: boolean; deleted: number }>(`/notifications/${id}`, { method: 'DELETE' }),
   backups: () => call<{ items: BackupItem[]; activeRestorations: number }>('/backups'),
   runBackup: () => call<{ ok: boolean; error?: string }>('/backups/run', { method: 'POST' }),
   deleteBackup: (id: string) => call(`/backups/${id}`, { method: 'DELETE' }),
@@ -108,6 +109,29 @@ export const api = {
   subscribePush: (sub: PushSubscriptionJSON) => call('/push/subscribe', { method: 'POST', body: JSON.stringify(sub) }),
   unsubscribePush: (endpoint: string) => call('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
   loginUrl: () => `${import.meta.env.BASE_URL}api/auth/login`,
+  /** 添付ファイルを Google ドライブへ保存（Q80）。ログイン中のアカウントだけ */
+  uploadAttachment: async (file: Blob, name: string) => {
+    const account = ownerOf(db.name);
+    if (!account) throw new ApiError('添付するには Google でログインしてください', 409);
+    let res: Response;
+    try {
+      res = await fetch(`${import.meta.env.BASE_URL}api/attachments`, { method: 'POST', body: file, credentials: 'same-origin', headers: { 'x-mytime': '1', ...acct(account), 'content-type': file.type, 'x-file-name': encodeURIComponent(name) } });
+    } catch {
+      throw new ApiError('オフラインです', 0);
+    }
+    const body = (await res.json().catch(() => ({}))) as { driveFileId?: string; error?: string };
+    if (!res.ok || !body.driveFileId) throw new ApiError(body.error ?? `エラー（${res.status}）`, res.status);
+    return body.driveFileId;
+  },
+  /** 添付ファイルの本体（表示用の一時 URL を作るための Blob） */
+  attachmentBlob: async (driveFileId: string) => {
+    const account = ownerOf(db.name);
+    if (!account) throw new ApiError('ログインしていません', 409);
+    const res = await fetch(`${import.meta.env.BASE_URL}api/attachments/${encodeURIComponent(driveFileId)}`, { credentials: 'same-origin', headers: { 'x-mytime': '1', ...acct(account) } });
+    if (!res.ok) throw new ApiError(`エラー（${res.status}）`, res.status);
+    return res.blob();
+  },
+  trashAttachment: (driveFileId: string) => call(`/attachments/${encodeURIComponent(driveFileId)}`, { method: 'DELETE' }),
 };
 
 export type Api = typeof api;

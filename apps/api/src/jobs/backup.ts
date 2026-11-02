@@ -9,7 +9,7 @@ import { Drive, GoogleError, refreshAccess } from '../lib/google';
 import { logStmt, nextSeq, notify, resolveNotice, type RecordRow } from '../lib/store';
 
 export const BACKUP_FOLDER = 'My Time Backup';
-const ENTITIES: EntityName[] = ['calendar', 'event', 'task', 'subtask', 'subject', 'employer'];
+const ENTITIES: EntityName[] = ['calendar', 'event', 'task', 'subtask', 'subject', 'employer', 'category', 'studioType'];
 /** 期限削除の前提：これより新しい検証済みの日次バックアップがあること */
 const DAILY_FRESHNESS = 36 * 3_600_000;
 

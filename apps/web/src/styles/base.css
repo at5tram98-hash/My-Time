@@ -196,3 +196,9 @@ input, textarea, select { font: inherit; color: inherit; }
   .tabbar-glass { --pad: 4px; }
   .tab-label { font-size: 10px; letter-spacing: -0.02em; }
 }
+
+/* 指で滑らせている間：カプセルは指に追従（スプリングなし）、離すと選択位置へ戻る（Q04・Q100） */
+.tabbar-glass.dragging .tab-capsule { transform: translateX(var(--drag-x)); transition: none; box-shadow: inset 0 0 0 1px var(--glass-touch-edge), inset 0 1px 0 var(--glass-highlight), 0 6px 18px rgba(0, 0, 0, 0.12); }
+.tabbar-glass.dragging .tab-capsule { scale: 1.06; }
+.tab.hot { color: var(--blue); }
+.tabbar-glass { touch-action: pan-y; }

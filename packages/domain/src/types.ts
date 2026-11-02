@@ -8,9 +8,11 @@ export interface Calendar {
   id: Id;
   name: string;
   color: string;
-  /** 一覧で使う絵文字アイコン */
+  /** 一覧で使うアイコン（安定ID。旧データは絵文字のことがあり、表示時に読み替える） */
   icon: string;
   kind: CalendarKind;
+  /** Create Studio で作った専用カレンダーの種類（任意） */
+  studioTypeId?: Id | null;
   visible: boolean;
   order: number;
   createdAt: EpochMs;
@@ -73,6 +75,8 @@ export interface ExternalSource {
 }
 
 export interface CalEvent {
+  /** 拡張項目（任意） */
+  extra?: ItemExtra;
   id: Id;
   title: string;
   calendarId: Id;
@@ -146,6 +150,8 @@ export interface TaskRepeat {
 }
 
 export interface Task {
+  /** 拡張項目（任意） */
+  extra?: ItemExtra;
   id: Id;
   title: string;
   kind: TaskKind;
@@ -206,3 +212,111 @@ export interface Subtask {
 }
 
 export type TaskAction = 'start' | 'pause' | 'resume' | 'finish' | 'undoFinish' | 'undoStart';
+
+/** 添付ファイル（本体は Google ドライブ。ここには参照とメタデータだけを持つ：Q80） */
+export interface Attachment {
+  id: Id;
+  name: string;
+  mime: string;
+  size: number;
+  /** Drive のファイルID（アップロード前・オフライン中は null） */
+  driveFileId: string | null;
+  sha256: string;
+  createdAt: EpochMs;
+}
+
+export interface PlaceValue {
+  name: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface LinkValue {
+  id: Id;
+  title: string;
+  url: string;
+}
+
+/** 予定・タスク共通の拡張項目（すべて任意。旧データは extra なしとして扱い、書き換えない） */
+export interface ItemExtra {
+  /** 予定：終日 */
+  allDay?: boolean;
+  /** 個別の色（未設定ならカレンダーの色） */
+  color?: string | null;
+  place?: PlaceValue | null;
+  /** 移動時間（分） */
+  travelMinutes?: number | null;
+  meetingUrl?: string | null;
+  /** 通知（開始の何分前）。複数可 */
+  notifies?: number[];
+  urls?: LinkValue[];
+  attachments?: Attachment[];
+  /** Create Studio の専用種類と値（項目IDに結びつけた値。表示名を変えても値は保たれる） */
+  studio?: { typeId: Id; version: number; values: Record<string, unknown> } | null;
+}
+
+/** タスクのカテゴリー（Q55） */
+export interface TaskCategory {
+  id: Id;
+  name: string;
+  icon: string;
+  color: string;
+  order: number;
+  createdAt: EpochMs;
+  updatedAt: EpochMs;
+}
+
+/** ---- Create Studio（Q82〜91・Q84 承認済みの部品）---- */
+export type StudioFieldType =
+  | 'text' | 'multiline' | 'number' | 'datetime' | 'duration' | 'toggle' | 'check'
+  | 'select' | 'multiselect' | 'url' | 'place' | 'file' | 'progress' | 'worktime' | 'note';
+
+export interface StudioField {
+  /** 安定ID（名前を変えても値は保たれる） */
+  id: Id;
+  type: StudioFieldType;
+  label: string;
+  /** 数値・時間量の単位（標準単位ID または 'custom:<表示名>'） */
+  unit?: string | null;
+  /** 小数点以下の桁数（数値） */
+  precision?: number;
+  min?: number | null;
+  max?: number | null;
+  options?: string[];
+  required?: boolean;
+  /** 情報確認シートに表示するか */
+  showInInfo: boolean;
+  /** 所属セクション */
+  sectionId: Id;
+  /** 説明・区切り（note）の本文 */
+  body?: string;
+  /** 論理的に非表示（削除しても既存値は保持） */
+  hidden?: boolean;
+}
+
+export interface StudioSection { id: Id; title: string }
+
+export type StudioProgressMode = 'none' | 'time' | 'number' | 'checklist' | 'manual';
+
+export interface StudioDefinition {
+  sections: StudioSection[];
+  fields: StudioField[];
+  progress: { mode: StudioProgressMode; fieldId: Id | null; target: number | null };
+}
+
+export interface StudioType extends StudioDefinition {
+  id: Id;
+  target: 'calendar' | 'task';
+  name: string;
+  icon: string;
+  color: string;
+  /** draft = 下書き（作成・編集画面には出さない）/ active / hidden */
+  status: 'draft' | 'active' | 'hidden';
+  /** 定義の版。保存のたびに増える */
+  version: number;
+  /** 変更履歴（旧版の定義。復旧に使う） */
+  revisions: { version: number; at: EpochMs; definition: StudioDefinition }[];
+  createdAt: EpochMs;
+  updatedAt: EpochMs;
+}

@@ -9,10 +9,15 @@ import { Onboarding } from '../features/onboarding/Onboarding';
 import { AccountChoice } from '../features/onboarding/AccountChoice';
 import { takeFlash } from '../data/db';
 import { DataProvider, useAttention, useData, useSync } from './data';
-import { UIProvider, useUI, type TabId, useUIActions } from './ui';
+import { UIProvider, useUI, useUIActions } from './ui';
 import { SheetHost } from './SheetHost';
 import { AlertHost, ToastHost } from '../components/Overlays';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
+import { TabBar, type TabDef } from '../ui/TabBar';
+import { ContextMenuHost } from '../ui/ContextMenu';
+import { UndoHost } from '../ui/undo';
+import { RunningMiniBar } from '../ui/MiniBar';
+import { installGlassPointer } from '../ui/gestures';
 import { HomeScreen } from '../features/home/HomeScreen';
 import { CalendarScreen } from '../features/calendar/CalendarScreen';
 import { TasksScreen } from '../features/tasks/TasksScreen';
@@ -26,7 +31,7 @@ const Tasks = memo(TasksScreen);
 const Analysis = memo(AnalysisScreen);
 const Other = memo(OtherScreen);
 
-const TABS: { id: TabId; label: string; icon: IconName }[] = [
+const TABS: TabDef[] = [
   { id: 'home', label: 'ホーム', icon: 'house' },
   { id: 'calendar', label: 'カレンダー', icon: 'calendar' },
   { id: 'tasks', label: 'タスク', icon: 'checklist' },
@@ -97,13 +102,15 @@ function Background() {
   // 通知をタップして開いたとき
   useEffect(() => {
     const open = (t: { kind: string; id: string | null } | null) => {
-      if (t?.kind === 'task' && t.id) openSheet({ kind: 'task', id: t.id });
-      else if (t?.kind === 'event' && t.id) openSheet({ kind: 'editEvent', eventId: t.id });
+      if (t?.kind === 'task' && t.id) openSheet({ kind: 'info', entity: 'task', id: t.id });
+      else if (t?.kind === 'event' && t.id) openSheet({ kind: 'info', entity: 'event', id: t.id });
       else if (t?.kind === 'settings') setTab('tasks');
     };
     const p = new URLSearchParams(location.search);
     if (p.get('task')) open({ kind: 'task', id: p.get('task') });
     if (p.get('event')) open({ kind: 'event', id: p.get('event') });
+    // 再読み込みで同じ画面が開き直さないよう、通知から来たパラメータを消す
+    if (p.get('task') || p.get('event')) { p.delete('task'); p.delete('event'); history.replaceState(history.state, '', `${location.pathname}${p.size ? `?${p}` : ''}${location.hash}`); }
     const onMsg = (e: MessageEvent<{ type: string; target: { kind: string; id: string | null } | null }>) => e.data?.type === 'open' && open(e.data.target);
     navigator.serviceWorker?.addEventListener('message', onMsg);
     return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
@@ -159,6 +166,7 @@ function Shell() {
   const { tab, setTab } = useUI();
   const { ready, settings } = useData();
   const attention = useAttention();
+  useEffect(() => installGlassPointer(), []);
   return (
     <div className="app-shell">
       <AppearanceSync />
@@ -177,26 +185,13 @@ function Shell() {
           <div className="loading" aria-busy="true" />
         )}
       </main>
-      <nav className="tabbar" aria-label="タブ" data-testid="tabbar">
-        <div className="tabbar-glass" style={{ ['--tab-index' as string]: Math.max(0, TABS.findIndex((t) => t.id === tab)) }}>
-          <span className="tab-capsule" aria-hidden />
-          {TABS.map((t) => {
-            const on = tab === t.id;
-            return (
-              <button key={t.id} type="button" className={`tab ${on ? 'active' : ''}`} aria-current={on ? 'page' : undefined} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
-                <span className="tab-icon">
-                  <Icon name={t.icon} size={24} strokeWidth={on ? 2.2 : 1.8} />
-                  {t.id === 'other' && attention > 0 && <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span>}
-                </span>
-                <span className="tab-label">{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <TabBar tabs={TABS} current={tab} onSelect={setTab} badge={(t) => (t === 'other' && attention > 0 ? <span className="tab-alert" role="img" aria-label="確認が必要なお知らせがあります" data-testid="other-alert"><Icon name="exclamation" size={11} strokeWidth={3.4} /></span> : null)} />
       <SheetHost />
       <AnimatePresence>{ready && !settings.onboarded && <Onboarding key="onboarding" />}</AnimatePresence>
       {ready && <AccountChoice />}
+      <RunningMiniBar />
+      <ContextMenuHost />
+      <UndoHost />
       <AlertHost />
       <ToastHost />
     </div>

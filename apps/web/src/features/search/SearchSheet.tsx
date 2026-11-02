@@ -40,7 +40,7 @@ export function SearchSheet({ depth }: { depth: number }) {
                   else setHomeDate(startOfDay(r.at));
                 }
                 closeSheet();
-                openSheet(r.type === 'task' ? { kind: 'task', id: r.id } : { kind: 'editEvent', eventId: r.id });
+                openSheet(r.type === 'task' ? { kind: 'info', entity: 'task', id: r.id } : { kind: 'info', entity: 'event', id: r.id });
               }}
             >
               <span className="row-label with-icon">{r.type === 'task' ? <ItemIcon value={r.icon} size={18} className="tint" /> : <ItemIcon value="calendar" size={18} className="muted" />}{r.title}</span>

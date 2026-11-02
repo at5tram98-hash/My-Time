@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, FIXED_NOW, mouseLongPressDrag, openApp, seed, task, touchDrag } from './helpers';
+import { at, center, event, FIXED_NOW, mouseLongPressDrag, openApp, openNewEvent, openNewTask, pickTime, saveEditor, seed, task, touchDrag } from './helpers';
 
 const readTask = (page: Page, id: string) =>
   page.evaluate(async (tid) => {
@@ -32,8 +32,10 @@ const readEvent = (page: Page, id: string) =>
 test.describe('ナビゲーションと表示', () => {
   test('5タブが動作し、日付はホーム上部の1箇所だけ', async ({ page }) => {
     await openApp(page);
-    await expect(page.getByTestId('home-date')).toHaveText('12日(月)');
-    await expect(page.getByText('12日(月)', { exact: true })).toHaveCount(1);
+    // v2：ホーム上部の大きな日付（年月・日・曜日）。日付はここ1箇所だけ
+    await expect(page.getByTestId('home-date')).toContainText('12日');
+    await expect(page.getByTestId('home-date')).toContainText('月曜日');
+    await expect(page.getByText('12日', { exact: true })).toHaveCount(1);
     // 1日表示ではタイムラインに日付見出しを出さない
     await expect(page.locator('[data-testid="home-timeline"] .tl-head')).toHaveCount(0);
     for (const t of ['calendar', 'tasks', 'analysis', 'other', 'home'] as const) {
@@ -42,13 +44,13 @@ test.describe('ナビゲーションと表示', () => {
     }
   });
 
-  test('ホームは1日⇔2日をアイコンで切替（2日表示は右側の日付だけ表示）', async ({ page }) => {
+  test('ホームは1日⇔2日をアイコンで切替（v2：2日表示は両日の見出しを表示）', async ({ page }) => {
     await openApp(page);
     const cols = page.locator('[data-testid="home-timeline"] .tl-col');
     await expect(cols).toHaveCount(1);
     await page.getByTestId('days-toggle').click();
     await expect(cols).toHaveCount(2);
-    await expect(page.locator('[data-testid="home-timeline"] .tl-day-label:not(.hidden)')).toHaveCount(1);
+    await expect(page.locator('[data-testid="home-timeline"] .tl-day-label:not(.hidden)')).toHaveCount(2);
     await page.getByTestId('days-toggle').click();
     await expect(cols).toHaveCount(1);
   });
@@ -112,7 +114,7 @@ test.describe('境界ハンドル', () => {
     await touchDrag(page, h, { x: h.x, y: h.y - 220 });
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
     await expect(page.getByTestId('fcard-running')).toBeVisible();
-    await expect(page.getByTestId('fcard-next')).toContainText('次のタスク');
+    await expect(page.getByTestId('fcard-next').first()).toContainText('次のタスク');
     await expect(page.getByTestId('fcard-running')).toContainText('実行中タスク');
     await page.waitForTimeout(600); // スプリングの収束を待つ
     const h2 = await center(page.getByTestId('split-handle'));
@@ -136,22 +138,21 @@ test.describe('境界ハンドル', () => {
 test.describe('作成・編集・永続化・日付', () => {
   test('タスクを作成→編集→再起動後も残る', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規タスク' }).click();
-    await page.getByTestId('task-title-input').fill('統計の宿題');
-    await page.getByTestId('task-start').fill('2026-10-12T14:00');
-    await page.getByTestId('task-end').fill('2026-10-12T15:30');
-    await page.getByTestId('save-task').click();
+    await openNewTask(page);
+    await page.getByTestId('editor-title').fill('統計の宿題');
+    await pickTime(page, 'editor-start-time', 14, 0);
+    await pickTime(page, 'editor-end-time', 15, 30);
+    await saveEditor(page);
     const row = page.locator('[data-task-title="統計の宿題"]');
     await expect(row).toBeVisible();
     await expect(row).toContainText('14:00');
-    await expect(page.getByTestId('task-title-input')).toHaveCount(0); // 閉じるアニメーションの完了を待つ
 
     await row.locator('.task-row-main').click();
-    await page.getByRole('button', { name: '編集' }).click();
-    await page.getByTestId('task-title-input').fill('統計の宿題（第3章）');
-    await page.getByTestId('save-task').click();
-    await expect(page.getByRole('dialog').getByRole('heading', { name: '統計の宿題（第3章）' })).toBeVisible();
+    await expect(page.getByTestId('task-info')).toBeVisible();
+    await page.getByTestId('info-edit').click();
+    await page.getByTestId('editor-title').fill('統計の宿題（第3章）');
+    await saveEditor(page);
+    await expect(page.getByTestId('task-info').getByRole('heading', { name: '統計の宿題（第3章）' })).toBeVisible();
     await page.keyboard.press('Escape');
 
     await page.reload();
@@ -161,16 +162,15 @@ test.describe('作成・編集・永続化・日付', () => {
   test('予定を作成→再起動後も残り、重なりは警告するが既存予定は動かさない', async ({ page }) => {
     await openApp(page);
     await seed(page, { events: [event({ id: 'ex', title: '授業A', calendarId: 'cal-class', start: at(13), end: at(14) })] });
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規予定' }).click();
-    await page.getByTestId('event-title-input').fill('面談');
-    await page.getByTestId('event-start').fill('2026-10-12T13:30');
-    await page.getByTestId('event-end').fill('2026-10-12T14:00');
+    await openNewEvent(page);
+    await page.getByTestId('editor-title').fill('面談');
+    await pickTime(page, 'editor-start-time', 13, 30);
+    await pickTime(page, 'editor-end-time', 14, 0);
     await expect(page.getByTestId('conflict-warning')).toContainText('授業A');
-    await page.getByTestId('save-event').click();
+    await page.getByTestId('editor-save').click();
     await expect(page.getByRole('alertdialog')).toContainText('時間が重なっています');
     await page.getByRole('alertdialog').getByRole('button', { name: '重ねて保存' }).click();
-    await expect(page.getByTestId('event-title-input')).toHaveCount(0); // 保存完了（シートが閉じる）を待ってから再起動
+    await expect(page.getByTestId('editor-sheet')).toHaveCount(0); // 保存完了（シートが閉じる）を待ってから再起動
     await page.reload();
     await expect(page.getByRole('button', { name: /予定 面談/ })).toBeVisible();
     expect((await readEvent(page, 'ex'))?.start).toBe(at(13));
@@ -188,7 +188,7 @@ test.describe('作成・編集・永続化・日付', () => {
     await expect(page.getByTestId('task-row-d1')).toHaveCount(0);
     const tl = await center(page.getByTestId('home-timeline-scroll'));
     await touchDrag(page, { x: tl.x + 120, y: tl.y }, { x: tl.x - 140, y: tl.y + 4 }, { steps: 8 });
-    await expect(page.getByTestId('home-date')).toContainText('13日(火)');
+    await expect(page.getByTestId('home-date')).toContainText('13日火曜日');
     await expect(page.getByTestId('task-row-d1')).toBeVisible();
     await expect(page.getByTestId('task-row-d0')).toHaveCount(0);
 
@@ -200,7 +200,7 @@ test.describe('作成・編集・永続化・日付', () => {
     // タスク一覧側の横スワイプでも戻せる
     const list = await center(page.getByTestId('home-task-list'));
     await touchDrag(page, { x: list.x - 120, y: list.y }, { x: list.x + 140, y: list.y + 4 }, { steps: 8 });
-    await expect(page.getByTestId('home-date')).toContainText('12日(月)');
+    await expect(page.getByTestId('home-date')).toContainText('12日月曜日');
     await expect(page.getByTestId('task-row-d0')).toBeVisible();
   });
 });
@@ -281,12 +281,12 @@ test.describe('進捗ジェスチャーと状態', () => {
 
   test('一時停止・再開・終了・完了取り消しが実績とログに整合する', async ({ page }) => {
     await page.getByTestId('task-row-p1').locator('.task-row-main').click();
-    const actions = page.getByTestId('task-actions');
-    await actions.getByRole('button', { name: '一時停止' }).click();
-    await actions.getByRole('button', { name: '再開' }).click();
-    await actions.getByRole('button', { name: '終了' }).click();
-    await actions.getByRole('button', { name: '完了を取り消す' }).click();
-    await expect(actions.getByRole('button', { name: '再開' })).toBeVisible();
+    // v2：情報確認の実行パネル（停止・再開・終了・完了を取り消す）
+    await page.getByTestId('run-pause').click();
+    await page.getByTestId('run-resume').click();
+    await page.getByTestId('run-finish').click();
+    await page.getByTestId('run-undo').click();
+    await expect(page.getByTestId('run-resume')).toBeVisible();
     const t = await readTask(page, 'p1');
     expect(t?.status).toBe('paused');
     expect(t?.actualEnd).toBeNull();
