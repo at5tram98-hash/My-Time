@@ -6,7 +6,8 @@ import { useNow } from '../../app/useNow';
 import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
 import { Popup } from '../../ui/Popup';
-import { ComboChart, MiniBars } from './charts';
+import { CategoryBars, ComboChart, Heatmap, MiniBars, PairBars } from './charts';
+import { ChoicePopup } from '../editor/inputs';
 
 const PERIODS: [AnalysisPeriod, string][] = [['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']];
 const PREV_LABEL: Record<AnalysisPeriod, string> = { day: '前日', week: '前の週', month: '前の月', year: '前の年' };
@@ -48,7 +49,7 @@ function Delta({ now, prev, kind, lowerIsBetter }: { now: number | null; prev: n
  * 目標は設定したときだけリングで表示。対象は時刻指定された実施タスク（予定・授業は含まない）。
  */
 export function AnalysisScreen() {
-  const { tasks, settings } = useData();
+  const { tasks, settings, categories } = useData();
   const { openSheet } = useUIActions();
   const now = useNow(30_000);
   const [period, setPeriod] = useState<AnalysisPeriod>('day');
@@ -57,8 +58,15 @@ export function AnalysisScreen() {
   const range = periodRange(period, anchor);
   const prevRange = shiftPeriod(range, -1);
   const opts = { includePaused: settings.analysisIncludePaused, includeAuto: settings.analysisIncludeAuto };
-  const st = useMemo(() => periodStats(tasks, range, now, opts), [tasks, range.from, range.period, now, opts.includePaused, opts.includeAuto]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pv = useMemo(() => periodStats(tasks, prevRange, now, opts), [tasks, prevRange.from, prevRange.period, now, opts.includePaused, opts.includeAuto]); // eslint-disable-line react-hooks/exhaustive-deps
+  // カテゴリー・タグの絞り込みは全指標に同じ条件で適用（C31）。複数タグのタスクも task.id で1件
+  const [filter, setFilter] = useState<{ kind: 'category' | 'tag'; value: string } | null>(null);
+  const [filterPick, setFilterPick] = useState(false);
+  const scoped = useMemo(() => (filter ? tasks.filter((t) => (filter.kind === 'category' ? (t.category ?? '') === filter.value : t.tags.includes(filter.value))) : tasks), [tasks, filter]);
+  const st = useMemo(() => periodStats(scoped, range, now, opts), [scoped, range.from, range.period, now, opts.includePaused, opts.includeAuto]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pv = useMemo(() => periodStats(scoped, prevRange, now, opts), [scoped, prevRange.from, prevRange.period, now, opts.includePaused, opts.includeAuto]); // eslint-disable-line react-hooks/exhaustive-deps
+  const catColor = (c: string | null) => categories.find((x) => x.name === c)?.color ?? 'var(--gray)';
+  const tagList = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b, 'ja')), [tasks]);
+  const catList = useMemo(() => [...new Set([...categories.map((c) => c.name), ...tasks.map((t) => t.category).filter((c): c is string => !!c)])], [tasks, categories]);
   const isCurrent = now >= range.from && now < range.to;
   const goalMs = workGoalMs(settings.goalWeeklyMinutes, range);
   const goalRate = settings.goalCompletionRate != null ? settings.goalCompletionRate / 100 : null;
@@ -72,7 +80,10 @@ export function AnalysisScreen() {
       <header className="nav large">
         <div className="nav-row">
           <h1 className="large-title">分析</h1>
-          <button type="button" className="gbtn glass glass-i tint" aria-label="目標" onClick={() => setGoals(true)} data-testid="analysis-goals"><Icon name="target" size={20} /></button>
+          <span className="nav-actions gap">
+            <button type="button" className={`gbtn glass glass-i ${filter ? 'tint' : ''}`} aria-label={filter ? `絞り込み：${filter.kind === 'tag' ? '#' : ''}${filter.value || 'カテゴリーなし'}` : 'カテゴリー・タグで絞り込む'} onClick={() => setFilterPick(true)} data-testid="analysis-filter"><Icon name="tray" size={19} /></button>
+            <button type="button" className="gbtn glass glass-i tint" aria-label="目標" onClick={() => setGoals(true)} data-testid="analysis-goals"><Icon name="target" size={20} /></button>
+          </span>
         </div>
         <div className="seg-full" role="tablist" aria-label="期間">
           {PERIODS.map(([p, l]) => <button key={p} type="button" role="tab" aria-selected={period === p} onClick={() => setPeriod(p)} data-testid={`period-${p}`}>{l}</button>)}
@@ -83,6 +94,9 @@ export function AnalysisScreen() {
           <button type="button" className="icon-btn" aria-label="次の期間" onClick={() => go(1)} data-testid="next-period"><Icon name="chevronRight" size={20} /></button>
         </div>
       </header>
+      {filter && (
+        <div className="filter-bar"><span className="chip">{filter.kind === 'tag' ? `#${filter.value}` : filter.value || 'カテゴリーなし'}のみ<button type="button" aria-label="絞り込みを解除" onClick={() => setFilter(null)} data-testid="analysis-filter-clear"><Icon name="close" size={12} strokeWidth={2.6} /></button></span></div>
+      )}
       <div
         className="scroll-body"
         onPointerDown={(e) => { if (!(e.target as Element).closest('svg, button')) swipe.current = { x: e.clientX, y: e.clientY }; }}
@@ -147,6 +161,27 @@ export function AnalysisScreen() {
               <ComboChart testId="analysis-chart" barLabel="実行時間" lineLabel="完了率" points={st.buckets.map((b) => ({ label: b.label, bar: b.workedMs, barText: formatDuration(b.workedMs), line: b.completionRate, lineText: b.completionRate == null ? '—' : `${pct(b.completionRate)}%` }))} highlight={isCurrent ? st.buckets.findIndex((b, i) => now >= b.from && (st.buckets[i + 1]?.from ?? range.to) > now) : undefined} />
             </div>
 
+            <h2 className="section-title">予定と実績</h2>
+            <div className="tile wide chart-card">
+              <PairBars testId="plan-vs-actual" items={st.buckets.map((b) => ({ label: b.label, a: b.plannedMs, b: b.workedMs }))} />
+              <p className="analysis-note tight">予定時間は予定開始・終了が両方あるタスクだけ。実行時間は実際に作業した時間帯へ振り分けます。</p>
+            </div>
+            <h2 className="section-title">中断の推移</h2>
+            <div className="tile wide chart-card">
+              <ComboChart testId="interruptions-chart" barLabel="中断" points={st.buckets.map((b) => ({ label: b.label, bar: b.interruptions, barText: `${b.interruptions}回`, line: null }))} height={110} />
+            </div>
+            {st.byCategory.length > 0 && (
+              <>
+                <h2 className="section-title">カテゴリー別</h2>
+                <div className="tile wide"><CategoryBars rows={st.byCategory} colorOf={catColor} onPick={(c) => setFilter({ kind: 'category', value: c ?? '' })} /></div>
+              </>
+            )}
+            {st.workedMs > 0 && period !== 'day' && (
+              <>
+                <h2 className="section-title">曜日×時間帯</h2>
+                <div className="tile wide"><Heatmap heat={st.heat} testId="heatmap" /></div>
+              </>
+            )}
             {st.workedMs > 0 && (
               <>
                 <h2 className="section-title">よく取り組む曜日と時間帯</h2>
@@ -161,9 +196,13 @@ export function AnalysisScreen() {
         <p className="analysis-note">
           {PREV_LABEL[period]}と比べています。授業・アルバイトなどの予定は集計しません。複数日にまたがるタスクは予定開始の日に1回だけ数え、実行時間は実際に作業した時間帯に振り分けます。
           {st.excluded > 0 && ` この期間は一時停止・自動開始/終了のタスク${st.excluded}件を除外しています（「その他」で含められます）。`}
+          {st.untimed > 0 && ` 予定の時刻がない未完了の実行タスク${st.untimed}件は、件数の集計に含まれません。`}
         </p>
       </div>
       <GoalsPopup open={goals} onClose={() => setGoals(false)} />
+      <ChoicePopup open={filterPick} title="絞り込み" noneLabel="すべてのタスク" value={filter ? `${filter.kind}:${filter.value}` : ''} onClose={() => setFilterPick(false)} testId="analysis-filter-popup"
+        onPick={(v) => { setFilterPick(false); if (!v) return setFilter(null); const i = v.indexOf(':'); setFilter({ kind: v.slice(0, i) as 'category' | 'tag', value: v.slice(i + 1) }); }}
+        items={[...catList.map((c) => ({ value: `category:${c}`, label: c, sub: 'カテゴリー', badge: <span className="choice-dot" style={{ background: catColor(c) }} /> })), { value: 'category:', label: 'カテゴリーなし', sub: 'カテゴリー' }, ...tagList.map((t) => ({ value: `tag:${t}`, label: `#${t}`, sub: 'タグ' }))]} />
     </div>
   );
 }

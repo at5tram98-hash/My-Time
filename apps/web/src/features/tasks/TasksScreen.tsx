@@ -238,6 +238,10 @@ export function TasksScreen() {
             <button type="button" className="gbtn glass glass-i tint" aria-label="新規タスク" onClick={() => openSheet({ kind: 'edit', mode: 'task', defaults: kind === 'check' ? { kind: 'check' } : {} })} data-testid="tasks-add"><Icon name="plus" size={20} strokeWidth={2.2} /></button>
           </div>
         </div>
+      </header>
+      <div className="scroll-body" ref={listRef}>
+        {/* スマートリスト・種類・グループは一覧と一緒にスクロール（一覧の表示域を狭めない） */}
+        <div className="tasks-top">
         {/* スマートリスト（C29）：今日・近日・すべて・フラグ・完了の件数カード */}
         <div className="smart-lists" role="group" aria-label="表示するタスク">
           {(['today', 'upcoming', 'all', 'flagged', 'done'] as TaskScope[]).map((sc) => (
@@ -263,8 +267,7 @@ export function TasksScreen() {
           <button type="button" className="tool-chip" onClick={() => setGroupPick(true)} data-testid="tasks-group">グループ：{GROUP_LABEL[group]}<Icon name="chevronDown" size={13} strokeWidth={2.4} /></button>
           {sort !== 'due' && <span className="chip">{SORT_LABEL[sort]}<button type="button" aria-label="並び順を期限順に戻す" onClick={() => setPref({ taskSort: 'due' })}><Icon name="close" size={12} strokeWidth={2.6} /></button></span>}
         </div>
-      </header>
-      <div className="scroll-body" ref={listRef}>
+        </div>
         {editing && sort === 'manual' ? (
           <section className="task-section"><h2 className="section-title">並び替え</h2><div className="rows card">{take(sections.flat).map((t) => row(t))}</div></section>
         ) : (

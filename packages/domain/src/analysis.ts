@@ -141,7 +141,13 @@ export interface PeriodStats {
   excluded: number;
   byWeekday: number[];
   byHour: number[];
-  buckets: { from: EpochMs; label: string; workedMs: number; total: number; done: number; completionRate: number | null }[];
+  buckets: { from: EpochMs; label: string; workedMs: number; total: number; done: number; completionRate: number | null; plannedMs: number; interruptions: number }[];
+  /** 曜日（0=日）×時間帯（3時間ごと8区分）の実行時間（C31 ヒートマップ） */
+  heat: number[][];
+  /** カテゴリー別の実行時間と完了件数（カテゴリーなしは null） */
+  byCategory: { category: string | null; workedMs: number; done: number; total: number }[];
+  /** 予定時刻が未設定などで対象外だったタスク数 */
+  untimed: number;
   /** 期間内に予定されていたタスク（詳細表示用） */
   taskIds: string[];
 }
@@ -175,6 +181,8 @@ export function periodStats(tasks: readonly Task[], r: PeriodRange, now: EpochMs
   }
   const byWeekday = Array<number>(7).fill(0);
   const byHour = Array<number>(24).fill(0);
+  const heat = Array.from({ length: 7 }, () => Array<number>(8).fill(0));
+  const catW = new Map<string | null, number>();
   let worked = 0;
   for (const t of working) {
     for (const iv of t.intervals) {
@@ -187,6 +195,8 @@ export function periodStats(tasks: readonly Task[], r: PeriodRange, now: EpochMs
         const next = Math.min(e, s + (HOUR - ((w.mi * MINUTE + w.s * 1000 + w.ms) % HOUR)));
         byWeekday[w.wd]! += next - s;
         byHour[w.h]! += next - s;
+        heat[w.wd]![Math.floor(w.h / 3)]! += next - s;
+        catW.set(t.category ?? null, (catW.get(t.category ?? null) ?? 0) + (next - s));
         s = next;
       }
     }
@@ -194,8 +204,14 @@ export function periodStats(tasks: readonly Task[], r: PeriodRange, now: EpochMs
   const buckets = periodBuckets(r).map((b) => {
     const ts = eligible.filter((t) => { const a = anchorOf(t)!; return a >= b.from && a < b.to; });
     const d = ts.filter((t) => t.status === 'done').length;
-    return { from: b.from, label: b.label, workedMs: working.reduce((s, t) => s + workedInRange(t, b.from, b.to, now), 0), total: ts.length, done: d, completionRate: ts.length ? d / ts.length : null };
+    const plannedMs = ts.reduce((s, t) => s + (t.plannedStart != null && t.plannedEnd != null ? Math.max(0, t.plannedEnd - t.plannedStart) : 0), 0);
+    return { from: b.from, label: b.label, workedMs: working.reduce((s, t) => s + workedInRange(t, b.from, b.to, now), 0), total: ts.length, done: d, completionRate: ts.length ? d / ts.length : null, plannedMs, interruptions: ts.reduce((s, t) => s + Math.max(0, t.intervals.length - 1), 0) };
   });
+  const cats = new Map<string | null, { workedMs: number; done: number; total: number }>();
+  for (const [c, w] of catW) cats.set(c, { workedMs: w, done: 0, total: 0 });
+  for (const t of eligible) { const c = cats.get(t.category ?? null) ?? { workedMs: 0, done: 0, total: 0 }; c.total++; if (t.status === 'done') c.done++; cats.set(t.category ?? null, c); }
+  const byCategory = [...cats.entries()].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.workedMs - a.workedMs || b.total - a.total);
+  const untimed = tasks.filter((t) => t.kind === 'do' && t.plannedStart == null && t.status !== 'done' && ok(t)).length;
   return {
     total: eligible.length,
     done: done.length,
@@ -211,6 +227,9 @@ export function periodStats(tasks: readonly Task[], r: PeriodRange, now: EpochMs
     byWeekday,
     byHour,
     buckets,
+    heat,
+    byCategory,
+    untimed,
     taskIds: eligible.map((t) => t.id),
   };
 }
