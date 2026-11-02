@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { animate, motion, useDragControls, useMotionValue, useReducedMotion } from 'motion/react';
+import { animate, motion, useDragControls, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react';
 import { ExitSafeLayer } from './Overlays';
 import { useUIActions } from '../app/ui';
 import { SPRING } from '../ui/motion';
@@ -28,6 +28,8 @@ interface SheetProps {
 }
 
 const ORDER: Detent[] = ['small', 'medium', 'large'];
+/** 開いている（閉じかけでない）シートの順番。Esc は一番上のシートだけが受け取る */
+const openStack: symbol[] = [];
 
 /**
  * iOS 風のボトムシート（共通基盤）。
@@ -96,10 +98,19 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
   // 入力欄からフォーカスが外れて iPhone のキーボードが閉じる（v3.1 の不具合）
   const closeRef = useRef(requestClose);
   closeRef.current = requestClose;
+  // 閉じかけ（退場アニメーション中）のシートは操作を受けない。受けると、次に開いたシートを閉じてしまう
+  const present = useIsPresent();
+  const me = useRef(Symbol('sheet'));
+  useEffect(() => {
+    const id = me.current;
+    if (present) { if (!openStack.includes(id)) openStack.push(id); }
+    else { closing.current = true; const i = openStack.indexOf(id); if (i >= 0) openStack.splice(i, 1); }
+    return () => { const i = openStack.indexOf(id); if (i >= 0) openStack.splice(i, 1); };
+  }, [present]);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && void closeRef.current();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && openStack[openStack.length - 1] === me.current) void closeRef.current(); };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
