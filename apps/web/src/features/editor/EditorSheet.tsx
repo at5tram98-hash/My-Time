@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDays, crossesDate, DEFAULT_TASK_ICON, defaultCalendarIcon, expandEvent, formatHm, HOUR, makeEvent, makeTask, newId, parseOccurrenceId, previewConversion, resolveItemIcon, startOfDay,
+  addDays, checkPlacement, crossesDate, DEFAULT_TASK_ICON, expandAll, placementItems, defaultCalendarIcon, expandEvent, formatHm, HOUR, makeEvent, makeTask, newId, parseOccurrenceId, previewConversion, resolveItemIcon, startOfDay,
   type Attachment, type CalEvent, type ClassAssignment, type ClassQuiz, type LinkValue, type PlaceValue, type RecurrenceRule, type SpecialKind, type Task, type TaskKind,
 } from '@my-time/domain';
 import { Sheet } from '../../components/Sheet';
@@ -163,6 +163,14 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   useEffect(() => { if (!hasSpecial && page === 'special') setPage('basic'); }, [hasSpecial, page]);
 
   // 開始を動かしたら長さを保って終了も動かす（Q67・Q72）。終了だけ動かしたら長さが変わる
+  // 入力中も重なりを表示（保存時には改めてアラートで確認する。既存の予定は動かさない）
+  const timedRange = (v.mode === 'event' && !v.allDay) || (v.mode === 'task' && v.taskKind === 'do' && v.timed);
+  const { conflicts, suggestion } = useMemo(() => {
+    if (!timedRange || v.end <= v.start) return { conflicts: [], suggestion: null };
+    const target = { id: v.mode === 'event' ? `event:${id ?? '__new'}` : `task:${id ?? '__new'}`, start: v.start, end: v.end };
+    const around = expandAll(events, v.start - 2 * 86_400_000, v.end + 3 * 86_400_000);
+    return checkPlacement(target, placementItems(around, tasks));
+  }, [timedRange, v.start, v.end, v.mode, events, tasks, id]);
   const moveStart = (ns: number) => setV((o) => ({ ...o, start: ns, end: ns + Math.max(15 * 60_000, o.end - o.start) }));
   const setTime = (base: number, t: number) => { const a = new Date(base); const b = new Date(t); a.setHours(b.getHours(), b.getMinutes(), 0, 0); return a.getTime(); };
   const setDay = (base: number, day: number) => { const a = new Date(base); const b = new Date(day); a.setFullYear(b.getFullYear(), b.getMonth(), b.getDate()); return a.getTime(); };
@@ -294,7 +302,13 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
     await remember();
     closeSheet();
   };
-  const close = async () => { await repo.clearDraft(draftKey); closeSheet(); };
+  // 「キャンセル」でも未保存の変更があれば確認する（下へ引いて閉じるときと同じ）
+  const close = async () => {
+    if (dirty && !(await confirm({ title: '変更を破棄しますか？', message: '保存していない変更があります。', confirmLabel: '変更を破棄', cancelLabel: '編集を続ける', destructive: true }))) return;
+    await discardAndClose();
+  };
+  // シート側（下へ引く・Esc）は確認済みで呼ばれる
+  const discardAndClose = async () => { await repo.clearDraft(draftKey); closeSheet(); };
 
   // 種類の切替（予定⇔タスク）：共通の値はそのまま。専用の値も保持し、戻せば復元（Q63・Q77）
   const switchMode = (m: 'event' | 'task') => {
@@ -351,7 +365,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
 
   return (
     <Sheet
-      onClose={() => void close()}
+      onClose={() => void discardAndClose()}
       depth={depth}
       dirty={dirty}
       testId="editor-sheet"
@@ -425,6 +439,16 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
                   {!(v.mode === 'event' && v.allDay) && <button type="button" className={`ed-chipbtn ${v.end <= v.start ? 'danger' : ''}`} onClick={() => setPick('eTime')} data-testid="editor-end-time">{fmtTime(v.end)}</button>}
                 </Row>
               </>
+            )}
+            {conflicts.length > 0 && (
+              <div className="conflict" role="status" data-testid="conflict-warning">
+                <Icon name="info" size={18} />
+                <div>
+                  <div>「{conflicts[0]!.title}」{conflicts.length > 1 ? `など${conflicts.length}件` : ''}と時間が重なっています。保存前に確認します。</div>
+                  {suggestion && <button type="button" className="link-btn" onClick={() => setV((o) => ({ ...o, start: suggestion.start, end: suggestion.end }))}>{formatHm(suggestion.start)}〜{formatHm(suggestion.end)} に変更する</button>}
+                  <div className="conflict-note">既存の予定は自動で移動しません。</div>
+                </div>
+              </div>
             )}
             {v.mode === 'task' && v.taskKind === 'check' && (
               <Row icon="check" color="#0A84FF" label="確認日時">

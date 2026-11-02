@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, mouseLongPressDrag, openApp, rawTouch, readStore, seed, task } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openNewEvent, openNewTask, pickTime, rawTouch, readStore, seed, task } from './helpers';
 
 /** Phase 1 監査（差し戻し）指摘の回帰テスト */
 
@@ -64,39 +64,38 @@ test.describe('1. 予定の重複処理（確認前に保存しない）', () =>
   });
 
   test('新規作成も保存前に確認し、キャンセルなら保存しない', async ({ page }) => {
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規予定' }).click();
-    await page.getByTestId('event-title-input').fill('打ち合わせ');
-    await page.getByTestId('event-start').fill('2026-10-12T13:30');
-    await page.getByTestId('event-end').fill('2026-10-12T14:00');
-    await page.getByTestId('save-event').click();
+    await openNewEvent(page);
+    await page.getByTestId('editor-title').fill('打ち合わせ');
+    await pickTime(page, 'editor-start-time', 13, 30);
+    await pickTime(page, 'editor-end-time', 14, 0);
+    await page.getByTestId('editor-save').click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'キャンセル' }).click();
-    await expect(page.getByTestId('event-title-input')).toBeVisible(); // 編集画面に戻る
+    await expect(page.getByTestId('editor-title')).toBeVisible(); // 編集画面に戻る
     expect((await readStore(page, 'events')).length).toBe(2);
 
-    await page.getByTestId('save-event').click();
+    await page.getByTestId('editor-save').click();
     await page.getByRole('alertdialog').getByRole('button', { name: /14:00〜14:30 に保存/ }).click();
-    await expect(page.getByTestId('event-title-input')).toHaveCount(0);
+    await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
     const created = (await readStore(page, 'events')).find((e) => e.title === '打ち合わせ');
     expect(created).toMatchObject({ start: at(14), end: at(14, 30) });
   });
 
   test('編集で時刻を変えたときも保存前に確認する', async ({ page }) => {
     await page.getByTestId('tl-event:B').click();
-    await page.getByTestId('event-start').fill('2026-10-12T13:00');
-    await page.getByTestId('save-event').click();
+    await page.getByTestId('info-edit').click();
+    await pickTime(page, 'editor-start-time', 13, 0);
+    await page.getByTestId('editor-save').click();
     await expect(page.getByRole('alertdialog')).toContainText('授業A');
     await page.getByRole('alertdialog').getByRole('button', { name: 'キャンセル' }).click();
     expect((await eventById(page, 'B'))?.start).toBe(at(15));
   });
 
   test('タスクの新規作成でも予定との重なりを確認する', async ({ page }) => {
-    await page.getByTestId('home-add').click();
-    await page.getByRole('menuitem', { name: '新規タスク' }).click();
-    await page.getByTestId('task-title-input').fill('レポート');
-    await page.getByTestId('task-start').fill('2026-10-12T13:00');
-    await page.getByTestId('task-end').fill('2026-10-12T14:00');
-    await page.getByTestId('save-task').click();
+    await openNewTask(page);
+    await page.getByTestId('editor-title').fill('レポート');
+    await pickTime(page, 'editor-start-time', 13, 0);
+    await pickTime(page, 'editor-end-time', 14, 0);
+    await page.getByTestId('editor-save').click();
     await expect(page.getByRole('alertdialog')).toContainText('授業A');
     await page.getByRole('alertdialog').getByRole('button', { name: 'キャンセル' }).click();
     expect((await readStore(page, 'tasks')).length).toBe(0);
@@ -154,13 +153,17 @@ test.describe('2. 長押し進捗', () => {
 });
 
 test.describe('3. ホーム', () => {
-  test('タスク一覧は左右の余白・カードなしで画面幅いっぱい', async ({ page }) => {
+  test('タスク一覧はガラスの枠（左右8px）の中で行を全幅に並べる（v2 Q13）', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'w', title: '幅', plannedStart: at(11), plannedEnd: at(12) })] });
     const row = (await page.getByTestId('task-row-w').boundingBox())!;
+    const pane = (await page.getByTestId('task-pane').boundingBox())!;
     const vw = page.viewportSize()!.width;
-    expect(row.x).toBe(0);
-    expect(row.width).toBe(vw);
+    expect(pane.x).toBe(8);
+    expect(pane.width).toBe(vw - 16);
+    // 枠の中では行ごとのカードや余白を作らない
+    expect(row.x).toBe(pane.x);
+    expect(row.width).toBe(pane.width);
     const radius = await page.locator('.home .rows').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
     expect(radius).toBe('0px');
   });
@@ -187,7 +190,8 @@ test.describe('3. ホーム', () => {
     await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
     await expect(page.locator('[data-testid="floating-cards"] .fcard')).toHaveCount(0);
     await expect(page.getByText('実行中・予定のタスクはありません')).toHaveCount(0);
-    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(2);
+    // v2：手を離した位置で止まり、一覧は見出しの帯だけを残して畳まれる（Q14）
+    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(60);
   });
 });
 

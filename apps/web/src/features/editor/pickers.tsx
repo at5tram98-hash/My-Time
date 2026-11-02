@@ -204,9 +204,11 @@ const ICON_GROUPS: { title: string; ids: ItemIconId[] }[] = [
 export function IconStrip({ value, onChange, recent, target }: { value: string; onChange: (id: ItemIconId) => void; recent: string[]; target: 'task' | 'event' }) {
   const [all, setAll] = useState(false);
   const [q, setQ] = useState('');
-  const sel = resolveItemIcon(value).id;
+  // 未知の旧値（どのアイコンにも対応しない絵文字など）は選択なしで表示し、保存値は書き換えない
+  const r = resolveItemIcon(value);
+  const sel = r.current || r.legacy ? r.id : null;
   const base = target === 'task' ? TASK_ICON_CHOICES : CALENDAR_ICON_CHOICES;
-  const strip = [...new Set([sel, ...recent.filter((r) => r in ITEM_ICONS), ...base])].slice(0, 14) as ItemIconId[];
+  const strip = [...new Set([...(sel ? [sel] : []), ...recent.filter((r) => r in ITEM_ICONS), ...base])].slice(0, 14) as ItemIconId[];
   const matches = useMemo(() => {
     const k = q.trim();
     return ICON_GROUPS.map((g) => ({ ...g, ids: g.ids.filter((id) => !k || ITEM_ICONS[id].includes(k) || id.includes(k.toLowerCase())) })).filter((g) => g.ids.length);
@@ -250,7 +252,7 @@ export function ColorStrip({ value, onChange, recent }: { value: string | null; 
       ))}
       <label className="hcircle custom" aria-label="カスタムの色">
         <Icon name="paint" size={18} />
-        <input type="color" value={value ?? '#0A84FF'} onChange={(e) => onChange(e.target.value.toUpperCase())} />
+        <input type="color" aria-label="カスタムの色を選ぶ" value={value ?? '#0A84FF'} onChange={(e) => onChange(e.target.value.toUpperCase())} />
       </label>
     </div>
   );

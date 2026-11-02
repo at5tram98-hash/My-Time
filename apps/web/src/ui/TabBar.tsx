@@ -28,8 +28,11 @@ export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; cur
     return Math.min(tabs.length - 1, Math.max(0, Math.floor((clientX - r.left - pad) / w)));
   };
 
+  // 滑らせて選んだ直後に届く click（指を置いたタブ宛て）で選択を上書きしない
+  const suppressClick = useRef(false);
   const onDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    suppressClick.current = false;
     st.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false };
   };
   const onMove = (e: React.PointerEvent) => {
@@ -51,6 +54,8 @@ export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; cur
     if (!s || e.pointerId !== s.id) return;
     st.current = null;
     if (s.moved) {
+      suppressClick.current = true;
+      window.setTimeout(() => { suppressClick.current = false; }, 400);
       const idx = idxAt(e.clientX);
       setDrag(null);
       if (commit && tabs[idx] && tabs[idx]!.id !== current) onSelect(tabs[idx]!.id);
@@ -68,7 +73,8 @@ export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; cur
         onPointerMove={onMove}
         onPointerUp={end(true)}
         onPointerCancel={end(false)}
-        onLostPointerCapture={() => { st.current = null; setDrag(null); }}
+        // タッチでは押したボタンが暗黙にキャプチャを持ち、ガラスへ移すときに子の lostpointercapture が届く。ガラス自身のものだけ扱う
+        onLostPointerCapture={(e) => { if (e.target !== e.currentTarget) return; st.current = null; setDrag(null); }}
       >
         <span className="tab-capsule" aria-hidden />
         {tabs.map((t, i) => {
@@ -80,7 +86,7 @@ export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; cur
               type="button"
               className={`tab ${on ? 'active' : ''} ${hot ? 'hot' : ''}`}
               aria-current={on ? 'page' : undefined}
-              onClick={() => { if (!st.current?.moved) onSelect(t.id); }}
+              onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } if (!st.current?.moved) onSelect(t.id); }}
               data-testid={`tab-${t.id}`}
             >
               <span className="tab-icon">
