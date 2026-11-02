@@ -202,3 +202,10 @@ input, textarea, select { font: inherit; color: inherit; }
 .tabbar-glass.dragging .tab-capsule { scale: 1.06; }
 .tab.hot { color: var(--blue); }
 .tabbar-glass { touch-action: pan-y; }
+
+/* 狭幅（320px）で大見出しが1文字ずつ折り返さないようにする（v3 S6） */
+.large-title { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 360px) {
+  .large-title { font-size: 1.75rem; }
+  .nav-actions.gap { gap: 6px; }
+}

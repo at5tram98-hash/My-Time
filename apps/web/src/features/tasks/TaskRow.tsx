@@ -249,8 +249,8 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
           aria-valuetext={`${pct}%`}
           data-value={mode.value.toFixed(4)}
           data-testid="progress-scrubber"
-          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
+          initial={reduce ? false : { y: 8, scale: 0.96 }}
+          animate={{ y: 0, scale: 1 }}
           transition={reduce ? { duration: 0.08 } : { type: 'spring', stiffness: 520, damping: 34 }}
         >
           <div className="sp-head">

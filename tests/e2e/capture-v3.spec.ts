@@ -76,6 +76,8 @@ test('画面キャプチャ v3 コンパクト・狭幅・長押し', async ({ p
   await page.mouse.down();
   await page.waitForTimeout(600);
   await page.mouse.move(c.x + 40, c.y);
+  await expect(page.getByTestId('progress-scrubber')).toBeVisible();
+  await page.waitForTimeout(400);
   await shot(page, '18-longpress-panel');
   await page.mouse.up();
 });
