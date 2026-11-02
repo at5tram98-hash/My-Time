@@ -751,4 +751,21 @@ describe('UI/UX v2 のデータ拡張（互換性）', () => {
     expect(body.tables.studioType).toHaveLength(1);
     expect(body.tables.task!.find((t) => t.id === 'v2-task')).toMatchObject({ extra: task.extra });
   });
+
+  it('サブタスクの日時・見積（v3 C07）を同期・バックアップで保持し、旧形式も受け付け、不正な日時は拒否する', async () => {
+    const { cookie, userId } = await login('g-v3');
+    const parent = makeTask({ id: 'v3-parent', title: '親' }, NOW);
+    const sub = { id: 'v3-sub', taskId: 'v3-parent', title: '下書き', done: false, completedAt: null, order: 0, createdAt: NOW, updatedAt: NOW, plannedStart: NOW + 3_600_000, plannedEnd: NOW + 5_400_000, estimateMinutes: 25 };
+    const old = { id: 'v3-old', taskId: 'v3-parent', title: '旧', done: false, completedAt: null, order: 1, createdAt: NOW, updatedAt: NOW };
+    const bad = { ...old, id: 'v3-bad', plannedStart: null, plannedEnd: NOW };
+    const r = await push(cookie, [putOp('task', parent), putOp('subtask', sub), putOp('subtask', old), putOp('subtask', bad)]);
+    expect(r.results.map((x) => x.status)).toEqual(['applied', 'applied', 'applied', 'rejected']);
+    const pulled = await pullAll(cookie);
+    expect(pulled.changes.find((c) => c.id === 'v3-sub')!.record).toMatchObject({ plannedStart: sub.plannedStart, plannedEnd: sub.plannedEnd, estimateMinutes: 25 });
+    expect(pulled.changes.find((c) => c.id === 'v3-old')!.record).not.toHaveProperty('plannedStart');
+    expect((await runDailyBackup(E, userId, NOW)).ok).toBe(true);
+    const file = [...fg.files.values()].filter((f) => f.name.startsWith('MyTime-daily-')).at(-1)!;
+    const body = JSON.parse(file.content) as SnapshotBody;
+    expect(body.tables.subtask!.find((t) => t.id === 'v3-sub')).toMatchObject({ plannedStart: sub.plannedStart, estimateMinutes: 25 });
+  });
 });

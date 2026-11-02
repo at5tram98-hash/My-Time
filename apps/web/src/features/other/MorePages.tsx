@@ -103,7 +103,7 @@ function CategoryRow({ c, count, onEdit, onDelete, onDrag }: { c: TaskCategory; 
     <div className="row" ref={ref} data-cat-id={c.id} {...lp} data-testid={`category-${c.name}`}>
       <span className="cal-chip small" style={{ background: c.color }} aria-hidden><Icon name={resolveItemIcon(c.icon).id} size={14} /></span>
       <button type="button" className="row-label link-like" onClick={() => { if (!lp.consumedClick()) onEdit(); }}>{c.name}<span className="sub-label">{count}件</span></button>
-      <span className="drag-handle" role="button" tabIndex={0} aria-label={`${c.name}の並び替え`} onPointerDown={onDrag}><Icon name="arrowUpDown" size={18} /></span>
+      <span className="drag-handle" role="button" tabIndex={0} aria-label={`${c.name}の並び替え`} onPointerDown={onDrag}><Icon name="reorder" size={20} /></span>
     </div>
   );
 }

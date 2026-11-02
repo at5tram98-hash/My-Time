@@ -109,7 +109,7 @@ export function TasksScreen() {
             <Icon name={openS ? 'chevronDown' : 'chevronRight'} size={14} strokeWidth={2.4} />
           </button>
         )}
-        {editing && sort === 'manual' && <span className="drag-handle" aria-hidden onPointerDown={(e) => startReorder(e, t.id)}><Icon name="arrowUpDown" size={18} /></span>}
+        {editing && sort === 'manual' && <span className="drag-handle" aria-hidden onPointerDown={(e) => startReorder(e, t.id)}><Icon name="reorder" size={20} /></span>}
       </div>
     );
     return (

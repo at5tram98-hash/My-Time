@@ -286,6 +286,35 @@ export function createRepo(database: MyTimeDB = db, clock: () => number = Date.n
         await record('subtask', id, 'put', 'update');
       });
     },
+    /** サブタスクの日時・見積（C07）。終了だけ・終了が開始以前・負や不正な見積は保存しない */
+    async setSubtaskTime(id: string, t: { plannedStart: number | null; plannedEnd: number | null; estimateMinutes: number | null }) {
+      if (t.plannedEnd != null && t.plannedStart == null) throw new Error('終了だけは設定できません。開始も入力してください');
+      if (t.plannedStart != null && t.plannedEnd != null && t.plannedEnd <= t.plannedStart) throw new Error('終了は開始より後にしてください');
+      if (t.estimateMinutes != null && !(Number.isFinite(t.estimateMinutes) && t.estimateMinutes > 0)) throw new Error('見積は1分以上の数で入力してください');
+      for (const v of [t.plannedStart, t.plannedEnd]) if (v != null && !Number.isFinite(v)) throw new Error('日時が正しくありません');
+      return tx(async () => {
+        const s0 = await database.subtasks.get(id);
+        if (!s0) throw new Error('サブタスクが見つかりません');
+        const v: SubtaskT = { ...s0, plannedStart: t.plannedStart, plannedEnd: t.plannedEnd, estimateMinutes: t.estimateMinutes, updatedAt: clock() };
+        subtaskSchema.parse(v);
+        await database.subtasks.put(v);
+        await record('subtask', id, 'put', 'update', { taskId: s0.taskId, time: true });
+        return v;
+      });
+    },
+    /** 親の日時を変えたとき、子の日時を同じ差分だけ動かす（ユーザーが明示的に選んだときだけ：C07） */
+    async shiftSubtaskTimes(taskId: string, delta: number) {
+      if (!delta) return;
+      return tx(async () => {
+        const now = clock();
+        for (const st of await database.subtasks.where('taskId').equals(taskId).toArray()) {
+          if (st.plannedStart == null) continue;
+          const v: SubtaskT = { ...st, plannedStart: st.plannedStart + delta, plannedEnd: st.plannedEnd != null ? st.plannedEnd + delta : st.plannedEnd ?? null, updatedAt: now };
+          await database.subtasks.put(v);
+          await record('subtask', st.id, 'put', 'move', { taskId, delta });
+        }
+      });
+    },
     async reorderSubtasks(ids: string[]) {
       return tx(async () => {
         const now = clock();

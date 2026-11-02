@@ -35,7 +35,7 @@ export function KindButtons<T extends string>({ options, value, onChange, label,
             whileTap={reduce ? undefined : { scale: on ? 1.0 : 0.94 }}
             transition={SPRING.pop}
           >
-            {on ? <Icon name="check" size={size === 's' ? 13 : 15} strokeWidth={2.8} /> : o.icon ? <Icon name={o.icon} size={size === 's' ? 13 : 15} strokeWidth={2.4} /> : null}
+            {on && <Icon name="check" size={size === 's' ? 13 : 15} strokeWidth={2.8} />}
             <span className="kind-btn-label">{o.label}</span>
             {o.count != null && <span className="kind-btn-count">{o.count}</span>}
           </motion.button>

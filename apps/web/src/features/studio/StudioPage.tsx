@@ -13,7 +13,7 @@ import { StudioFieldsForm } from './StudioFieldsForm';
 
 const TYPE_LABEL = Object.fromEntries(STUDIO_PARTS.map((p) => [p.type, p.label])) as Record<StudioField['type'], string>;
 
-function blank(target: 'calendar' | 'task'): StudioType {
+export function blankStudioType(target: 'calendar' | 'task'): StudioType {
   const now = Date.now();
   // 空白から作る（テンプレート・固定項目を自動で入れない：Q83）
   return { id: newId(), target, name: '', icon: target === 'task' ? 'star' : 'calendar', color: '#BF5AF2', status: 'draft', version: 1, revisions: [], sections: [{ id: newId(), title: '基本' }], fields: [], progress: { mode: 'none', fieldId: null, target: null }, createdAt: now, updatedAt: now };
@@ -46,8 +46,8 @@ export function StudioPage() {
         <p>入力したい項目を、部品を探して1つずつ組み込みます。テンプレートは使わず、空白から作ります。</p>
       </div>
       <Group header="新規作成">
-        <button type="button" className="row row-button" onClick={() => setEdit({ type: blank('calendar'), isNew: true })} data-testid="studio-new-calendar"><Icon name="calendar" size={20} className="tint" /><span className="row-label tint">カレンダーの種類を作る</span></button>
-        <button type="button" className="row row-button" onClick={() => setEdit({ type: blank('task'), isNew: true })} data-testid="studio-new-task"><Icon name="checklist" size={20} className="tint" /><span className="row-label tint">タスクの種類を作る</span></button>
+        <button type="button" className="row row-button" onClick={() => setEdit({ type: blankStudioType('calendar'), isNew: true })} data-testid="studio-new-calendar"><Icon name="calendar" size={20} className="tint" /><span className="row-label tint">カレンダーの種類を作る</span></button>
+        <button type="button" className="row row-button" onClick={() => setEdit({ type: blankStudioType('task'), isNew: true })} data-testid="studio-new-task"><Icon name="checklist" size={20} className="tint" /><span className="row-label tint">タスクの種類を作る</span></button>
       </Group>
       {(['calendar', 'task'] as const).map((target) => {
         const list = studioTypes.filter((t) => t.target === target);
@@ -77,7 +77,7 @@ function StudioCard({ t, used, onOpen, onDuplicate, onDelete }: { t: StudioType;
   );
 }
 
-function StudioDesigner({ initial, isNew, usage, onDone }: { initial: StudioType; isNew: boolean; usage: number; onDone: () => void }) {
+export function StudioDesigner({ initial, isNew, usage, onDone, onSaved, linkCalendar = true }: { initial: StudioType; isNew: boolean; usage: number; onDone: () => void; onSaved?: (t: StudioType) => void; linkCalendar?: boolean }) {
   const { settings, calendars, tasks, events } = useData();
   const { confirm, showToast } = useUIActions();
   const draftKey = `studio:${initial.id}`;
@@ -154,13 +154,17 @@ function StudioDesigner({ initial, isNew, usage, onDone }: { initial: StudioType
     }
     const saved = await repo.saveStudioType({ ...t, name: t.name.trim(), status }, isNew);
     // カレンダーの種類は、対応する専用カレンダーを作成・更新（Q54）
-    if (saved.target === 'calendar' && status === 'active') {
+    // カレンダー作成の途中から来たときは、そのカレンダーに結び付けるので自動作成しない（C33）
+    if (linkCalendar && saved.target === 'calendar' && status === 'active') {
       const cal = calendars.find((c) => c.studioTypeId === saved.id);
       const now = Date.now();
-      await repo.saveCalendar(cal ? { ...cal, name: saved.name, color: saved.color, icon: saved.icon } : { id: newId(), name: saved.name, color: saved.color, icon: saved.icon, kind: 'general', studioTypeId: saved.id, visible: true, order: calendars.length, createdAt: now, updatedAt: now }, !cal);
+      // 既存の専用カレンダーは、名前を種類と同じにしていた場合だけ追従（利用者が付けた名前は変えない）
+      if (!cal) await repo.saveCalendar({ id: newId(), name: saved.name, color: saved.color, icon: saved.icon, kind: 'general', studioTypeId: saved.id, visible: true, order: calendars.length, createdAt: now, updatedAt: now }, true);
+      else if (cal.name === initial.name) await repo.saveCalendar({ ...cal, name: saved.name }, false);
     }
     await repo.clearDraft(draftKey);
     showToast(status === 'draft' ? '下書きを保存しました' : '保存しました');
+    onSaved?.(saved);
     onDone();
   };
   const cancel = async () => {
@@ -204,7 +208,7 @@ function StudioDesigner({ initial, isNew, usage, onDone }: { initial: StudioType
                     <span className="field-sub">{TYPE_LABEL[f.type]}{f.unit ? ` · ${unitLabel(f.unit)}` : ''}{f.showInInfo ? ' · 情報に表示' : ''}</span>
                   </button>
                   <button type="button" className="icon-btn subtle" aria-label={`${f.label}を外す`} onClick={() => void removeField(f)}><Icon name="close" size={16} /></button>
-                  <span className="drag-handle" role="button" tabIndex={0} aria-label={`${f.label}の並び替え`} onPointerDown={(e) => startDrag(e, f.id)}><Icon name="arrowUpDown" size={18} /></span>
+                  <span className="drag-handle" role="button" tabIndex={0} aria-label={`${f.label}の並び替え`} onPointerDown={(e) => startDrag(e, f.id)}><Icon name="reorder" size={20} /></span>
                 </div>
               ))}
             </div>

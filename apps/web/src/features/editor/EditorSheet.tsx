@@ -15,6 +15,7 @@ import { api } from '../../sync/api';
 import { useAskScope } from '../timeline/useTimelineActions';
 import { Popup } from '../../ui/Popup';
 import { KindButtons } from '../../ui/KindButtons';
+import { EventBadge, TaskBadge } from '../../components/Identity';
 import { ColorStrip, DatePickerPopup, describeRule, IconStrip, NotifyPopup, notifyLabel, PlacePopup, RecurrencePopup, TimeWheelPopup } from './pickers';
 import { StudioFieldsForm } from '../studio/StudioFieldsForm';
 
@@ -423,7 +424,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           </div>
         )}
         <div className="ed-preview">
-          <span className="ed-preview-icon" style={{ ['--c' as string]: previewColor }} aria-hidden><Icon name={resolveItemIcon(v.icon).id} size={24} strokeWidth={2} /></span>
+          {v.mode === 'task' ? <TaskBadge icon={v.icon} kind={v.taskKind} size={48} /> : <EventBadge icon={v.icon} color={previewColor} size={48} />}
           <input className="ed-title" value={v.title} onChange={(e) => set('title', e.target.value)} placeholder={v.mode === 'event' ? '予定のタイトル' : 'タスクのタイトル'} aria-label="タイトル" autoFocus={isNew} data-testid="editor-title" />
         </div>
 
@@ -472,7 +473,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
             <Row icon="undo" color="#5E5CE6" label="繰り返し" onClick={() => setPick('rule')} testId="editor-repeat">{describeRule(v.rule)}</Row>
             {v.mode === 'task' && (
               <Row icon="clock" color="#30B0C7" label="見積時間">
-                <span className="dur-inputs"><label><input type="number" inputMode="numeric" min={1} max={10000} value={v.estimate ?? ''} placeholder="未設定" onChange={(e) => set('estimate', e.target.value === '' ? null : Number(e.target.value))} aria-label="見積時間（分）" data-testid="editor-estimate" />分</label></span>
+                <span className="dur-inputs"><label><input type="number" inputMode="numeric" min={1} max={10000} value={v.estimate ?? ''} placeholder="" onChange={(e) => set('estimate', e.target.value === '' ? null : Number(e.target.value))} aria-label="見積時間（分）" data-testid="editor-estimate" />分</label></span>
               </Row>
             )}
           </div>

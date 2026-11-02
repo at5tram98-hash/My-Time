@@ -135,7 +135,12 @@ export const subtaskSchema = z.object({
   order: z.number().int(),
   createdAt: epoch,
   updatedAt: epoch,
-});
+  // C07：サブタスクの日時と見積（任意。旧データは省略）
+  plannedStart: epoch.nullable().optional(),
+  plannedEnd: epoch.nullable().optional(),
+  estimateMinutes: z.number().positive().max(100_000).nullable().optional(),
+}).refine((s) => !(s.plannedEnd != null && s.plannedStart == null), { message: '終了だけは設定できません' })
+  .refine((s) => s.plannedStart == null || s.plannedEnd == null || s.plannedEnd > s.plannedStart, { message: '終了は開始より後にしてください' });
 
 export const subjectSchema = z.object({ id, name: z.string().min(1).max(100), createdAt: epoch, updatedAt: epoch });
 export const employerSchema = z.object({ id, name: z.string().min(1).max(100), reminderHours: z.number().min(0).max(48), createdAt: epoch, updatedAt: epoch });
