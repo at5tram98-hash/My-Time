@@ -60,7 +60,8 @@ export interface LocalNotice {
 export type ThemePref = 'system' | 'light' | 'dark';
 export type TextSizePref = 'system' | 'small' | 'large' | 'xlarge';
 export type CalendarViewPref = 'day' | '2day' | '3day' | 'week' | 'month';
-export type TaskScope = 'today' | 'upcoming' | 'all';
+export type TaskScope = 'today' | 'upcoming' | 'all' | 'flagged' | 'done';
+export type TaskGroup = 'category' | 'tag' | 'date';
 export type TaskSort = 'due' | 'priority' | 'manual';
 export type TaskKindFilter = 'all' | 'do' | 'check';
 
@@ -88,6 +89,8 @@ export interface AppSettings {
   /** ホーム：タスクパネルの高さの割合（0..1。離した位置をそのまま保持：Q14） */
   homeSplit: number;
   taskScope: TaskScope;
+  /** タスク一覧のグループ表示（C29） */
+  taskGroup: TaskGroup;
   taskSort: TaskSort;
   taskKind: TaskKindFilter;
   /** 手動の並び順（タスクID の順。Q39） */
@@ -121,6 +124,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultJobReminderHours: 2,
   homeSplit: 0.4,
   taskScope: 'all',
+  taskGroup: 'category',
   taskSort: 'due',
   taskKind: 'all',
   taskManualOrder: [],
