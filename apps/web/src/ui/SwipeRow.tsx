@@ -17,6 +17,7 @@ export function SwipeRow({ children, right = [], left = [], testId }: { children
   const reduce = useReducedMotion();
   const st = useRef<{ id: number; x0: number; y0: number; base: number; dir: 0 | 1 | -1 } | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const justSwiped = useRef(false);
   const openW = { right: right.length * ACT_W, left: left.length * ACT_W };
 
   const settle = (to: number) => (reduce ? x.set(to) : void animate(x, to, SPRING.capsule));
@@ -49,6 +50,8 @@ export function SwipeRow({ children, right = [], left = [], testId }: { children
     st.current = null;
     if (s.dir === 0) return;
     gestureLock.release('swipe-row');
+    justSwiped.current = true;
+    window.setTimeout(() => { justSwiped.current = false; }, 400);
     const v = x.get();
     const w = rowRef.current?.clientWidth ?? 360;
     if (v < -w * 0.6 && right[0]) { settle(0); right[0].onAct(); return; } // 深いスワイプ
@@ -72,7 +75,11 @@ export function SwipeRow({ children, right = [], left = [], testId }: { children
         </div>
       )}
       <motion.div className="swipe-content" style={{ x }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { if (st.current?.dir) gestureLock.release('swipe-row'); st.current = null; settle(0); }}
-        onClickCapture={(e) => { if (Math.abs(x.get()) > 4) { e.stopPropagation(); e.preventDefault(); settle(0); } }}>
+        onClickCapture={(e) => {
+          // スワイプ直後の click（マウスでは指を離した位置で発生）は飲み込むだけ。開いている行のタップは閉じる
+          if (justSwiped.current) { justSwiped.current = false; e.stopPropagation(); e.preventDefault(); return; }
+          if (Math.abs(x.get()) > 4) { e.stopPropagation(); e.preventDefault(); settle(0); }
+        }}>
         {children}
       </motion.div>
     </div>

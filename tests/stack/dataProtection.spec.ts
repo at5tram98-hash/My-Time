@@ -90,7 +90,12 @@ async function readTitles(page: Page): Promise<string[]> {
 async function syncNow(page: Page) {
   await page.getByTestId('tab-other').click();
   if (await page.getByTestId('back').isVisible()) await page.getByTestId('back').click();
+  // v2：同期の行は詳細シートを開く。シートの「今すぐ同期」で送受信し、状態が同期済みになるのを待つ
   await page.getByTestId('sync-row').click();
+  await page.getByTestId('sync-retry').click();
+  await expect(page.getByTestId('sync-phase')).toHaveText('同期済み', { timeout: 20_000 });
+  await page.getByTestId('sync-sheet').getByRole('button', { name: '完了' }).click();
+  await expect(page.getByTestId('sync-sheet')).toHaveCount(0);
   await expect(page.getByTestId('sync-status')).toHaveText(/同期済み|最新/, { timeout: 20_000 });
 }
 

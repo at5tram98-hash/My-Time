@@ -100,7 +100,7 @@ export function SyncStatusSheet({ depth }: { depth: number }) {
   const { closeSheet } = useUIActions();
   const last = sync.lastSuccessAt;
   return (
-    <Sheet onClose={closeSheet} depth={depth} detent="small" title="同期" right={<button type="button" className="bar-btn bold" onClick={closeSheet}>完了</button>} testId="sync-status">
+    <Sheet onClose={closeSheet} depth={depth} detent="small" title="同期" right={<button type="button" className="bar-btn bold" onClick={closeSheet}>完了</button>} testId="sync-sheet">
       <div className="group"><div className="group-body">
         <div className="row"><span className="row-label">アカウント</span><span className="row-value">{sync.me?.user.email ?? 'ログインしていません'}</span></div>
         <div className="row"><span className="row-label">状態</span><span className="row-value" data-testid="sync-phase">{({ idle: '同期済み', synced: '同期済み', syncing: '同期中', offline: 'オフライン', error: 'エラー', notConfigured: 'サーバー未設定', unavailable: '利用できません', loggedOut: 'ログインしていません', starting: '準備中' } as Record<string, string>)[sync.phase] ?? sync.phase}</span></div>
