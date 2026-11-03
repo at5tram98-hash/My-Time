@@ -109,12 +109,12 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
   }, [present]);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && openStack[openStack.length - 1] === me.current) void closeRef.current(); };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      prev?.focus?.();
+      prev?.focus?.({ preventScroll: true });
     };
   }, []);
 

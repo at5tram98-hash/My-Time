@@ -1,29 +1,29 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Icon } from '../../components/Icon';
+import { Icon, type IconName } from '../../components/Icon';
 import { Popup } from '../../ui/Popup';
 import { SPRING } from '../../ui/motion';
 
-export interface Choice { value: string; label: string; badge?: ReactNode; sub?: string }
+export interface Choice { value: string; label: string; badge?: ReactNode; sub?: string; icon?: IconName }
 
 /** 行をタップして開く選択シート（C19）。「なし」と候補、多ければ検索。選ぶと閉じて親へ反映 */
-export function ChoicePopup({ open, title, items, value, onClose, onPick, noneLabel = 'なし', testId }: { open: boolean; title: string; items: Choice[]; value: string; onClose: () => void; onPick: (v: string) => void; noneLabel?: string; testId?: string }) {
+export function ChoicePopup({ open, title, items, value, onClose, onPick, noneLabel = 'なし', testId, compact = false, noneIcon }: { open: boolean; title: string; items: Choice[]; value: string; onClose: () => void; onPick: (v: string) => void; noneLabel?: string; testId?: string; compact?: boolean; noneIcon?: IconName }) {
   const [q, setQ] = useState('');
   const shown = useMemo(() => (q.trim() ? items.filter((i) => i.label.includes(q.trim())) : items), [items, q]);
   return (
-    <Popup open={open} title={title} onClose={() => { setQ(''); onClose(); }} testId={testId} tall>
+    <Popup open={open} title={title} onClose={() => { setQ(''); onClose(); }} testId={testId} tall={!compact}>
       {items.length > 8 && (
         <div className="csearch"><Icon name="search" size={17} className="muted" /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`${title}を検索`} aria-label={`${title}を検索`} /></div>
       )}
-      <div className="group"><div className="group-body" role="radiogroup" aria-label={title}>
+      <div className={`group ${compact ? 'compact-choices' : ''}`}><div className="group-body" role="radiogroup" aria-label={title}>
         <button type="button" role="radio" aria-checked={value === ''} className={`row row-button sel-row ${value === '' ? 'on' : ''}`} onClick={() => { setQ(''); onPick(''); }}>
-          <span className="choice-badge none" aria-hidden />
+          <span className="choice-badge none" aria-hidden>{noneIcon && <Icon name={noneIcon} size={19} />}</span>
           <span className="row-label">{noneLabel}</span>
           <span className="sel-mark" aria-hidden>{value === '' && <Icon name="check" size={14} strokeWidth={3} />}</span>
         </button>
         {shown.map((i) => (
           <button key={i.value} type="button" role="radio" aria-checked={value === i.value} className={`row row-button sel-row ${value === i.value ? 'on' : ''}`} onClick={() => { setQ(''); onPick(i.value); }}>
-            {i.badge ?? <span className="choice-badge none" aria-hidden />}
+            {i.badge ?? <span className="choice-badge none" aria-hidden>{i.icon && <Icon name={i.icon} size={19} />}</span>}
             <span className="row-label">{i.label}{i.sub && <span className="sub-label">{i.sub}</span>}</span>
             <span className="sel-mark" aria-hidden>{value === i.value && <Icon name="check" size={14} strokeWidth={3} />}</span>
           </button>

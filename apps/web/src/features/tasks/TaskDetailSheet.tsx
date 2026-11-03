@@ -12,6 +12,8 @@ import { TaskBadge } from '../../components/Identity';
 import { Toggle } from '../../components/Controls';
 import { progressOf } from '../../app/progress';
 import { ProgressPopup } from './ProgressPanel';
+import { InfoActions, InfoTimePreview } from '../editor/InfoActions';
+import { openContextMenu } from '../../ui/ContextMenu';
 import { MapPreview, travelLabel } from '../editor/place';
 import { DatePickerPopup, notifySummary, TimeWheelPopup } from '../editor/pickers';
 import { useData, useSubtasks } from '../../app/data';
@@ -42,6 +44,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
   const task = tasks.find((t) => t.id === id);
   const subtasks = useSubtasks(id);
   const [newSub, setNewSub] = useState('');
+  const [copyOpen, setCopyOpen] = useState(false);
   const [subEdit, setSubEdit] = useState<Subtask | null>(null);
   const logs = useLiveQuery(() => db.operationLog.where('entityId').equals(id).reverse().sortBy('seq'), [id]);
 
@@ -106,11 +109,12 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
       depth={depth}
       labelledBy={headId}
       left={<button type="button" className="bar-btn" onClick={closeSheet}>閉じる</button>}
-      right={<button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={() => openSheet({ kind: 'edit', mode: 'task', id: task.id })} data-testid="info-edit"><Icon name="pencil" size={18} /></button>}
+      right={<InfoActions onEdit={() => openSheet({ kind: 'edit', mode: 'task', id: task.id })} onCopy={() => setCopyOpen(true)} onMore={(anchor) => openContextMenu({ anchor, preview: <div className="ctx-card"><strong>{task.title}</strong></div>, label: task.title, items: [{ label: '別の日にコピー', icon: 'copy', onSelect: () => setCopyOpen(true) }, { label: '削除', icon: 'trash', destructive: true, onSelect: () => void remove() }] })} />}
       detent="medium"
       detents={['medium', 'large']}
       testId="task-info"
     >
+      <DatePickerPopup open={copyOpen} value={task.plannedStart ?? task.checkAt ?? now} title="コピー先の日付" onClose={() => setCopyOpen(false)} onPick={(day) => { void repo.copyTaskToDay(task.id, day).then(() => { setCopyOpen(false); showToast('別の日にコピーしました'); }).catch((e: Error) => showToast(e.message)); }} />
       <ProgressPopup task={task} subtasks={subtasks} open={progressOpen} onClose={() => setProgressOpen(false)} now={now} />
       <div className="detail-hero">
         {task.kind === 'check' && <TaskBadge icon={task.icon} kind="check" size={56} done={!!task.checked} />}
@@ -160,6 +164,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
         </div>
       )}
 
+      {task.plannedStart != null && task.plannedEnd != null && <InfoTimePreview title={task.title} start={task.plannedStart} end={task.plannedEnd} color={cal?.color ?? 'var(--blue)'} />}
       <div className="group">
         <div className="group-body">
           {task.kind === 'do' ? (
@@ -189,7 +194,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
       {/* 場所は1か所だけ（新しい値を優先し、旧データだけのときは互換表示：F3）。その直下に地図（C06） */}
       {place && (
         <>
-          <div className="group-header">場所</div>
+          <div className="group-header">位置情報</div>
           <MapPreview place={place} />
           {task.extra?.travelMinutes ? <p className="muted small info-travel">{travelLabel(task.extra.travelMinutes)}{task.plannedStart != null ? `（出発の目安 ${formatHm(task.plannedStart - task.extra.travelMinutes * 60_000)}）` : ''}</p> : null}
         </>

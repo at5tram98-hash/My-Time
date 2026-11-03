@@ -92,3 +92,16 @@ describe('ローカル永続化', () => {
     expect((await database.operationLog.toArray()).some((l) => l.action === 'delete')).toBe(true);
   });
 });
+
+it('別の日へのコピーは親子を原子的に複製し、実績・予約を引き継がず、元を保持する', async () => {
+  const t = makeTask({ title: 'コピー元', plannedStart: base, plannedEnd: base + HOUR, autoStartAt: base, notes: '保持するメモ' }, now);
+  await repo.saveTask(t, true);
+  await repo.addSubtask(t.id, '子タスク');
+  await repo.taskAction(t.id, 'start');
+  const copy = await repo.copyTaskToDay(t.id, base + 86400000);
+  expect(copy.id).not.toBe(t.id);
+  expect(copy).toMatchObject({ status: 'notStarted', intervals: [], actualStart: null, autoStartAt: null, plannedStart: base + 86400000, plannedEnd: base + HOUR + 86400000, notes: '保持するメモ' });
+  expect(await database.subtasks.where('taskId').equals(copy.id).count()).toBe(1);
+  expect((await database.tasks.get(t.id))?.status).toBe('running');
+  expect(await database.tasks.count()).toBe(2);
+});

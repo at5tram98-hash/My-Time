@@ -182,7 +182,7 @@
 .home .home-body { padding-top: 0; }
 .task-overlay { position: absolute; top: 0; left: 0; right: 0; z-index: 6; pointer-events: none; padding-top: 4px; }
 .task-overlay > * { pointer-events: auto; }
-.task-glass { margin: 0 8px; border-radius: 22px; overflow: hidden; background: color-mix(in srgb, var(--bg-elev) 50%, transparent); -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7); box-shadow: inset 0 0 0 0.5px var(--glass-edge), inset 0 1px 0 var(--glass-highlight), 0 10px 30px rgba(0, 0, 0, 0.14); transition: background 220ms ease, box-shadow 220ms ease; }
+.task-glass { margin: 0 8px; border-radius: 22px; overflow: hidden; background: color-mix(in srgb, var(--bg-elev) 43%, transparent); -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7); box-shadow: inset 0 0 0 0.5px var(--glass-edge), inset 0 1px 0 var(--glass-highlight), 0 10px 30px rgba(0, 0, 0, 0.14); transition: background 220ms ease, box-shadow 220ms ease; }
 .home .task-glass .task-pane { margin: 0; border-radius: 0; background: transparent; box-shadow: none; }
 /* つまみは本体と一体：境目の線・別の面・別の影を描かない */
 .home .task-glass .split-handle { margin: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
@@ -212,3 +212,7 @@
 .icap-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--green); }
 @media (prefers-reduced-motion: no-preference) { .icapsule.running .icap-dot { animation: icapPulse 1.6s ease-in-out infinite; } }
 @keyframes icapPulse { 50% { opacity: 0.35; } }
+.upcoming-time { display: inline-grid; min-width: 4.3em; text-align: right; }
+.upcoming-time-visual { display: inline-grid; grid-template-areas: 'value'; overflow: hidden; vertical-align: middle; }
+.upcoming-time-visual > span { grid-area: value; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .task-glass { background: var(--bg-elev); } }

@@ -437,7 +437,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
         )}
         <div className="ed-preview">
           {v.mode === 'task' ? <TaskBadge icon={v.icon} kind={v.taskKind} size={48} /> : <EventBadge icon={v.icon} color={previewColor} size={48} />}
-          <input className="ed-title" value={v.title} onChange={(e) => set('title', e.target.value)} placeholder={v.mode === 'event' ? '予定のタイトル' : 'タスクのタイトル'} aria-label="タイトル" autoFocus={isNew} data-testid="editor-title" />
+          <input className="ed-title" value={v.title} onChange={(e) => set('title', e.target.value)} placeholder={v.mode === 'event' ? '予定のタイトル' : 'タスクのタイトル'} aria-label="タイトル" data-testid="editor-title" />
         </div>
 
         {/* ---------------- 基本 ---------------- */}

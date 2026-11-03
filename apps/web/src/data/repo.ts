@@ -1,5 +1,5 @@
 import {
-  addDays, addMonths, applyAutoReservation, applyTaskAction, canAddSubtask, cancelThisOccurrence, convertKind, copyToDays, defaultCalendars,
+  startOfDay, addDays, addMonths, applyAutoReservation, applyTaskAction, canAddSubtask, cancelThisOccurrence, convertKind, copyToDays, defaultCalendars,
   editThisOccurrence, makeEvent, makeSubtask, newId, planClassTasks, recordManualProgress, splitFromOccurrence, toggleCheck, toggleSubtask,
   type CalEvent, type Calendar, type Employer, type ImportCandidate, type Subject, type Subtask, type Task, type TaskAction, type TaskKind, type TaskTransition,
 } from '@my-time/domain';
@@ -96,6 +96,26 @@ export function createRepo(database: MyTimeDB = db, clock: () => number = Date.n
         await database.subtasks.bulkDelete(subs);
         await database.tasks.delete(id);
         await record('task', id, 'delete', 'delete', { subtasks: subs.length });
+      });
+    },
+
+    async copyTaskToDay(id: string, day: number) {
+      return tx(async () => {
+        const t = await getTask(id);
+        const now = clock();
+        const anchor = t.plannedStart ?? t.checkAt ?? now;
+        const shift = (v: number | null | undefined) => v == null ? null : addDays(v, Math.round((startOfDay(day) - startOfDay(anchor)) / 86400000));
+        const next: Task = { ...t, id: newId(), status: 'notStarted', intervals: [], actualStart: null, actualEnd: null, manualProgress: null, pausedEver: false, checked: false, checkedAt: null, autoReserved: false, autoStartAt: null, autoEndAt: null, sourceEventId: null, sourceKey: null, eventId: null, repeat: null, assignment: t.assignment ? { ...t.assignment, deadline: shift(t.assignment.deadline) } : null, testPrep: t.testPrep ? { ...t.testPrep, examAt: shift(t.testPrep.examAt) } : null, plannedStart: shift(t.plannedStart), plannedEnd: shift(t.plannedEnd), checkAt: shift(t.checkAt), createdAt: now, updatedAt: now };
+        taskSchema.parse(next);
+        await database.tasks.add(next);
+        await record('task', next.id, 'put', 'copy', { from: id });
+        for (const old of await database.subtasks.where('taskId').equals(id).toArray()) {
+          const sub = { ...old, id: newId(), taskId: next.id, done: false, completedAt: null, plannedStart: shift(old.plannedStart), plannedEnd: shift(old.plannedEnd), createdAt: now, updatedAt: now };
+          subtaskSchema.parse(sub);
+          await database.subtasks.add(sub);
+          await record('subtask', sub.id, 'put', 'copy', { from: old.id });
+        }
+        return next;
       });
     },
 

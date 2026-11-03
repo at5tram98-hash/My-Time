@@ -142,7 +142,7 @@ export function TaskEditorSheet({ taskId, defaults, depth }: { taskId?: string; 
       >
         <div className="group">
           <div className="group-body">
-            <input className="row-input big" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトル" aria-label="タイトル" autoFocus={isNew} data-testid="task-title-input" />
+            <input className="row-input big" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトル" aria-label="タイトル" data-testid="task-title-input" />
             <textarea className="row-input notes-input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="メモ" aria-label="メモ" rows={2} />
           </div>
         </div>

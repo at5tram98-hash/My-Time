@@ -156,7 +156,7 @@ export function EventEditorSheet({ eventId, defaults, depth }: { eventId?: strin
       <form className="form" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <div className="group">
           <div className="group-body">
-            <input className="row-input big" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトル" aria-label="タイトル" autoFocus={isNew} data-testid="event-title-input" />
+            <input className="row-input big" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトル" aria-label="タイトル" data-testid="event-title-input" />
           </div>
         </div>
         <div className="group">

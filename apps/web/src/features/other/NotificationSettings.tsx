@@ -5,7 +5,7 @@ import { Group } from '../../components/Controls';
 import { MenuButton } from '../../components/Menu';
 import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
-import { api } from '../../sync/api';
+import { api, ApiError } from '../../sync/api';
 
 function b64urlToBytes(s: string): Uint8Array {
   const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
@@ -22,8 +22,8 @@ async function currentState(): Promise<PushState> {
   if (Notification.permission === 'denied') return 'denied';
   if (Notification.permission === 'default') return 'default';
   const reg = await navigator.serviceWorker.getRegistration();
-  const sub = await reg?.pushManager?.getSubscription();
-  return sub ? 'subscribed' : 'granted';
+  await reg?.pushManager?.getSubscription();
+  return 'granted';
 }
 
 const LABEL: Record<PushState, string> = {
@@ -40,13 +40,27 @@ export function NotificationSettings() {
   const { settings } = useData();
   const sync = useSync();
   const { showToast } = useUIActions();
+  const accountId = sync.me?.user.id;
   const [state, setState] = useState<PushState>('default');
   useEffect(() => {
-    void currentState().then(setState);
-  }, []);
+    let active = true;
+    const check = async () => {
+      const next = await currentState();
+      if (active) setState(next);
+      if (next !== 'granted' || !accountId) return;
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager?.getSubscription();
+      if (!sub) return;
+      await api.subscribePush(sub.toJSON());
+      if (active) setState('subscribed');
+    };
+    void check().catch(() => { if (active) setState('granted'); });
+    return () => { active = false; };
+  }, [accountId]);
 
   const enable = async () => {
     try {
+      if (!('PushManager' in window)) return showToast('ホーム画面に追加したアプリから設定してください');
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
         setState(perm === 'denied' ? 'denied' : 'default');
@@ -55,7 +69,7 @@ export function NotificationSettings() {
       const key = sync.config?.pushPublicKey;
       if (!key || !sync.me) {
         setState('granted');
-        showToast('通知を許可しました。アプリを開いている間は画面で知らせます');
+        showToast(!sync.me ? 'Googleでログインしてから、もう一度通知を登録してください' : 'サーバーの通知設定を確認してください');
         return;
       }
       const reg = await navigator.serviceWorker.ready;
@@ -97,6 +111,10 @@ export function NotificationSettings() {
         )}
         {!sync.config?.pushPublicKey && <div className="row"><span className="row-label muted small">サーバーの通知設定が未完了のため、アプリを閉じている間の通知は届きません。</span></div>}
       </Group>
+      {state === 'subscribed' && <Group header="受信の確認" footer="送信後、この端末に通知が表示されるか確認してください。">
+        <button type="button" className="row row-button tint" data-testid="test-push" onClick={() => { void (async () => { const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); if (!sub) throw new Error('通知を再登録してください'); await api.testPush(sub.endpoint); showToast('通知サービスへ送信しました。受信を確認してください'); })().catch(async (e: Error) => { if (e instanceof ApiError && e.status === 410) { const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); await sub?.unsubscribe(); setState('granted'); } showToast(e.message); }); }}>テスト通知を送る</button>
+      </Group>}
+      {!sync.me && <p className="note-text">アプリを閉じている間の通知には、Googleログインとこの端末の通知登録が必要です。</p>}
       <Group header="送る通知" footer="授業・アルバイトなど通常の予定には「未開始」の通知を送りません。未設定の課題・テスト対策のお知らせは1日1回までです。">
         <div className="row"><Icon name="clock" size={18} className="tint" /><span className="row-label">タスクの予定時刻を5分過ぎても未開始</span></div>
         <div className="row"><Icon name="bell" size={18} className="tint" /><span className="row-label">タスク・確認タスクのリマインダー（各タスクで設定）</span></div>

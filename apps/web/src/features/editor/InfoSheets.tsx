@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { defaultCalendarIcon, expandEvent, newId, formatHm, parseOccurrenceId, resolveItemIcon } from '@my-time/domain';
+import { InfoActions, InfoTimePreview } from './InfoActions';
 import { Sheet } from '../../components/Sheet';
 import { Icon } from '../../components/Icon';
 import { EventBadge } from '../../components/Identity';
@@ -39,7 +40,7 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
       detents={['medium', 'large']}
       testId="event-info"
       left={<button type="button" className="bar-btn" onClick={closeSheet}>閉じる</button>}
-      right={<button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={() => openSheet({ kind: 'edit', mode: 'event', id })} data-testid="info-edit"><Icon name="pencil" size={18} /></button>}
+      right={<InfoActions onMore={() => { closeSheet(); actions.onEventMenu(id); }} onCopy={() => openSheet({ kind: 'copyEvent', eventId: id })} onEdit={() => openSheet({ kind: 'edit', mode: 'event', id })} />}
     >
       <div className="info-hero">
         <EventBadge icon={st ? st.icon : cal?.icon} color={color} size={56} fallback={defaultCalendarIcon(cal?.kind ?? 'general')} />
@@ -68,17 +69,20 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
       )}
       {master.extra?.place && (
         <>
-          <div className="group-header">場所</div>
+          <div className="group-header">位置情報</div>
           <MapPreview place={master.extra.place} />
           {master.extra.travelMinutes ? <p className="muted small info-travel">{travelLabel(master.extra.travelMinutes)}（出発の目安 {formatHm(inst.start - master.extra.travelMinutes * 60_000)}）</p> : null}
         </>
       )}
+      <InfoTimePreview title={inst.title} start={inst.start} end={inst.end} color={color} />
+      <div className="group-header">オプション</div>
+      <div className="group"><div className="group-body">
+        <div className="row"><Icon name="calendar" size={20} className="muted" /><span className="row-label">カレンダー</span><span className="row-value"><span className="cal-dot" style={{ background: color }} />{cal?.name ?? 'なし'}</span></div>
+        <div className="row"><Icon name="bell" size={20} className="muted" /><span className="row-label">通知</span><span className="row-value">{notifySummary(master.extra?.notifies ?? [])}</span></div>
+      </div></div>
       <InfoExtras extra={master.extra} />
       {inst.notes && <div className="group"><div className="group-header">メモ</div><div className="group-body padded notes">{inst.notes}</div></div>}
-      <div className="group"><div className="group-body">
-        <button type="button" className="row row-button center" onClick={() => openSheet({ kind: 'copyEvent', eventId: id })}>別の日にコピー</button>
-        <button type="button" className="row row-button destructive center" onClick={() => { closeSheet(); actions.onEventMenu(id); }} data-testid="info-more">その他の操作…</button>
-      </div></div>
+
     </Sheet>
   );
 }
