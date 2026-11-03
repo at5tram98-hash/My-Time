@@ -1,10 +1,10 @@
 import { Icon } from '../../components/Icon';
 
 export function InfoActions({ onMore, onCopy, onEdit }: { onMore: (anchor: HTMLElement) => void; onCopy: () => void; onEdit: () => void }) {
-  return <div className="info-actions">
-    <button type="button" className="gbtn glass glass-i" aria-label="その他の操作" onClick={(e) => onMore(e.currentTarget)} data-testid="info-more"><Icon name="more" size={18} /></button>
-    <button type="button" className="gbtn glass glass-i" aria-label="別の日にコピー" onClick={onCopy} data-testid="info-copy"><Icon name="copy" size={18} /></button>
-    <button type="button" className="gbtn glass glass-i tint" aria-label="編集" onClick={onEdit} data-testid="info-edit"><Icon name="pencil" size={18} /></button>
+  return <div className="info-actions" role="group" aria-label="予定とタスクの操作">
+    <button type="button" className="info-action" aria-label="その他の操作" onClick={(e) => onMore(e.currentTarget)} data-testid="info-more"><Icon name="more" size={22} strokeWidth={1.8} /></button>
+    <button type="button" className="info-action" aria-label="別の日にコピー" onClick={onCopy} data-testid="info-copy"><Icon name="copy" size={22} strokeWidth={1.8} /></button>
+    <button type="button" className="info-action tint" aria-label="編集" onClick={onEdit} data-testid="info-edit"><Icon name="pencil" size={22} strokeWidth={1.8} /></button>
   </div>;
 }
 

@@ -1,3 +1,4 @@
+import type { PlaceValue } from '@my-time/domain';
 import { db, ownerOf } from '../data/db';
 import type { PullResult, PushResult, SyncOp } from '@my-time/contracts';
 
@@ -14,6 +15,7 @@ export class ApiError extends Error {
 }
 
 export interface ServerConfig {
+  googleMapsEmbedKey?: string | null;
   googleConfigured: boolean;
   pushPublicKey: string | null;
   apiVersion: number;
@@ -95,6 +97,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   config: () => call<ServerConfig>('/config'),
+  searchPlaces: (query: string) => call<{ places: PlaceValue[] }>('/maps/search', { method: 'POST', body: JSON.stringify({ query }) }),
   me: () => call<Me>('/me'),
   logout: () => call<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
   push: (ops: SyncOp[], account: string) => call<PushResult>('/sync/push', { method: 'POST', body: JSON.stringify({ ops }), headers: acct(account) }),

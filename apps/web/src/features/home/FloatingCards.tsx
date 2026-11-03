@@ -6,6 +6,7 @@ import { progressOf } from '../../app/progress';
 import { Ring } from '../../ui/Ring';
 import { openContextMenu } from '../../ui/ContextMenu';
 import { useLongPress } from '../../ui/gestures';
+import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
 
 /** コンパクト表示（カプセル）の高さ。カプセル44px＋上下の余白 */
@@ -30,7 +31,9 @@ const elapsed = (ms: number) => { const m = Math.floor(ms / 60_000); return m >=
  */
 export function FloatingCards({ tasks, subtasksByTask, now }: { tasks: Task[]; subtasksByTask: Map<string, Subtask[]>; now: number }) {
   const list = islandOrder(tasks, now);
-  if (!list.length) return null;
+  if (!list.length) return <div className="island-circles island-empty" data-testid="floating-cards" role="status">
+    <div className="icapsule empty"><Icon name="check" size={20} /><span className="icap-text"><span className="icap-title">次のタスクはありません</span><span className="icap-sub">下にスワイプして一覧へ</span></span></div>
+  </div>;
   return (
     <div className="island-circles island-capsules" data-testid="floating-cards" role="list" aria-label="実行中・次のタスク">
       {list.map((t) => <IslandCircle key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} />)}

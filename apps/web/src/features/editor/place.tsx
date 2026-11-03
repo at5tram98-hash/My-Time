@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { PlaceValue } from '@my-time/domain';
 import { Icon } from '../../components/Icon';
-import { googleMapsUrl } from './maps';
+import { api, ApiError } from '../../sync/api';
+import { googleMapsEmbedUrl, googleMapsUrl } from './maps';
 import { Popup } from '../../ui/Popup';
 import { useUIActions } from '../../app/ui';
 
-interface NominatimHit { name?: string; display_name: string; lat: string; lon: string }
 
 const TRAVEL = [5, 10, 15, 30, 45, 60];
 const hm = (t: number) => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -23,7 +23,7 @@ function usePlaceSearch() {
   const last = useRef(0);
   const seq = useRef(0);
   const ctrl = useRef<AbortController | null>(null);
-  const [state, setState] = useState<{ kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; hits: PlaceValue[] } | { kind: 'offline' } | { kind: 'failed' }>({ kind: 'idle' });
+  const [state, setState] = useState<{ kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; hits: PlaceValue[] } | { kind: 'offline' } | { kind: 'failed' } | { kind: 'unconfigured' }>({ kind: 'idle' });
   const run = async (q: string) => {
     const k = q.trim();
     if (!k) return;
@@ -38,14 +38,12 @@ function usePlaceSearch() {
     const c = new AbortController();
     ctrl.current = c;
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=ja&q=${encodeURIComponent(k)}`, { headers: { accept: 'application/json' }, signal: c.signal });
-      if (!res.ok) throw new Error(String(res.status));
-      const list = (await res.json()) as NominatimHit[];
-      if (my !== seq.current) return;
-      setState({ kind: 'done', hits: list.map((h) => ({ name: h.name || h.display_name.split(',')[0]!.trim(), address: h.display_name, lat: Number(h.lat), lng: Number(h.lon) })) });
+      const { places } = await api.searchPlaces(k);
+      if (my !== seq.current || c.signal.aborted) return;
+      setState({ kind: 'done', hits: places });
     } catch (e) {
       if ((e as Error).name === 'AbortError' || my !== seq.current) return;
-      setState(navigator.onLine === false ? { kind: 'offline' } : { kind: 'failed' });
+      setState(e instanceof ApiError && (e.status === 503 || e.status === 409 || e.status === 401) ? { kind: 'unconfigured' } : navigator.onLine === false ? { kind: 'offline' } : { kind: 'failed' });
     }
   };
   const reset = () => { seq.current++; ctrl.current?.abort(); setState({ kind: 'idle' }); };
@@ -67,19 +65,10 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
   const [custom, setCustom] = useState('');
   const composing = useRef(false);
   const s = usePlaceSearch();
-  // 入力が止まって0.8秒たったら自動で検索（1秒に1回までの制限は検索側で守る）。変換中は待つ
-  const lastQ = useRef('');
+  const submit = () => { if (q.trim()) void s.run(q.trim()); };
   useEffect(() => {
     if (!open) return;
-    const k2 = q.trim();
-    if (k2.length < 2 || k2 === lastQ.current) return;
-    const id = setTimeout(() => { if (!composing.current) { lastQ.current = k2; void s.run(k2); } }, 800);
-    return () => clearTimeout(id);
-  }, [q, open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const submit = () => { const k2 = q.trim(); if (!k2) return; lastQ.current = k2; void s.run(k2); };
-  useEffect(() => {
-    if (!open) return;
-    setP(place); setT(travel); setQ(''); lastQ.current = ''; setManualOpen(false); s.reset();
+    setP(place); setT(travel); setQ(''); setManualOpen(false); s.reset();
     setManual(place && place.lat == null ? place : { name: '', address: '', lat: null, lng: null });
     setCustom(travel != null && !TRAVEL.includes(travel) && travel !== 0 ? String(travel) : '');
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -130,12 +119,12 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
               {s.state.hits.length === 0 && <div className="row muted">見つかりませんでした。別の言葉で探すか、住所を直接入力してください。</div>}
               {s.state.hits.map((h, i) => <button key={i} type="button" className="row row-button place-row" onClick={() => choose(h)}><span className="place-pin small" aria-hidden><Icon name="pin" size={15} /></span><span className="row-label">{h.name}<span className="sub-label">{h.address}</span></span></button>)}
             </div></div>
-            <p className="map-credit">地図データ © OpenStreetMap contributors</p>
+            <p className="map-credit">Google Maps</p>
           </motion.div>
         )}
-        {(s.state.kind === 'failed' || s.state.kind === 'offline') && (
+        {(s.state.kind === 'failed' || s.state.kind === 'offline' || s.state.kind === 'unconfigured') && (
           <motion.div key="err" className="place-err" role="alert" {...anim}>
-            <span>{s.state.kind === 'offline' ? 'オフラインのため検索できません。' : '検索できませんでした。'}</span>
+            <span>{s.state.kind === 'unconfigured' ? 'Google Mapsの場所検索はまだ接続されていません。Google Mapsで探すか、住所を入力できます。' : s.state.kind === 'offline' ? 'オフラインのため検索できません。' : '検索できませんでした。'}</span>
             <span className="place-err-actions">
               {s.state.kind === 'failed' && <button type="button" className="link-btn" onClick={() => void s.run(q)}>もう一度</button>}
               <button type="button" className="link-btn" onClick={() => { setManualOpen(true); setManual((m) => ({ ...m, name: m.name || k })); }}>住所を直接入力</button>
@@ -184,44 +173,20 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
   );
 }
 
-/** OSM タイルから計算する静的な地図プレビュー（C06）。座標がないときは架空のピンを置かない */
+/** Google Maps Embed API。接続前に他社の地図・架空の地図で代用しない。 */
 export function MapPreview({ place, onSearch }: { place: PlaceValue; onSearch?: () => void }) {
-  const [failed, setFailed] = useState(false);
+  const [key, setKey] = useState<string | null>(null);
+  useEffect(() => { let active = true; void api.config().then((c) => { if (active) setKey(c.googleMapsEmbedKey ?? null); }).catch(() => {}); return () => { active = false; }; }, []);
   const url = googleMapsUrl(place);
-  if (place.lat == null || place.lng == null) {
-    return (
-      <div className="map-card nomap" data-testid="map-fallback">
-        <a className="map-view map-link-preview" href={url} target="_blank" rel="noreferrer noopener" aria-label={`${place.name}をGoogle Mapsで開く`}><Icon name="pin" size={28} /><span>Google Maps</span></a>
-        <div className="map-text"><strong>{place.name}</strong>{place.address && <span className="muted small">{place.address}</span>}</div>
-        <div className="map-actions">
-          {onSearch && <button type="button" className="link-btn" onClick={onSearch}>地図で確認</button>}
-          <a className="link-btn" href={url} target="_blank" rel="noreferrer noopener">Google Mapsで開く</a>
-        </div>
-      </div>
-    );
-  }
-  const z = 16;
-  const n = 2 ** z;
-  const xf = ((place.lng + 180) / 360) * n;
-  const latR = (place.lat * Math.PI) / 180;
-  const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
-  const x0 = Math.floor(xf) - 1;
-  const y0 = Math.floor(yf) - 1;
-  const px = (xf - x0) * 256;
-  const py = (yf - y0) * 256;
-  return (
-    <div className="map-card" data-testid="map-preview">
-      <a className="map-view" href={url} target="_blank" rel="noreferrer noopener" aria-label={`${place.name}の地図を開く`}>
-        {!failed ? (
-          <span className="map-tiles" style={{ transform: `translate(calc(50% - ${px}px), calc(72px - ${py}px))` }} aria-hidden>
-            {[0, 1, 2].map((j) => [0, 1, 2].map((i) => <img key={`${i}-${j}`} alt="" loading="lazy" width={256} height={256} style={{ left: i * 256, top: j * 256 }} src={`https://tile.openstreetmap.org/${z}/${x0 + i}/${y0 + j}.png`} onError={() => setFailed(true)} />))}
-          </span>
-        ) : <span className="map-off" aria-hidden><Icon name="pin" size={22} /></span>}
-        <span className="map-pin" aria-hidden><Icon name="pin" size={26} strokeWidth={2.2} /></span>
-        <span className="map-credit-in">© OpenStreetMap</span>
-      </a>
-      <div className="map-text"><strong>{place.name}</strong>{place.address && <span className="muted small">{place.address}</span>}</div>
-      <a className="link-btn map-open" href={googleMapsUrl(place, true)} target="_blank" rel="noreferrer noopener">Google Mapsで経路を調べる</a>
+  const embed = key ? googleMapsEmbedUrl(place, key) : null;
+  return <div className="map-card" data-testid={embed ? 'map-preview' : 'map-fallback'}>
+    {embed ? <div className="map-view google-map-embed"><iframe title={`${place.name}のGoogle Maps`} src={embed} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /></div> :
+      <a className="map-view map-link-preview" href={url} target="_blank" rel="noreferrer noopener" aria-label={`${place.name}をGoogle Mapsで開く`}><Icon name="pin" size={26} strokeWidth={1.6} /><span>Google Maps</span></a>}
+    <div className="map-text"><strong>{place.name}</strong>{place.address && <span className="muted small">{place.address}</span>}</div>
+    <div className="map-actions">
+      {onSearch && <button type="button" className="link-btn" onClick={onSearch}>場所を変更</button>}
+      <a className="link-btn" href={url} target="_blank" rel="noreferrer noopener">Google Mapsで開く</a>
+      <a className="link-btn map-open" href={googleMapsUrl(place, true)} target="_blank" rel="noreferrer noopener">経路を調べる</a>
     </div>
-  );
+  </div>;
 }

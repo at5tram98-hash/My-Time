@@ -32,14 +32,20 @@ test.describe('v3 ホーム', () => {
     await expect(page.getByTestId('floating-cards')).toBeVisible();
   });
 
-  test('C01：対象がなければコンパクト表示は帯を出さず、線だけ残す', async ({ page }) => {
+  test('空の日も最小化カプセルを残し、非表示と復帰を操作できる', async ({ page }) => {
     await openApp(page);
     await page.getByRole('button', { name: 'その他の操作' }).click();
     await page.getByRole('menuitem', { name: 'タスクをコンパクト表示' }).click();
-    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(1);
-    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
+    await expect(page.getByTestId('floating-cards')).toContainText('次のタスクはありません');
+    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
+    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeGreaterThan(50);
     await page.getByRole('button', { name: 'その他の操作' }).click();
-    await expect(page.getByRole('menuitem', { name: 'タスク一覧を表示' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'タスク表示を隠す' }).click();
+    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
+    await page.getByTestId('tasks-hidden-line').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('floating-cards')).toBeVisible();
+    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
   });
 
   test('v3.1：カレンダー選択から新しいカレンダーを追加できる', async ({ page }) => {
