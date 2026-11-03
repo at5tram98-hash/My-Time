@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { PlaceValue } from '@my-time/domain';
 import { Icon } from '../../components/Icon';
+import { googleMapsUrl } from './maps';
 import { Popup } from '../../ui/Popup';
 import { useUIActions } from '../../app/ui';
 
@@ -99,6 +100,7 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
           <span className="place-current-text"><strong>{p.name}</strong>{p.address && <span className="muted small">{p.address}</span>}</span>
         </div>
       )}
+      <a className="row row-button maps-search-link" href={googleMapsUrl({ name: q || p?.name || '', address: p?.address ?? '', lat: null, lng: null })} target="_blank" rel="noreferrer noopener"><Icon name="pin" size={18} />Google Mapsで場所を探す<Icon name="chevronRight" size={14} /></a>
       <form className="csearch" role="search" onSubmit={(e) => { e.preventDefault(); composing.current = false; submit(); }}>
         <Icon name="search" size={17} className="muted" />
         <input
@@ -185,14 +187,15 @@ export function PlaceTravelPopup({ open, place, travel, start, history, onClose,
 /** OSM タイルから計算する静的な地図プレビュー（C06）。座標がないときは架空のピンを置かない */
 export function MapPreview({ place, onSearch }: { place: PlaceValue; onSearch?: () => void }) {
   const [failed, setFailed] = useState(false);
-  const url = place.lat != null && place.lng != null ? `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lng}#map=17/${place.lat}/${place.lng}` : `https://www.openstreetmap.org/search?query=${encodeURIComponent([place.name, place.address].filter(Boolean).join(' '))}`;
+  const url = googleMapsUrl(place);
   if (place.lat == null || place.lng == null) {
     return (
       <div className="map-card nomap" data-testid="map-fallback">
+        <a className="map-view map-link-preview" href={url} target="_blank" rel="noreferrer noopener" aria-label={`${place.name}をGoogle Mapsで開く`}><Icon name="pin" size={28} /><span>Google Maps</span></a>
         <div className="map-text"><strong>{place.name}</strong>{place.address && <span className="muted small">{place.address}</span>}</div>
         <div className="map-actions">
           {onSearch && <button type="button" className="link-btn" onClick={onSearch}>地図で確認</button>}
-          <a className="link-btn" href={url} target="_blank" rel="noreferrer noopener">マップで開く</a>
+          <a className="link-btn" href={url} target="_blank" rel="noreferrer noopener">Google Mapsで開く</a>
         </div>
       </div>
     );
@@ -218,7 +221,7 @@ export function MapPreview({ place, onSearch }: { place: PlaceValue; onSearch?: 
         <span className="map-credit-in">© OpenStreetMap</span>
       </a>
       <div className="map-text"><strong>{place.name}</strong>{place.address && <span className="muted small">{place.address}</span>}</div>
-      <a className="link-btn map-open" href={url} target="_blank" rel="noreferrer noopener">マップで開く</a>
+      <a className="link-btn map-open" href={googleMapsUrl(place, true)} target="_blank" rel="noreferrer noopener">Google Mapsで経路を調べる</a>
     </div>
   );
 }

@@ -312,8 +312,8 @@ export function TasksScreen() {
           </div>
         )}
       </div>
-      <ChoicePopup open={groupPick} title="グループ表示" value={group === 'category' ? '' : group} noneLabel="カテゴリー" onClose={() => setGroupPick(false)} onPick={(g) => { setGroupPick(false); void repo.updateSettings({ taskGroup: (g || 'category') as TaskGroup }); }}
-        items={[{ value: 'tag', label: 'タグ', sub: '複数のタグがあるタスクは、それぞれのタグに表示' }, { value: 'date', label: '日付', sub: '期限切れ・今日・明日・7日以内・それ以降' }]} testId="group-popup" />
+      <ChoicePopup compact noneIcon="stack" open={groupPick} title="グループ表示" value={group === 'category' ? '' : group} noneLabel="カテゴリー" onClose={() => setGroupPick(false)} onPick={(g) => { setGroupPick(false); void repo.updateSettings({ taskGroup: (g || 'category') as TaskGroup }); }}
+        items={[{ value: 'tag', label: 'タグ', icon: 'tray', sub: '複数のタグがあるタスクは、それぞれのタグに表示' }, { value: 'date', label: '日付', icon: 'calendar', sub: '期限切れ・今日・明日・7日以内・それ以降' }]} testId="group-popup" />
       {/* 複数選択の操作バー（下部に浮かぶガラス：Q39） */}
       <AnimatePresence>
         {editing && selected.size > 0 && (

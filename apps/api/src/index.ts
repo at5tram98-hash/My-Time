@@ -4,6 +4,7 @@ import { authRoutes, requireUser } from './routes/auth';
 import { syncRoutes } from './routes/sync';
 import { endRestore, restoreDrill, runDailyBackup, runRetention, startRestore, driveFor } from './jobs/backup';
 import { runNotifications } from './jobs/notify';
+import { sendPush } from './lib/webpush';
 import { newId } from './lib/crypto';
 
 export const app = new Hono<AppBindings>().basePath('/api');
@@ -105,6 +106,16 @@ api.post('/push/subscribe', async (c) => {
     .run();
   return c.json({ ok: true });
 });
+api.post('/push/test', async (c) => {
+  const b = await c.req.json<{ endpoint?: string }>().catch(() => ({} as { endpoint?: string }));
+  const sub = await c.env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE endpoint = ? AND user_id = ?').bind(b.endpoint ?? '', c.get('userId')).first<{ id: string; endpoint: string; p256dh: string; auth: string }>();
+  if (!sub) return c.json({ error: 'この端末の通知を登録してください' }, 409);
+  if (!pushConfigured(c.env)) return c.json({ error: 'サーバーの通知設定がありません' }, 503);
+  const r = await sendPush(sub, { title: 'My Time 通知テスト', body: 'この通知が表示されれば受信の確認は完了です。', tag: 'mytime-test', target: { kind: 'settings', id: null } }, { publicKey: c.env.VAPID_PUBLIC_KEY!, privateJwk: c.env.VAPID_PRIVATE_JWK!, subject: c.env.VAPID_SUBJECT ?? 'mailto:admin@example.com' }, c.get('now')).catch(() => 'error' as const);
+  if (r === 'gone') await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?').bind(sub.id, c.get('userId')).run();
+  return r === 'ok' ? c.json({ ok: true }) : c.json({ error: r === 'gone' ? '通知の登録期限が切れました。もう一度登録してください' : '通知サービスへの送信に失敗しました。再試行してください' }, 502);
+});
+
 api.post('/push/unsubscribe', async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { endpoint?: string };
   await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?').bind(b.endpoint ?? '', c.get('userId')).run();

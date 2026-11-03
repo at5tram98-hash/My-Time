@@ -112,6 +112,7 @@ export const api = {
   restoreSessions: () => call<{ items: RestoreSession[] }>('/restore'),
   endRestore: (id: string) => call<{ removed: number }>(`/restore/${id}/end`, { method: 'POST' }),
   subscribePush: (sub: PushSubscriptionJSON) => call('/push/subscribe', { method: 'POST', body: JSON.stringify(sub) }),
+  testPush: (endpoint: string) => call<{ ok: boolean }>('/push/test', { method: 'POST', body: JSON.stringify({ endpoint }) }),
   unsubscribePush: (endpoint: string) => call('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
   // GitHub Pages など API のない配信先では、サーバーのある本体（Cloudflare）でログインする
   loginUrl: () => (NO_API_HOST ? `${APP_HOME}api/auth/login` : `${import.meta.env.BASE_URL}api/auth/login`),

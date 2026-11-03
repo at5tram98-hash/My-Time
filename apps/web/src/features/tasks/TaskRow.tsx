@@ -5,6 +5,7 @@ import {
   actualProgress, canScrubProgress, delayInfo, formatDayLabel, formatHm, idealProgress, rowTimeLabel, type Subtask, type Task,
 } from '@my-time/domain';
 import { formatOverMinutes } from '@my-time/domain';
+import { UpcomingTime } from '../../components/UpcomingTime';
 import { TaskIcon } from '../../components/TaskIcon';
 import { openContextMenu, type CtxItem } from '../../ui/ContextMenu';
 import { deleteWithUndo } from '../../ui/undo';
@@ -232,7 +233,7 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
         </span>
         <span className={`task-row-time ${label.kind} ${delay.delayed ? 'late' : ''} ${delay.delayed && !reduce ? 'blink' : ''}`}>
           {timeTag && <span className="time-tag">{timeTag}</span>}
-          <span className="time-val">{timeText}</span>
+          <span className="time-val">{!showDate && task.kind === 'do' && task.status === 'notStarted' && label.kind === 'plannedStart' ? <UpcomingTime at={label.at} now={now} text={timeText} /> : timeText}</span>
           {delay.delayed && <span className="late-text">+{formatOverMinutes(delay.overMinutes)}</span>}
         </span>
       </button>

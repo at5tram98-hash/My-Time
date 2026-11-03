@@ -68,7 +68,7 @@ export function planNotices(tasks: readonly Task[], events: readonly CalEvent[],
     }
     const anchor = t.kind === 'check' ? t.checkAt : t.plannedStart;
     // 複数の通知（v2：extra.notifies）。なければ従来の1件
-    const mins = t.extra?.notifies?.length ? t.extra.notifies : t.notifyMinutesBefore != null ? [t.notifyMinutesBefore] : [];
+    const mins = t.extra?.notifies !== undefined ? t.extra.notifies : t.notifyMinutesBefore != null ? [t.notifyMinutesBefore] : [];
     if (anchor != null && t.status !== 'done') {
       for (const m of new Set(mins)) {
         const at = anchor - m * MINUTE;

@@ -769,3 +769,31 @@ describe('UI/UX v2 のデータ拡張（互換性）', () => {
     expect(body.tables.subtask!.find((t) => t.id === 'v3-sub')).toMatchObject({ plannedStart: sub.plannedStart, estimateMinutes: 25 });
   });
 });
+
+async function notificationSubscriber() {
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']) as CryptoKeyPair;
+  return { p256dh: b64url(await crypto.subtle.exportKey('raw', kp.publicKey) as ArrayBuffer), auth: b64url(crypto.getRandomValues(new Uint8Array(16))) };
+}
+
+describe('通知配信の復旧', () => {
+  it('一時的な失敗は次のCronで再送し、成功した端末には重複送信しない', async () => {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
+    const envP = { ...E, VAPID_PUBLIC_KEY: b64url(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey) as ArrayBuffer)), VAPID_PRIVATE_JWK: JSON.stringify(await crypto.subtle.exportKey('jwk', kp.privateKey)) };
+    const { cookie } = await login();
+    const s = await notificationSubscriber();
+    for (const id of ['ok', 'retry']) await api(cookie, '/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint: `https://push.example.com/${id}`, keys: s }) });
+    await push(cookie, [putOp('task', makeTask({ title: '再送', plannedStart: NOW - 6 * 60000, plannedEnd: NOW + 3600000 }, NOW - DAY))]);
+    fetchMock.get('https://push.example.com').intercept({ path: '/ok', method: 'POST' }).reply(201, '');
+    fetchMock.get('https://push.example.com').intercept({ path: '/retry', method: 'POST' }).reply(503, '');
+    expect((await runNotifications(envP as Env, NOW)).sent).toBe(1);
+    fetchMock.get('https://push.example.com').intercept({ path: '/retry', method: 'POST' }).reply(201, '');
+    expect((await runNotifications(envP as Env, NOW + 5 * 60000)).sent).toBe(1);
+    expect((await runNotifications(envP as Env, NOW + 10 * 60000)).sent).toBe(0);
+  });
+  it('他アカウントの購読にはテスト通知を送れない', async () => {
+    const a = await login('push-a'), b = await login('push-b');
+    const s = await notificationSubscriber();
+    await api(a.cookie, '/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint: 'https://push.example.com/a', keys: s }) });
+    expect((await api(b.cookie, '/push/test', { method: 'POST', body: JSON.stringify({ endpoint: 'https://push.example.com/a' }) })).status).toBe(409);
+  });
+});

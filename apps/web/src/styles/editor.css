@@ -271,3 +271,24 @@
 .sub-time-btn:active { background: var(--fill); }
 .info-travel { margin: -4px 4px 12px; }
 .row-input.num { width: 6em; text-align: right; background: var(--fill); border-radius: 9px; padding: 0 10px; min-height: 40px; }
+
+/* Final detail layout: compact header actions, location summary and timeline. */
+.info-actions { display: flex; gap: 6px; align-items: center; }
+.info-actions .gbtn { width: 40px; min-width: 40px; height: 44px; }
+.info-time-preview { display: flex; height: 174px; padding: 16px; gap: 12px; margin: 18px 0 24px; background: var(--bg-elev); border-radius: 24px; overflow: hidden; }
+.preview-hours { display: flex; flex-direction: column; justify-content: space-between; font-size: .75rem; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.preview-grid { flex: 1; position: relative; background: repeating-linear-gradient(to bottom, var(--separator) 0 1px, transparent 1px 70px); }
+.preview-event { position: absolute; top: 50px; left: 0; right: 0; min-height: 100px; padding: 9px 12px; border-radius: 8px; color: white; display: flex; flex-direction: column; font-size: .85rem; overflow: hidden; }
+.preview-event strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-card { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 8px 14px; padding: 16px; border-radius: 24px; align-items: center; }
+.map-card .map-text { grid-column: 1; grid-row: 1; padding: 0; gap: 6px; overflow-wrap: anywhere; }
+.map-card .map-view { grid-column: 2; grid-row: 1 / span 2; width: 100px; height: 100px; border-radius: 18px; }
+.map-card .map-open, .map-card .map-actions { grid-column: 1; margin: 0; padding: 0; font-size: .78rem; }
+.map-link-preview { display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--blue); font-size: .66rem; text-decoration: none; }
+.map-card .map-credit-in { font-size: 7px; }
+.maps-search-link { gap: 10px; color: var(--blue); margin-bottom: 10px; }
+.compact-choices { margin: 0 !important; }
+.compact-choices .group-body { background: transparent; box-shadow: none; border-radius: 0; }
+.compact-choices .row { min-height: 48px; padding-block: 8px; }
+.compact-choices .sub-label { font-size: .72rem; }
+.compact-choices .choice-badge { color: var(--blue); background: transparent; }

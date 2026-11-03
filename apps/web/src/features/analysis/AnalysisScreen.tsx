@@ -200,9 +200,9 @@ export function AnalysisScreen() {
         </p>
       </div>
       <GoalsPopup open={goals} onClose={() => setGoals(false)} />
-      <ChoicePopup open={filterPick} title="絞り込み" noneLabel="すべてのタスク" value={filter ? `${filter.kind}:${filter.value}` : ''} onClose={() => setFilterPick(false)} testId="analysis-filter-popup"
+      <ChoicePopup compact noneIcon="checklist" open={filterPick} title="絞り込み" noneLabel="すべてのタスク" value={filter ? `${filter.kind}:${filter.value}` : ''} onClose={() => setFilterPick(false)} testId="analysis-filter-popup"
         onPick={(v) => { setFilterPick(false); if (!v) return setFilter(null); const i = v.indexOf(':'); setFilter({ kind: v.slice(0, i) as 'category' | 'tag', value: v.slice(i + 1) }); }}
-        items={[...catList.map((c) => ({ value: `category:${c}`, label: c, sub: 'カテゴリー', badge: <span className="choice-dot" style={{ background: catColor(c) }} /> })), { value: 'category:', label: 'カテゴリーなし', sub: 'カテゴリー' }, ...tagList.map((t) => ({ value: `tag:${t}`, label: `#${t}`, sub: 'タグ' }))]} />
+        items={[...catList.map((c) => ({ value: `category:${c}`, label: c, sub: 'カテゴリー', badge: <span className="choice-dot" style={{ background: catColor(c) }} /> })), { value: 'category:', label: 'カテゴリーなし', sub: 'カテゴリー' }, ...tagList.map((t) => ({ value: `tag:${t}`, label: `#${t}`, sub: 'タグ', icon: 'tray' as const }))]} />
     </div>
   );
 }

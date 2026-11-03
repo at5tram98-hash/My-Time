@@ -3,6 +3,7 @@ import { AnimatePresence } from 'motion/react';
 import { expandAll, planNotices } from '@my-time/domain';
 import { useNow } from './useNow';
 import { repo } from '../data/repo';
+import { reconcilePush } from '../sync/pushRegistration';
 import { api } from '../sync/api';
 import { syncEngine } from '../sync/engine';
 import { Onboarding } from '../features/onboarding/Onboarding';
@@ -73,6 +74,16 @@ function AppearanceSync() {
 
 /** 同期の開始、AR の反映、アプリ表示中の通知、通知タップからの遷移 */
 function Background() {
+  const pushSync = useSync();
+  useEffect(() => {
+    const account = pushSync.me?.user.id;
+    if (!account) return;
+    const register = () => { void reconcilePush(account).catch(() => undefined); };
+    register();
+    window.addEventListener('online', register);
+    return () => window.removeEventListener('online', register);
+  }, [pushSync.me?.user.id]);
+
   const { tasks, events, employers } = useData();
   const { openSheet, setTab, showToast } = useUIActions();
   const now = useNow(30_000);

@@ -3,7 +3,7 @@ import { pushConfigured, applyUserZone, type Env } from '../env';
 import { liveRecords } from '../lib/store';
 import { sendPush } from '../lib/webpush';
 
-const WINDOW = 6 * 60_000; // 5分ごとの Cron + 余裕
+const WINDOW = 30 * 60_000; // 5分ごとの Cron + 余裕
 
 /** 5分ごと：送るべき通知を計算し、未送信のものだけ Push する（同じ通知は二度送らない） */
 export async function runNotifications(env: Env, now: number): Promise<{ sent: number }> {
@@ -22,13 +22,16 @@ export async function runNotifications(env: Env, now: number): Promise<{ sent: n
     if (!notices.length) continue;
     const subs = (await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?').bind(userId).all<{ id: string; endpoint: string; p256dh: string; auth: string }>()).results;
     for (const n of notices) {
-      const claimed = await env.DB.prepare('INSERT OR IGNORE INTO sent_notices (user_id, key, sent_at) VALUES (?, ?, ?)').bind(userId, n.key, now).run();
-      if (!claimed.meta.changes) continue;
       for (const s of subs) {
+        const key = `${n.key}:sub:${s.id}`;
+        const claimed = await env.DB.prepare('INSERT OR IGNORE INTO sent_notices (user_id, key, sent_at) VALUES (?, ?, ?)').bind(userId, key, now).run();
+        if (!claimed.meta.changes) continue;
         const r = await sendPush(s, { title: n.title, body: n.body, tag: n.key, target: n.target }, { publicKey: env.VAPID_PUBLIC_KEY!, privateJwk: env.VAPID_PRIVATE_JWK!, subject: env.VAPID_SUBJECT ?? 'mailto:admin@example.com' }, now).catch(() => 'error' as const);
         if (r === 'gone') await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(s.id).run();
-        else if (r === 'error') await env.DB.prepare('UPDATE push_subscriptions SET failures = failures + 1 WHERE id = ?').bind(s.id).run();
-        else sent += 1;
+        else if (r === 'error') {
+          await env.DB.prepare('UPDATE push_subscriptions SET failures = failures + 1 WHERE id = ?').bind(s.id).run();
+          await env.DB.prepare('DELETE FROM sent_notices WHERE user_id = ? AND key = ?').bind(userId, key).run();
+        } else sent += 1;
       }
     }
   }
