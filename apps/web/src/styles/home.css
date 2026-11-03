@@ -162,7 +162,7 @@
 }
 
 /* タスク表示を隠したときに上に残す線（下へスライドで戻す） */
-.hidden-line { flex: none; height: 22px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; touch-action: none; cursor: grab; }
+.hidden-line { width: 100%; flex: none; height: 44px; display: flex; align-items: center; justify-content: center; background: none; border: 0; padding: 0; touch-action: none; cursor: grab; }
 .hidden-line-bar { width: 40px; height: 5px; border-radius: 3px; background: var(--label-3, rgba(60, 60, 67, 0.3)); transition: width 160ms var(--spring), background 160ms; }
 .hidden-line:hover .hidden-line-bar, .hidden-line:focus-visible .hidden-line-bar { width: 52px; background: var(--label-2); }
 
@@ -216,3 +216,6 @@
 .upcoming-time-visual { display: inline-grid; grid-template-areas: 'value'; overflow: hidden; vertical-align: middle; }
 .upcoming-time-visual > span { grid-area: value; white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .task-glass { background: var(--bg-elev); } }
+
+.island-empty { justify-content: center; }
+.icapsule.empty { max-width: min(100%, 280px); color: var(--label-2); justify-content: center; padding: 0 16px; }

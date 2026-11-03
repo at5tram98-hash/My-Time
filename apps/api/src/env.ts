@@ -10,6 +10,10 @@ export interface Env {
   GOOGLE_JWKS_URL: string;
   GOOGLE_API_BASE: string;
   /** 以下はシークレット（wrangler secret put / GitHub Secrets）。リポジトリには置かない */
+  /** ブラウザ公開用：HTTPリファラーとMaps Embed APIだけに制限したキー */
+  GOOGLE_MAPS_EMBED_KEY?: string;
+  /** サーバー専用：Places APIだけに制限。明示的に接続するまで検索しない */
+  GOOGLE_PLACES_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   /** Cookie 署名などに使う32文字以上の乱数 */

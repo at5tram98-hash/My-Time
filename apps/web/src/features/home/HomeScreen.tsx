@@ -13,7 +13,8 @@ import { usePager } from '../../gestures/usePager';
 import { TaskRow } from '../tasks/TaskRow';
 import { Timeline } from '../timeline/Timeline';
 import { useTimelineActions } from '../timeline/useTimelineActions';
-import { FloatingCards, CARDS_H, islandOrder } from './FloatingCards';
+import { FloatingCards, CARDS_H } from './FloatingCards';
+import { orderHomeTasks } from './homeOrder';
 import { DatePickerPopup } from '../editor/pickers';
 
 const HANDLE_H = 22;
@@ -43,10 +44,8 @@ export function HomeScreen() {
   const MIN_LIST = 132;
   const maxH = Math.max(MIN_LIST, bodyH - 170); // カレンダーの最低限の高さ（Q16）
   const normalH = Math.round(Math.min(maxH, Math.max(MIN_LIST, bodyH * settings.homeSplit)));
-  // 拡張時に残すカードがないときは帯そのものを出さない（空のカードは表示しない）
-  const island = useMemo(() => islandOrder(tasks, now), [tasks, now]);
-  // コンパクト表示は円だけ。対象がなければ空の帯を出さず高さ0（C01）
-  const collapsedH = island.length ? CARDS_H : 0;
+  // 空の日にも同じ3段階の操作を保つ。空状態のカプセルも60pxを確保する。
+  const collapsedH = CARDS_H;
   // 3段階：一覧 → コンパクト（円・Dynamic Island 風）→ 非表示（上に線だけ残す）。非表示はコンパクトからもう一度上へスライドしたときだけ
   const [hidden, setHidden] = useState(false);
   const hiddenRef = useRef(false);
@@ -93,7 +92,7 @@ export function HomeScreen() {
     expandedRef.current = toExpanded;
     setExpanded(toExpanded);
     // 円にするタスクがないときは、消えたままにせず線を残す
-    hiddenRef.current = toExpanded && (toHidden || collapsedH === 0);
+    hiddenRef.current = toExpanded && toHidden;
     setHidden(hiddenRef.current);
     const target = hiddenRef.current ? 0 : toExpanded ? collapsedH : normalH;
     if (reduce) paneH.set(target);
@@ -197,7 +196,7 @@ export function HomeScreen() {
 
   // ---- 非表示のときの線：下へスライド（またはタップ）でタスク表示を戻す ----
   const hg = useRef<{ id: number; y: number; t: number } | null>(null);
-  const restore = () => settle(island.length > 0, false);
+  const restore = () => settle(true, false);
   const onLineDown = (e: RPointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return;
     hg.current = { id: e.pointerId, y: e.clientY, t: performance.now() };
@@ -223,7 +222,7 @@ export function HomeScreen() {
   // ホームは1日・2日だけ（3〜7日表示は廃止：Q22）
   const days = settings.homeDays;
   const events = useVisibleEvents(addDays(homeDate, -1), addDays(homeDate, days + 1), now);
-  const dayTasks = useMemo(() => tasksForDay(tasks, homeDate), [tasks, homeDate]);
+  const dayTasks = useMemo(() => orderHomeTasks(tasksForDay(tasks, homeDate), now), [tasks, homeDate, now]);
   const doneCount = dayTasks.filter((t) => t.status === 'done').length;
   const isToday = isSameDay(homeDate, now);
   const visibleTasks = useMemo(() => {
@@ -298,7 +297,7 @@ export function HomeScreen() {
           </motion.div>
           <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive && !hidden ? 'auto' : 'none' }} aria-hidden={!cardsInteractive || hidden}
             onPointerDown={onCompactDown} onPointerMove={onCompactMove} onPointerUp={onCompactUp} onPointerCancel={onCompactCancel} data-testid="compact-row">
-            <FloatingCards tasks={tasks} subtasksByTask={subtasksByTask} now={now} />
+            <FloatingCards tasks={dayTasks} subtasksByTask={subtasksByTask} now={now} />
           </motion.div>
         </motion.section>
 

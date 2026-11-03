@@ -53,6 +53,21 @@ function AppearanceSync() {
     root.dataset.textSize = settings.textSize;
   }, [settings.theme, settings.textSize]);
 
+  // ステータス領域の色をOSだけでなくアプリで選んだ外観にも同期する。
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const dark = settings.theme === 'dark' || (settings.theme === 'system' && media.matches);
+      document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
+        meta.removeAttribute('media');
+        meta.content = dark ? '#000000' : '#ffffff';
+      });
+    };
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, [settings.theme]);
+
   // iOS のソフトウェアキーボード表示中は、その高さだけシートを持ち上げて入力欄・保存ボタンを隠さない
   useEffect(() => {
     const vv = window.visualViewport;

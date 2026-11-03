@@ -5,6 +5,7 @@ import { syncRoutes } from './routes/sync';
 import { endRestore, restoreDrill, runDailyBackup, runRetention, startRestore, driveFor } from './jobs/backup';
 import { runNotifications } from './jobs/notify';
 import { sendPush } from './lib/webpush';
+import { searchGooglePlaces } from './lib/maps';
 import { newId } from './lib/crypto';
 
 export const app = new Hono<AppBindings>().basePath('/api');
@@ -18,7 +19,7 @@ app.use('*', async (c, next) => {
   c.header('cache-control', 'no-store');
 });
 
-app.get('/config', (c) => c.json({ googleConfigured: googleConfigured(c.env), pushPublicKey: pushConfigured(c.env) ? c.env.VAPID_PUBLIC_KEY : null, apiVersion: 3, retentionMode: retentionMode(c.env) }));
+app.get('/config', (c) => c.json({ googleConfigured: googleConfigured(c.env), googleMapsEmbedKey: c.env.GOOGLE_MAPS_EMBED_KEY || null, pushPublicKey: pushConfigured(c.env) ? c.env.VAPID_PUBLIC_KEY : null, apiVersion: 3, retentionMode: retentionMode(c.env) }));
 
 app.route('/auth', authRoutes);
 
@@ -32,6 +33,15 @@ api.get('/me', async (c) => {
 });
 
 api.route('/sync', syncRoutes);
+
+api.post('/maps/search', async (c) => {
+  const b = await c.req.json<{ query?: unknown }>().catch(() => ({} as { query?: unknown }));
+  if (typeof b.query !== 'string' || b.query.trim().length < 2 || b.query.length > 200) return c.json({ error: '検索語は2〜200文字で入力してください' }, 400);
+  if (!c.env.GOOGLE_PLACES_KEY) return c.json({ error: 'Google Mapsの場所検索は未接続です' }, 503);
+  try { return c.json({ places: await searchGooglePlaces(b.query.trim(), c.env.GOOGLE_PLACES_KEY) }); }
+  catch { return c.json({ error: 'Google Mapsで検索できませんでした' }, 502); }
+});
+
 
 api.get('/notifications', async (c) => {
   const rows = await c.env.DB.prepare('SELECT id, level, kind, title, body, created_at, read_at, resolved_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100').bind(c.get('userId')).all();

@@ -813,3 +813,21 @@ it('テスト通知は本人所有の端末へ実際の暗号化送信経路を�
   expect((await request()).status).toBe(410);
   expect((await E.DB.prepare('SELECT COUNT(*) AS n FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).first<{ n: number }>())?.n).toBe(0);
 });
+
+
+describe('Google Maps接続', () => {
+  it('未接続の検索は503で明示し、認証のない利用は拒否する', async () => {
+    const { cookie } = await login();
+    expect((await api(cookie, '/maps/search', { method: 'POST', body: JSON.stringify({ query: '京都駅' }) })).status).toBe(503);
+    expect((await api('', '/maps/search', { method: 'POST', body: JSON.stringify({ query: '京都駅' }) })).status).toBe(401);
+  });
+  it('Google Placesの結果を返し、APIキーをレスポンスに含めない', async () => {
+    const { cookie, userId } = await login();
+    fetchMock.get('https://places.googleapis.com').intercept({ method: 'POST', path: '/v1/places:searchText' }).reply(200, { places: [{ displayName: { text: '京都駅' }, formattedAddress: '京都市下京区', location: { latitude: 34.985, longitude: 135.759 } }] });
+    const response = await app.request('http://localhost:8787/api/maps/search', { method: 'POST', headers: { cookie, 'x-mytime': '1', 'x-mytime-account': userId, 'content-type': 'application/json' }, body: JSON.stringify({ query: '京都駅' }) }, { ...E, GOOGLE_PLACES_KEY: 'test-places-key' });
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data).toEqual({ places: [{ name: '京都駅', address: '京都市下京区', lat: 34.985, lng: 135.759 }] });
+    expect(JSON.stringify(data)).not.toContain('test-places-key');
+  });
+});
