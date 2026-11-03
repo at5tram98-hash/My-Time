@@ -274,7 +274,7 @@
 
 /* Final detail layout: compact header actions, location summary and timeline. */
 .info-actions { display: flex; gap: 6px; align-items: center; }
-.info-actions .gbtn { width: 40px; min-width: 40px; height: 44px; }
+.info-actions .gbtn { width: 44px; min-width: 44px; height: 44px; }
 .info-time-preview { display: flex; height: 174px; padding: 16px; gap: 12px; margin: 18px 0 24px; background: var(--bg-elev); border-radius: 24px; overflow: hidden; }
 .preview-hours { display: flex; flex-direction: column; justify-content: space-between; font-size: .75rem; color: var(--label-2); font-variant-numeric: tabular-nums; }
 .preview-grid { flex: 1; position: relative; background: repeating-linear-gradient(to bottom, var(--separator) 0 1px, transparent 1px 70px); }

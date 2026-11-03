@@ -113,7 +113,7 @@ api.post('/push/test', async (c) => {
   if (!pushConfigured(c.env)) return c.json({ error: 'サーバーの通知設定がありません' }, 503);
   const r = await sendPush(sub, { title: 'My Time 通知テスト', body: 'この通知が表示されれば受信の確認は完了です。', tag: 'mytime-test', target: { kind: 'settings', id: null } }, { publicKey: c.env.VAPID_PUBLIC_KEY!, privateJwk: c.env.VAPID_PRIVATE_JWK!, subject: c.env.VAPID_SUBJECT ?? 'mailto:admin@example.com' }, c.get('now')).catch(() => 'error' as const);
   if (r === 'gone') await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?').bind(sub.id, c.get('userId')).run();
-  return r === 'ok' ? c.json({ ok: true }) : c.json({ error: r === 'gone' ? '通知の登録期限が切れました。もう一度登録してください' : '通知サービスへの送信に失敗しました。再試行してください' }, 502);
+  return r === 'ok' ? c.json({ ok: true }) : c.json({ error: r === 'gone' ? '通知の登録期限が切れました。もう一度登録してください' : '通知サービスへの送信に失敗しました。再試行してください' }, r === 'gone' ? 410 : 502);
 });
 
 api.post('/push/unsubscribe', async (c) => {

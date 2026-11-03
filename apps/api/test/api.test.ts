@@ -10,7 +10,7 @@ import { nextSeq } from '../src/lib/store';
 import { runNotifications } from '../src/jobs/notify';
 import { encryptPayload, vapidAuthorization } from '../src/lib/webpush';
 import { b64url, fromB64url } from '../src/lib/crypto';
-import { scheduled } from '../src/index';
+import { app, scheduled } from '../src/index';
 import type { Env } from '../src/env';
 
 const DAY = 86_400_000;
@@ -796,4 +796,20 @@ describe('通知配信の復旧', () => {
     await api(a.cookie, '/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint: 'https://push.example.com/a', keys: s }) });
     expect((await api(b.cookie, '/push/test', { method: 'POST', body: JSON.stringify({ endpoint: 'https://push.example.com/a' }) })).status).toBe(409);
   });
+});
+
+
+it('テスト通知は本人所有の端末へ実際の暗号化送信経路を通り、期限切れは410で再登録を促す', async () => {
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
+  const envP = { ...E, VAPID_PUBLIC_KEY: b64url(await crypto.subtle.exportKey('raw', kp.publicKey) as ArrayBuffer), VAPID_PRIVATE_JWK: JSON.stringify(await crypto.subtle.exportKey('jwk', kp.privateKey)) };
+  const { cookie } = await login();
+  const s = await notificationSubscriber();
+  const endpoint = 'https://push.example.com/check';
+  await api(cookie, '/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint, keys: s }) });
+  const request = () => app.request('/api/push/test', { method: 'POST', headers: { cookie, 'x-mytime': '1', 'content-type': 'application/json' }, body: JSON.stringify({ endpoint }) }, envP);
+  fetchMock.get('https://push.example.com').intercept({ path: '/check', method: 'POST' }).reply(201, '');
+  expect((await request()).status).toBe(200);
+  fetchMock.get('https://push.example.com').intercept({ path: '/check', method: 'POST' }).reply(410, '');
+  expect((await request()).status).toBe(410);
+  expect((await E.DB.prepare('SELECT COUNT(*) AS n FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).first<{ n: number }>())?.n).toBe(0);
 });
