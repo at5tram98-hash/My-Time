@@ -10,6 +10,11 @@ iPhone 15 Pro を主な対象にした、ホーム画面に追加して使う予
 
 Google ログイン・同期・Drive バックアップを本番で使う設定：[`docs/setup-cloudflare-google.md`](docs/setup-cloudflare-google.md)
 
+## iOS 版（SwiftUI ネイティブ・開発中）
+
+`ios/` に Xcode プロジェクトがあります（WebView ではなく SwiftUI＋SwiftData）。Web 版とは「端末間の移行ファイル」でデータをやり取りできます。
+iPhone への入れ方・移行計画・機能対応表・未対応の一覧は [docs/ios/README.md](docs/ios/README.md) を見てください。
+
 ## 起動
 
 ```bash

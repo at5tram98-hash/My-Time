@@ -1,0 +1,14 @@
+// My Time（iOS）の共通設定。
+//
+// 無料の Apple Account（Personal Team）で iPhone に入れるときは、
+// 同じフォルダに Local.xcconfig を作り、次の2行を自分の値にする（Local.xcconfig は Git に入れない）。
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   MYTIME_BUNDLE_ID = com.yourname.mytime
+//
+// バンドル ID は世界で一意である必要がある（他の人と同じ ID だと署名に失敗する）。
+
+MYTIME_BUNDLE_ID = com.example.mytime.$(USER:rfc1034identifier)
+CODE_SIGN_STYLE = Automatic
+
+#include? "Local.xcconfig"

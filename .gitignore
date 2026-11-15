@@ -16,3 +16,6 @@ ios/**/xcuserdata/
 ios/**/DerivedData/
 ios/**/*.xcuserstate
 ios/**/.swiftpm/
+
+# iOS: 個人の Apple Team ID・Bundle ID（Git に入れない）
+ios/Config/Local.xcconfig

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { expandEvent, normalizeTask } from '@my-time/domain';
@@ -13,7 +13,9 @@ import { importDevice, readDevice } from './transfer';
  * Web 版でも「この端末（ログインなし）」の領域へ取り込む。
  */
 // テストはリポジトリのルートで実行する（vitest.workspace.ts）
-const FIXTURE = resolve(process.cwd(), 'ios/Packages/MyTimeCore/Tests/MyTimeCoreTests/Fixtures/ios-export.json');
+// リポジトリのルートからでも apps/web からでも実行できるようにする
+const REL = 'ios/Packages/MyTimeCore/Tests/MyTimeCoreTests/Fixtures/ios-export.json';
+const FIXTURE = [resolve(process.cwd(), REL), resolve(process.cwd(), '../..', REL)].find((p) => existsSync(p)) ?? resolve(process.cwd(), REL);
 const dbs: MyTimeDB[] = [];
 afterEach(async () => { for (const db of dbs.splice(0)) await db.delete(); });
 

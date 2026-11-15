@@ -25,7 +25,7 @@ public enum DeviceTransfer {
 
     public struct TransferError: Error, CustomStringConvertible, Equatable {
         public let description: String
-        init(_ d: String) { description = d }
+        public init(_ d: String) { description = d }
     }
 
     // MARK: 書き出し
