@@ -268,6 +268,9 @@ test.describe('v3.1 回帰：入力中にフォーカスが外れない', () => 
     await openNewTask(page);
     const title = page.getByTestId('editor-title');
     await title.click();
+    // ＋のシートが退場し終えても、入力欄のフォーカスを＋ボタンへ戻さない（WebKit で文字が消えた不具合）
+    await expect(page.getByTestId('quick-add-sheet')).toHaveCount(0);
+    await expect(title).toBeFocused();
     await page.keyboard.type('レポート提出', { delay: 60 });
     await page.waitForTimeout(600);
     await expect(title).toHaveValue('レポート提出');
