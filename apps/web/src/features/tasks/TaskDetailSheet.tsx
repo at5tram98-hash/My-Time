@@ -28,7 +28,7 @@ import { deleteWithUndo } from '../../ui/undo';
 import { StudioValueView } from '../studio/StudioFieldsForm';
 import { SpecCard } from '../spec/SpecCard';
 import { OriginRows, NudgeBar } from '../plan/ItemPlanBits';
-import { blockingTasks, specOf } from '@my-time/domain';
+import { blockingTasks, estimateLearning, specOf } from '@my-time/domain';
 import type { PlaceValue, Subtask } from '@my-time/domain';
 
 
@@ -193,6 +193,8 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
               <div className="row"><span className="row-label">実績開始</span><span className="row-value">{task.actualStart != null ? formatFull(task.actualStart) : '—'}</span></div>
               <div className="row"><span className="row-label">実績終了</span><span className="row-value">{task.actualEnd != null ? formatFull(task.actualEnd) : '—'}</span></div>
               <div className="row"><span className="row-label">作業時間</span><span className="row-value">{formatDuration(workedMs(task, now))}</span></div>
+              {/* 見積の学習（P26）：同じ種類・カテゴリーの完了が3件以上あるときだけ */}
+              {task.estimateMinutes != null && task.status !== 'done' && (() => { const l = estimateLearning(tasks, task, now); return l ? <div className="row" data-testid="estimate-learned"><span className="row-label">見積の見込み</span><span className="row-value">約{Math.round(task.estimateMinutes * l.ratio)}分<span className="tag-estimate">見込み</span><span className="sub-label">似たタスク{l.samples}件では見積の{l.ratio.toFixed(1)}倍かかりました</span></span></div> : null; })()}
               {task.status !== 'done' && (
                 <div className="row">
                   <span className="row-label">予測終了</span>

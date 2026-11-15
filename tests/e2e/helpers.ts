@@ -196,6 +196,8 @@ export async function settled(l: Locator) {
 
 /** 設定（歯車）を開く。表示中の画面の歯車を押す */
 export async function openSettings(page: Page) {
+  // すでに設定を開いていれば、そのまま（歯車は設定の下に隠れている）
+  if (await page.getByTestId('settings-push').count()) return;
   await page.locator('[data-testid="open-settings"]:visible').first().click();
   await expect(page.getByTestId('other-screen')).toBeVisible();
 }

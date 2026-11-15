@@ -74,14 +74,21 @@
 |---|---|
 | `pnpm typecheck` / `pnpm lint` / `pnpm build` | 成功 |
 | `pnpm test`（Vitest：Web・domain） | 170件成功（追加：domain 42件・Web 9件） |
-| `pnpm test:api` | （§4-1） |
-| E2E（Chromium の iPhone 15 Pro 相当） | （§4-1） |
-| E2E（WebKit） | （§4-1） |
-| `pnpm e2e:stack` | （§4-1） |
+| `pnpm test:api`（workerd + D1） | 48件成功 |
+| E2E（Chromium の iPhone 15 Pro 相当、`--grep-invert 画面キャプチャ`） | **117件すべて成功**（新しい `redesign.spec.ts` 17件を含む） |
+| E2E（WebKit） | **このコンテナでは未実施**。WebKit が入っておらず、環境の決まりで Playwright の再インストールはしていない。GitHub Actions（main への push・PR）で実行される |
+| `pnpm e2e:stack`（ローカル Worker＋模擬 Google、Chromium） | 3件成功（WebKit は同じ理由で未実施） |
+| 画面キャプチャ（`capture-redesign.spec.ts`） | 3件成功（画像を `docs/screenshots/redesign/` に保存） |
 
-### 4-1. 実測の詳細
+### 4-1. 既存 E2E の書き換え（テストを弱めていないことの説明）
 
-（下に追記）
+- 旧ホームの「境界つまみ」「コンパクト表示」「1日/2日切替」のテストは、機能そのものを廃止したため削除した。代わりに、今日の画面の同じ観点（実行中は必ず見える・縦スクロールで要約が動かない・1日だけ）を確認するテストを足した。
+- 「その他」タブを押していたテストは、歯車（`openSettings`）に置き換えた。＋（`home-add`）で編集画面を開いていたテストは、＋→「詳しく入力」（`openNewTask`）に置き換えた。
+- ホームのタスク行で長押しの進捗入力などを確かめていたテストは、「今日のタスク」一覧（`openDayList`）を開いてから同じ操作・同じ期待値で確かめる。期待値は変えていない。
+- 再実行で見つかった本物の不具合も直した。
+  - タブの選択カプセルが5タブの幅のままだった。
+  - 案を切り替えた直後に、古い案の「変更」が押せた。
+  - 旧ホームの絶対配置の指定が新しい今日の画面にかかっていた。
 
 ## 5. 画面
 

@@ -145,8 +145,9 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   expect(failed.every((x: { status: string }) => x.status !== 'verified')).toBe(true);
   await syncNow(a);
   expect(await taskTitles(a)).toEqual(['今日の課題', '古いレポート']);
+  // 「!」は各画面右上の歯車（設定）に付けて知らせる
+  await expect(a.locator('[data-testid="other-alert"]:visible').first()).toBeVisible();
   await openSettings(a);
-  await expect(a.getByTestId('other-alert')).toBeVisible(); // 「!」で知らせる
 
   // 読み戻しで壊れていたら成功扱いにしない
   await fake('/__fail', { corruptDownload: true });
