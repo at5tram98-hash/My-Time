@@ -10,3 +10,9 @@ playwright-report/
 *.local
 .DS_Store
 docs/media/*.webm
+# iOS / Swift
+ios/**/.build/
+ios/**/xcuserdata/
+ios/**/DerivedData/
+ios/**/*.xcuserstate
+ios/**/.swiftpm/
