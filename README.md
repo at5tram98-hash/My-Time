@@ -2,8 +2,11 @@
 
 iPhone 15 Pro を主な対象にした、ホーム画面に追加して使う予定・タスク管理 PWA。
 正本仕様：[`docs/My_Time_Claude_Code_3_Phases_Spec_v1.2.md`](docs/My_Time_Claude_Code_3_Phases_Spec_v1.2.md)
-現在の段階：**Phase 2（同期・バックアップ・高度な予定/タスク）レビュー待ち** — [`docs/phase2-report.md`](docs/phase2-report.md)
-Phase 1：[`docs/phase1-report.md`](docs/phase1-report.md)（合格済み）
+現在の段階：**大幅改善（2026-11 再設計）レビュー待ち** — [`docs/redesign-2026-11-report.md`](docs/redesign-2026-11-report.md)、設計と50案：[`docs/My_Time_iOS_UI_Claude_45plus_Proposal.md`](docs/My_Time_iOS_UI_Claude_45plus_Proposal.md)
+これまで：Phase 1 [`docs/phase1-report.md`](docs/phase1-report.md)・Phase 2 [`docs/phase2-report.md`](docs/phase2-report.md)・Phase 3 [`docs/phase3-report.md`](docs/phase3-report.md)
+
+画面：下部タブは **今日・カレンダー・タスク・振り返り** の4つ＋右の丸い「追加」。設定は各画面右上の歯車。
+今日は1日だけで、左＝時間の決まった予定、右＝細かなタスクのレーン。追加は文章で書くと候補に分かれる（端末内で読み取り、外部には送らない）。
 
 Google ログイン・同期・Drive バックアップを本番で使う設定：[`docs/setup-cloudflare-google.md`](docs/setup-cloudflare-google.md)
 
@@ -38,13 +41,15 @@ pnpm test:api    # API（workerd + D1）
 ```
 apps/web/src/
   app/         タブ・状態プロバイダ・シート管理
-  features/    home / calendar / tasks / timeline / analysis / other / search
+  features/    home（今日）/ calendar / tasks / timeline / analysis（振り返り）/ other（設定）/ search
+               quickadd（文章で追加）/ plan（気づいたこと・未割当・延期・振り返り）/ spec（専門の種類）
   components/  シート・アラート・メニュー・トグル・アイコン
   gestures/    横スワイプ（日付）・ジェスチャーの排他制御
   data/        Dexie（IndexedDB）と唯一の書き込み口 repo.ts
   styles/      デザイントークン（ライト/ダーク）と画面別CSS
 packages/
   domain/      純粋関数：状態機械・理想/実績進捗・ETA・遅延・配置・重複
+               spec（専門の種類 S01〜S25）・planner（空き時間・検知・案・振り返り）・nlparse（文章の読み取り）
   contracts/   Zod スキーマ（保存・将来の同期で入力検証）
 apps/api/      Cloudflare Workers（Hono + D1）：OAuth・同期・22時バックアップ・期限処理・復元・通知
 tests/e2e/     Playwright（端末内）

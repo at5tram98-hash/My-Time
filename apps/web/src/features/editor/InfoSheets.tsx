@@ -14,12 +14,15 @@ import { describeRule, notifySummary } from './pickers';
 import { MapPreview, travelLabel } from './place';
 import { useTimelineActions } from '../timeline/useTimelineActions';
 import { syncEngine } from '../../sync/engine';
+import { specOf } from '@my-time/domain';
+import { SpecCard } from '../spec/SpecCard';
+import { NudgeBar, OriginRows } from '../plan/ItemPlanBits';
 
 const fmtDay = (t: number) => { const d = new Date(t); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`; };
 
 /** 予定の情報確認（Q62）：約半分の高さ。大きなアイコン・タイトル・日時、繰り返し・通知は小アイコン、右上に編集 */
 export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
-  const { events, calendarById, employers, studioTypes } = useData();
+  const { events, calendarById, employers, studioTypes, tasks } = useData();
   const { closeSheet, openSheet } = useUIActions();
   const actions = useTimelineActions();
   const occ = parseOccurrenceId(id);
@@ -54,6 +57,13 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
           </div>
         </div>
       </div>
+      {(() => { const sp = specOf(master, cal?.kind); return sp ? <SpecCard item={{ ...master, start: inst.start, end: inst.end }} entity="event" spec={sp} /> : null; })()}
+      {!allDay && inst.end > Date.now() && <NudgeBar entity="event" id={inst.id} title={inst.title} start={inst.start} end={inst.end} />}
+      {tasks.some((t) => t.sourceEventId === master.id) && (
+        <div className="group" data-testid="event-linked"><div className="group-header">この予定の準備・関連タスク</div><div className="group-body">
+          {tasks.filter((t) => t.sourceEventId === master.id).map((t) => <button key={t.id} type="button" className="row row-button" onClick={() => openSheet({ kind: 'info', entity: 'task', id: t.id })}><Icon name={t.status === 'done' || t.checked ? 'check' : 'clock'} size={18} className="muted" /><span className="row-label" data-user-text>{t.title}</span><span className="row-value">{t.plannedStart != null ? formatHm(t.plannedStart) : '未割当'}</span></button>)}
+        </div></div>
+      )}
       {master.classInfo && (
         <div className="group"><div className="group-body">
           <div className="row"><Icon name="graduation" size={18} className="muted" /><span className="row-label">科目</span><span className="row-value">{master.classInfo.subjectName}</span></div>
@@ -82,6 +92,7 @@ export function EventInfoSheet({ id, depth }: { id: string; depth: number }) {
       </div></div>
       <InfoExtras extra={master.extra} />
       {inst.notes && <div className="group"><div className="group-header">メモ</div><div className="group-body padded notes">{inst.notes}</div></div>}
+      <OriginRows entity="event" id={master.id} origin={master.extra?.origin ?? null} source={master.source} updatedAt={master.updatedAt} />
 
     </Sheet>
   );

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { pickDate, pickTime } from '../e2e/helpers';
+import { openSettings, pickDate, pickTime } from '../e2e/helpers';
 
 /**
  * 同期とデータ保護ゲートの通し確認（ローカル Worker + 模擬 Google）。
@@ -25,14 +25,14 @@ async function login(browser: Browser) {
   const page = await ctx.newPage();
   await page.goto('/');
   await skipOnboarding(page);
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('login').click();
   await page.waitForURL(/login=ok/);
   // 初回は「ログインしていない間の領域」から、このアカウントの領域へ切り替わる（再読み込み）
   await expect.poll(() => page.evaluate(() => localStorage.getItem('mytime:activeDb')).catch(() => ''), { timeout: 15_000 }).toMatch(/^my-time@/);
   await page.waitForLoadState('load');
   await expect(page.getByTestId('home-screen')).toBeVisible();
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await expect(page.getByTestId('account-row')).toContainText('yuki', { timeout: 15_000 });
   return page;
 }
@@ -88,7 +88,7 @@ async function readTitles(page: Page): Promise<string[]> {
 }
 
 async function syncNow(page: Page) {
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   if (await page.getByTestId('back').isVisible()) await page.getByTestId('back').click();
   // v2：同期の行は詳細シートを開く。シートの「今すぐ同期」で送受信し、状態が同期済みになるのを待つ
   await page.getByTestId('sync-row').click();
@@ -145,7 +145,7 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   expect(failed.every((x: { status: string }) => x.status !== 'verified')).toBe(true);
   await syncNow(a);
   expect(await taskTitles(a)).toEqual(['今日の課題', '古いレポート']);
-  await a.getByTestId('tab-other').click();
+  await openSettings(a);
   await expect(a.getByTestId('other-alert')).toBeVisible(); // 「!」で知らせる
 
   // 読み戻しで壊れていたら成功扱いにしない
@@ -173,7 +173,7 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   expect(await taskTitles(a)).toEqual(['今日の課題']);
 
   // 期間指定復元：45日前を含む期間 → 戻って表示、バナーが出る
-  await a.getByTestId('tab-other').click();
+  await openSettings(a);
   await a.getByTestId('nav-restore').click();
   await a.getByTestId('restore-from').fill(ymd(new Date(now - 50 * DAY)));
   await a.getByTestId('restore-to').fill(ymd(new Date(now - 40 * DAY)));
@@ -198,7 +198,7 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
   await expect.poll(() => taskTitles(a), { timeout: 20_000 }).toEqual(['今日の課題']);
   await expect(a.getByTestId('restore-banner')).toHaveCount(0);
   if (info.project.name === 'stack-chromium') {
-    await a.getByTestId('tab-other').click();
+    await openSettings(a);
     if (await a.getByTestId('back').isVisible()) await a.getByTestId('back').click();
     await a.waitForTimeout(400);
     await a.screenshot({ path: 'docs/screenshots/p2-10-other-loggedin.png' });
@@ -217,7 +217,7 @@ test('ログイン→2台目へ同期→バックアップ失敗日は削除し�
 
 /** すでに開いているページで（同じブラウザのまま）Google ログインする */
 async function loginOnPage(page: Page) {
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   if (await page.getByTestId('back').isVisible()) await page.getByTestId('back').click();
   await page.getByTestId('login').click();
   await page.waitForURL(/login=ok/);
@@ -257,7 +257,7 @@ test('アカウントごとの保存領域：ログイン前のデータは確�
   expect(await taskTitles(page)).toEqual(['ログイン前のメモ']);
 
   // ログアウト → ログインしていない領域に戻る（移行はコピー：元のデータは復旧用にこの端末に残る）
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('logout').click();
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
   await expect(page.getByTestId('home-screen')).toBeVisible();
@@ -278,7 +278,7 @@ test('アカウントごとの保存領域：ログイン前のデータは確�
   expect((await (await page.request.get('/api/sync/pull?cursor=0')).json()).changes).toHaveLength(0);
 
   // A で入り直すと、A のデータが戻る（B の領域とは別）
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('logout').click();
   await expect.poll(() => activeArea(page), { timeout: 15_000 }).toBe('my-time');
   await fake('/__user', { sub: `acct-a-${tag}`, email: `a-${tag}@example.com`, name: 'A' });

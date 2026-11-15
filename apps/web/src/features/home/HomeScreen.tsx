@@ -1,253 +1,102 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'motion/react';
-import { addDays, formatDayLabel, isSameDay, startOfDay, tasksForDay } from '@my-time/domain';
+import { useMemo, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import {
+  addDays, busyItems, detectIssues, expandAll, formatDayLabel, formatHm, freeTime, idealProgress, isSameDay, isUnscheduled, nextAction, startOfDay, tasksForDay, workedMs,
+  type Subtask, type Task,
+} from '@my-time/domain';
 import { useData, useVisibleEvents } from '../../app/data';
 import { useUIActions, useUIDates } from '../../app/ui';
 import { InlineSearch } from '../search/InlineSearch';
 import { useNow } from '../../app/useNow';
-import { Icon } from '../../components/Icon';
+import { Icon, type IconName } from '../../components/Icon';
 import { MenuButton, type MenuItem } from '../../components/Menu';
 import { repo } from '../../data/repo';
-import { gestureLock } from '../../gestures/gestureLock';
-import { usePager } from '../../gestures/usePager';
-import { TaskRow } from '../tasks/TaskRow';
 import { Timeline } from '../timeline/Timeline';
 import { useTimelineActions } from '../timeline/useTimelineActions';
-import { FloatingCards, CARDS_H } from './FloatingCards';
-import { orderHomeTasks } from './homeOrder';
 import { DatePickerPopup } from '../editor/pickers';
+import { SettingsButton } from '../other/SettingsButton';
+import { Ring } from '../../ui/Ring';
+import { progressOf } from '../../app/progress';
+import { SPRING } from '../../ui/motion';
+import { orderHomeTasks } from './homeOrder';
 
-const HANDLE_H = 22;
-const SPRING = { type: 'spring', stiffness: 380, damping: 38, mass: 0.9 } as const;
+const LANE_PCT = { both: 52, main: 68, detail: 34 } as const;
+const elapsed = (ms: number) => { const m = Math.floor(ms / 60_000); return m >= 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${m}分`; };
 
+/**
+ * 今日（1日だけの画面：P21・IOS-001〜010）。
+ * - 上：今やること（1枚のカード）と、注意・未割当・タスク・余白の小さな要約。タップで詳しい画面を開く。
+ * - 下：共通の時刻軸に、左＝時間の決まった予定（授業・勤務・外出）、右＝細かな行動（タスク・作業枠・確認）。
+ * - 横スワイプで日付を変える。レーンの見出しをタップすると、そのレーンを広く表示する。
+ */
 export function HomeScreen() {
-  const { tasks, subtasksByTask, calendarById, settings } = useData();
+  const { tasks, events: allEvents, subtasksByTask, calendarById, settings, studioTypes } = useData();
   const { homeDate } = useUIDates();
   const { setHomeDate, openSheet, setTab, setCalDate } = useUIActions();
   const now = useNow();
   const reduce = useReducedMotion() ?? false;
   const actions = useTimelineActions();
-
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const [bodyH, setBodyH] = useState(600);
-  const [navW, setNavW] = useState(390);
-  const [expanded, setExpanded] = useState(false);
-  const expandedRef = useRef(false);
-  const paneH = useMotionValue(0);
-  const handleDrag = useRef<{ y: number; h: number; id: number; moved: boolean; samples: { y: number; t: number }[] } | null>(null);
-  const listX = useMotionValue(0);
-
-  // 通常状態のタスク領域は利用可能高さの約38%（35〜42%の範囲）
-  // 分割比率は指を離した位置をそのまま保存（Q14）。最小・最大の安全範囲だけ設ける
-  const MIN_LIST = 132;
-  const maxH = Math.max(MIN_LIST, bodyH - 170); // カレンダーの最低限の高さ（Q16）
-  const normalH = Math.round(Math.min(maxH, Math.max(MIN_LIST, bodyH * settings.homeSplit)));
-  // 空の日にも同じ3段階の操作を保つ。空状態のカプセルも60pxを確保する。
-  const collapsedH = CARDS_H;
-  // 3段階：一覧 → コンパクト（円・Dynamic Island 風）→ 非表示（上に線だけ残す）。非表示はコンパクトからもう一度上へスライドしたときだけ
-  const [hidden, setHidden] = useState(false);
-  const hiddenRef = useRef(false);
   const [datePick, setDatePick] = useState(false);
+  const day = homeDate;
+  const isToday = isSameDay(day, now);
+  const events = useVisibleEvents(addDays(day, -1), addDays(day, 2), now);
+  const allSubs = useMemo(() => [...subtasksByTask.values()].flat(), [subtasksByTask]);
 
-  useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setBodyH(el.clientHeight);
-      setNavW(el.clientWidth);
-    });
-    ro.observe(el);
-    setBodyH(el.clientHeight);
-    setNavW(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  // 浮かぶタスク部分の高さを、カレンダーの上余白（--ov）として渡す。カレンダーはその下にも描かれ、ガラス越しに透ける
-  useLayoutEffect(() => {
-    const ov = overlayRef.current;
-    const body = bodyRef.current;
-    if (!ov || !body) return;
-    const apply = () => body.style.setProperty('--ov', `${Math.round(ov.getBoundingClientRect().height)}px`);
-    const ro = new ResizeObserver(apply);
-    ro.observe(ov);
-    apply();
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    // サイズ変更時は現在の状態の高さへ追従
-    if (!handleDrag.current) paneH.set(hiddenRef.current ? 0 : expandedRef.current ? collapsedH : normalH);
-  }, [normalH, collapsedH, paneH]);
-
-  const listOpacity = useTransform(paneH, [collapsedH + 24, normalH * 0.75], [0, 1]);
-  const cardsOpacity = useTransform(paneH, [collapsedH, collapsedH + 70], [1, 0]);
-  const [cardsInteractive, setCardsInteractive] = useState(false);
-  useMotionValueEvent(paneH, 'change', (v) => { setCardsInteractive(v < collapsedH + 30); setDensity(v < 230 ? 's' : v < 400 ? 'm' : 'l'); });
-  // パネルの高さに応じて情報量を段階的に変える（文字を縮めるのではなく項目を省く：Q08・Q17）
-  const [density, setDensity] = useState<'s' | 'm' | 'l'>('m');
-
-  const settle = (toExpanded: boolean, toHidden = false) => {
-    expandedRef.current = toExpanded;
-    setExpanded(toExpanded);
-    // 円にするタスクがないときは、消えたままにせず線を残す
-    hiddenRef.current = toExpanded && toHidden;
-    setHidden(hiddenRef.current);
-    const target = hiddenRef.current ? 0 : toExpanded ? collapsedH : normalH;
-    if (reduce) paneH.set(target);
-    else void animate(paneH, target, SPRING);
-  };
-
-  // ---- 境界ハンドル：縦ドラッグのみで切替（タップでは拡張しない） ----
-  
-  const onHandleDown = (e: RPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || !gestureLock.acquire('split')) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    handleDrag.current = { y: e.clientY, h: paneH.get(), id: e.pointerId, moved: false, samples: [{ y: e.clientY, t: performance.now() }] };
-    paneH.stop();
-  };
-  const onHandleMove = (e: RPointerEvent<HTMLDivElement>) => {
-    const d = handleDrag.current;
-    if (!d || d.id !== e.pointerId) return;
-    const dy = e.clientY - d.y;
-    if (Math.abs(dy) > 3) d.moved = true;
-    d.samples.push({ y: e.clientY, t: performance.now() });
-    if (d.samples.length > 6) d.samples.shift();
-    let h = d.h + dy;
-    // 範囲外はゴムのように抵抗
-    if (h < collapsedH) h = collapsedH - Math.sqrt(collapsedH - h) * 2;
-    if (h > maxH) h = maxH + Math.sqrt(h - maxH) * 3;
-    paneH.set(h);
-  };
-  const onHandleUp = (e: RPointerEvent<HTMLDivElement>) => {
-    const d = handleDrag.current;
-    handleDrag.current = null;
-    gestureLock.release('split');
-    if (!d || d.id !== e.pointerId) return;
-    if (!d.moved) {
-      settle(expandedRef.current); // タップは何もしない（元の状態に戻すだけ）
-      return;
-    }
-    // 指を離す直前（約100ms）の速度で判定し、遅ければ位置で判定
-    const nowT = performance.now();
-    const recent = d.samples.filter((p) => nowT - p.t < 100);
-    const first = recent[0] ?? d.samples[0]!;
-    const v = (e.clientY - first.y) / Math.max(16, nowT - first.t); // px/ms（負＝上方向）
-    const h = paneH.get();
-    // 小さくするとコンパクト表示（円だけ）へ。カレンダーへの移動はコンパクト表示から始めた上スワイプだけ（1回の操作で2段階進めない：C01）。それ以外は離した位置を保持して保存
-    if (v < -0.9 || h < MIN_LIST - 30) return settle(true);
-    if (expandedRef.current && v > 0.6 && h < MIN_LIST) return settle(false);
-    const fixed = Math.min(maxH, Math.max(MIN_LIST, h));
-    expandedRef.current = false;
-    setExpanded(false);
-    if (reduce) paneH.set(fixed);
-    else void animate(paneH, fixed, SPRING);
-    void repo.updateSettings({ homeSplit: Math.round((fixed / Math.max(1, bodyH)) * 1000) / 1000 });
-  };
-  /** pointercancel（OSのジェスチャー・着信など）では開閉を確定せず、元の状態へ戻す */
-  const onHandleCancel = (e: RPointerEvent<HTMLDivElement>) => {
-    const d = handleDrag.current;
-    handleDrag.current = null;
-    gestureLock.release('split');
-    if (d && d.id === e.pointerId) settle(expandedRef.current);
-  };
-
-  // ---- コンパクト表示（円の列）での縦スワイプ：上へ＝カレンダーへ、下へ＝一覧を戻す（C01） ----
-  // 判定は生のポインター差分（圧縮後の座標ではない）。初動8pxまではタップ・横スクロールのまま
-  const cg = useRef<{ id: number; x: number; y: number; t: number; vertical: boolean; samples: { y: number; t: number }[] } | null>(null);
-  const goCalendar = () => {
-    setCalDate(homeDate);
-    void repo.updateSettings({ calendarView: settings.homeDays === 1 ? 'day' : '2day' });
-    setTab('calendar');
-  };
-  const onCompactDown = (e: RPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || !expandedRef.current) return;
-    cg.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), vertical: false, samples: [{ y: e.clientY, t: performance.now() }] };
-  };
-  const onCompactMove = (e: RPointerEvent<HTMLDivElement>) => {
-    const g = cg.current;
-    if (!g || g.id !== e.pointerId) return;
-    const dx = e.clientX - g.x;
-    const dy = e.clientY - g.y;
-    g.samples.push({ y: e.clientY, t: performance.now() });
-    if (g.samples.length > 6) g.samples.shift();
-    if (!g.vertical) {
-      if (Math.hypot(dx, dy) < 8) return;
-      if (Math.abs(dx) > Math.abs(dy)) { cg.current = null; return; } // 横は円の列のスクロール
-      if (!gestureLock.acquire('split')) { cg.current = null; return; }
-      g.vertical = true;
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    }
-  };
-  const onCompactUp = (e: RPointerEvent<HTMLDivElement>) => {
-    const g = cg.current;
-    cg.current = null;
-    if (!g || g.id !== e.pointerId || !g.vertical) return;
-    gestureLock.release('split');
-    const dy = e.clientY - g.y;
-    const nowT = performance.now();
-    const first = g.samples.find((p) => nowT - p.t < 100) ?? g.samples[0]!;
-    const v = (e.clientY - first.y) / Math.max(16, nowT - first.t);
-    // コンパクトからさらに上へ＝タスク表示を隠す（線だけ残す）。下へ＝一覧に戻す
-    if (dy <= -36 || v <= -0.65) return settle(true, true);
-    if (dy >= 36 || v >= 0.65) return settle(false);
-  };
-
-  // ---- 非表示のときの線：下へスライド（またはタップ）でタスク表示を戻す ----
-  const hg = useRef<{ id: number; y: number; t: number } | null>(null);
-  const restore = () => settle(true, false);
-  const onLineDown = (e: RPointerEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return;
-    hg.current = { id: e.pointerId, y: e.clientY, t: performance.now() };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-  };
-  const onLineMove = (e: RPointerEvent<HTMLButtonElement>) => {
-    const g = hg.current;
-    if (!g || g.id !== e.pointerId) return;
-    const dy = e.clientY - g.y;
-    if (dy > 0) paneH.set(Math.min(collapsedH || 40, dy * 0.6));
-  };
-  const onLineUp = (e: RPointerEvent<HTMLButtonElement>) => {
-    const g = hg.current;
-    hg.current = null;
-    if (!g || g.id !== e.pointerId) return;
-    const dy = e.clientY - g.y;
-    const v = dy / Math.max(16, performance.now() - g.t);
-    if (dy >= 24 || v >= 0.5) restore();
-    else settle(true, true);
-  };
-  const onCompactCancel = () => { if (cg.current?.vertical) gestureLock.release('split'); cg.current = null; };
-
-  // ホームは1日・2日だけ（3〜7日表示は廃止：Q22）
-  const days = settings.homeDays;
-  const events = useVisibleEvents(addDays(homeDate, -1), addDays(homeDate, days + 1), now);
-  const dayTasks = useMemo(() => orderHomeTasks(tasksForDay(tasks, homeDate), now), [tasks, homeDate, now]);
-  const doneCount = dayTasks.filter((t) => t.status === 'done').length;
-  const isToday = isSameDay(homeDate, now);
+  const dayTasks = useMemo(() => orderHomeTasks(tasksForDay(tasks, day), now), [tasks, day, now]);
+  const doneCount = dayTasks.filter((t) => t.status === 'done' || t.checked).length;
   const visibleTasks = useMemo(() => {
-    const end = addDays(homeDate, days);
-    return tasks.filter((t) => t.kind === 'do' && t.plannedStart != null && t.plannedStart < end && (t.plannedEnd ?? t.plannedStart) > homeDate - 86_400_000);
-  }, [tasks, homeDate, days]);
+    const end = addDays(day, 1);
+    return tasks.filter((t) => t.kind === 'do' && t.plannedStart != null && t.plannedStart < end && (t.plannedEnd ?? t.plannedStart) > day - 86_400_000);
+  }, [tasks, day]);
+  const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const lanes = useMemo(() => {
+    const d1 = addDays(day, 1);
+    const sessions: { sub: Subtask; task: Task }[] = [];
+    for (const s of allSubs) {
+      if (s.plannedStart == null || s.plannedEnd == null || s.plannedStart >= d1 || s.plannedEnd <= day) continue;
+      const t = taskById.get(s.taskId);
+      if (t) sessions.push({ sub: s, task: t });
+    }
+    const checks = tasks.filter((t) => t.kind === 'check' && t.checkAt != null && t.checkAt >= day && t.checkAt < d1);
+    const linkColor = new Map<string, string>();
+    for (const t of tasks) {
+      if (!t.sourceEventId) continue;
+      const ev = allEvents.find((e) => e.id === t.sourceEventId);
+      if (ev) linkColor.set(t.id, ev.extra?.color ?? calendarById.get(ev.calendarId)?.color ?? 'var(--blue)');
+    }
+    return { mainPct: LANE_PCT[settings.laneFocus], sessions, checks, linkColor };
+  }, [allSubs, taskById, tasks, day, allEvents, calendarById, settings.laneFocus]);
 
-  usePager(listRef, { x: listX, onPage: (dir) => setHomeDate(addDays(homeDate, dir)), reduceMotion: reduce });
+  // 注意（今日〜明日）と未割当・余白
+  const issues = useMemo(() => {
+    const evs = expandAll(allEvents, day - 86_400_000, addDays(day, 3));
+    return detectIssues({ events: evs, tasks, subtasks: allSubs, now, from: day, to: addDays(day, 1), opts: { fromHour: settings.suggestFromHour, toHour: settings.suggestToHour, stepMin: settings.suggestStepMin } });
+  }, [allEvents, tasks, allSubs, now, day, settings.suggestFromHour, settings.suggestToHour, settings.suggestStepMin]);
+  const inbox = useMemo(() => tasks.filter((t) => t.kind === 'do' && t.status !== 'done' && isUnscheduled(t) && !(subtasksByTask.get(t.id) ?? []).some((s) => s.plannedStart != null && !s.done)).length, [tasks, subtasksByTask]);
+  const free = useMemo(() => freeTime(day, busyItems(events, tasks, allSubs), { fromHour: settings.suggestFromHour, toHour: settings.suggestToHour, stepMin: 15 }), [day, events, tasks, allSubs, settings.suggestFromHour, settings.suggestToHour]);
+  const next = useMemo(() => nextAction(events, tasks, now), [events, tasks, now]);
+  const alertCount = issues.filter((i) => i.severity !== 'info').length;
 
-  const narrow = navW < 360;
+  const goCalendar = () => { setCalDate(day); void repo.updateSettings({ calendarView: 'day' }); setTab('calendar'); };
   const moreItems: (MenuItem | 'separator')[] = [
     { label: '今日へ移動', icon: 'today', disabled: isToday, onSelect: () => setHomeDate(startOfDay(Date.now())) },
-    // 1日／2日の切替はヘッダーのボタンだけ（二重にしない：C02）。代わりに日付を選ぶ
     { label: '日付を選択', icon: 'calendar', onSelect: () => setDatePick(true) },
-    { label: expanded ? 'タスク一覧を表示' : 'タスクをコンパクト表示', icon: 'expand', onSelect: () => settle(!expanded) },
-    ...(hidden ? [] : [{ label: 'タスク表示を隠す', icon: 'expand' as const, onSelect: () => settle(true, true) }]),
     { label: 'カレンダーで表示', icon: 'calendar', onSelect: goCalendar },
+    { label: '1日の振り返り', icon: 'history', onSelect: () => openSheet({ kind: 'review', day }) },
+    'separator',
+    { label: '予定とタスクを同じ幅で', icon: 'lanes', checked: settings.laneFocus === 'both', onSelect: () => void repo.updateSettings({ laneFocus: 'both' }) },
+    { label: '予定を広く', icon: 'calendar', checked: settings.laneFocus === 'main', onSelect: () => void repo.updateSettings({ laneFocus: 'main' }) },
+    { label: 'タスクを広く', icon: 'checklist', checked: settings.laneFocus === 'detail', onSelect: () => void repo.updateSettings({ laneFocus: 'detail' }) },
   ];
-  const hd = new Date(homeDate);
+  const hd = new Date(day);
+  const focus = (l: 'main' | 'detail') => void repo.updateSettings({ laneFocus: settings.laneFocus === l ? 'both' : l });
+  const dayEvents = events.filter((e) => e.start < addDays(day, 1) && e.end > day && !e.extra?.allDay);
+  const collapsed = settings.todaySummaryCollapsed;
 
   return (
-    <div className="screen home" data-testid="home-screen" data-expanded={expanded} data-hidden={hidden}>
+    <div className="screen home today" data-testid="home-screen" data-lane-focus={settings.laneFocus}>
       <header className="nav home-nav">
-        {/* 日付ヘッダー（Q19）：月を小さく、日と曜日を大きく。今日は赤い印、別の日はタップで今日へ */}
-        <button type="button" className="date-head" onClick={() => !isToday && setHomeDate(startOfDay(Date.now()))} aria-label={`${formatDayLabel(homeDate)}${isToday ? '（今日）' : '。タップで今日へ'}`} data-testid="home-date">
+        <button type="button" className="date-head" onClick={() => !isToday && setHomeDate(startOfDay(Date.now()))} aria-label={`${formatDayLabel(day)}${isToday ? '（今日）' : '。タップで今日へ'}`} data-testid="home-date">
           <span className="date-month">{hd.getFullYear()}年{hd.getMonth() + 1}月</span>
           <span className="date-main">
             <span className={`date-day ${isToday ? 'today' : ''}`}>{hd.getDate()}日</span>
@@ -256,111 +105,102 @@ export function HomeScreen() {
           </span>
         </button>
         <div className="nav-actions gap">
-          <button type="button" className="gbtn glass glass-i" aria-label={settings.homeDays === 1 ? '2日表示に切り替え' : '1日表示に切り替え'} data-testid="days-toggle" data-days={settings.homeDays} onClick={() => void repo.updateSettings({ homeDays: settings.homeDays === 1 ? 2 : 1 })}>
-            <Icon name={settings.homeDays === 1 ? 'days1' : 'days2'} size={20} />
-          </button>
-          {!narrow && <InlineSearch target="home" />}
-          {/* ＋は共通の作成画面を直接開く（Q20 を Q38・Q63 で上書き）。ホームの初期種別はタスク */}
-          <button type="button" className="gbtn glass glass-i tint" aria-label="追加" onClick={() => openSheet({ kind: 'edit', mode: 'task' })} data-testid="home-add"><Icon name="plus" size={20} strokeWidth={2.2} /></button>
-          <MenuButton label="その他の操作" items={moreItems} className="gbtn glass glass-i">
+          <InlineSearch target="home" />
+          <MenuButton label="その他の操作" items={moreItems} className="gbtn glass glass-i" testId="home-more">
             <Icon name="more" size={20} strokeWidth={3} />
           </MenuButton>
+          <SettingsButton />
         </div>
       </header>
 
-      <div className="home-body" ref={bodyRef}>
-        {/* タスク部分はカレンダーの上に浮かぶガラス。下のカレンダーがぼやけて透ける（v3.2） */}
-        <div className="task-overlay" ref={overlayRef}>
-        <div className="task-glass">
-        <motion.section className="task-pane" data-density={density} style={{ height: paneH }} aria-label="タスク一覧" data-testid="task-pane">
-          <motion.div className="task-list-wrap" style={{ opacity: listOpacity, pointerEvents: cardsInteractive ? 'none' : 'auto' }} aria-hidden={cardsInteractive}>
-            <div className="task-list" ref={listRef} data-testid="home-task-list">
-              <motion.div style={{ x: listX }}>
-                <div className="list-heading">
-                  <span>{isToday ? '今日のタスク' : `${formatDayLabel(homeDate)}のタスク`}</span>
-                  {dayTasks.length > 0 && <span className="list-count">{doneCount}/{dayTasks.length}</span>}
-                </div>
-                {dayTasks.length === 0 ? (
-                  <div className="empty-list">
-                    <p>時間が指定されたタスクはありません</p>
-                    <button type="button" className="link-btn" onClick={() => openSheet({ kind: 'edit', mode: 'task' })}>タスクを追加</button>
-                  </div>
-                ) : (
-                  <div className="rows">
-                    {dayTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} subtasks={subtasksByTask.get(t.id) ?? []} now={now} />
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-            </div>
-          </motion.div>
-          <motion.div className="cards-wrap" style={{ opacity: cardsOpacity, pointerEvents: cardsInteractive && !hidden ? 'auto' : 'none' }} aria-hidden={!cardsInteractive || hidden}
-            onPointerDown={onCompactDown} onPointerMove={onCompactMove} onPointerUp={onCompactUp} onPointerCancel={onCompactCancel} data-testid="compact-row">
-            <FloatingCards tasks={dayTasks} subtasksByTask={subtasksByTask} now={now} />
-          </motion.div>
-        </motion.section>
-
-        {/* コンパクト表示ではつまみ・線・その余白を描かない（C01）。戻すのは円の列の下スワイプかメニュー */}
-        {!expanded && (
-          <div
-            className="split-handle"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="タスクとカレンダーの境界。上下キーで高さを変更、Home でコンパクト表示"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round((normalH / Math.max(1, bodyH)) * 100)}
-            aria-valuetext={`タスク一覧 ${Math.round((normalH / Math.max(1, bodyH)) * 100)}%`}
-            tabIndex={0}
-            style={{ height: HANDLE_H }}
-            data-testid="split-handle"
-            onPointerDown={onHandleDown}
-            onPointerMove={onHandleMove}
-            onPointerUp={onHandleUp}
-            onPointerCancel={onHandleCancel}
-            onKeyDown={(e) => {
-              // 無段階の比率をキーボードでも変えられる（R3）
-              const step = Math.round(bodyH * 0.05);
-              let h: number | null = null;
-              if (e.key === 'ArrowUp') h = Math.max(MIN_LIST, normalH - step);
-              if (e.key === 'ArrowDown') h = Math.min(maxH, normalH + step);
-              if (e.key === 'Home') { e.preventDefault(); return settle(true); }
-              if (h == null) return;
-              e.preventDefault();
-              void repo.updateSettings({ homeSplit: Math.round((h / Math.max(1, bodyH)) * 1000) / 1000 });
-            }}
-          >
-            <span className="split-grip" />
-          </div>
-        )}
-        </div>
-        {hidden && (
-          <button type="button" className="hidden-line" aria-label="タスク表示を戻す（下へスライド）" data-testid="tasks-hidden-line"
-            onPointerDown={onLineDown} onPointerMove={onLineMove} onPointerUp={onLineUp} onPointerCancel={() => { hg.current = null; settle(true, true); }}
-            onClick={(e) => { if (e.detail === 0) restore(); }}>
-            <span className="hidden-line-bar" />
+      {/* 要約：今やること → 注意・未割当・タスク・余白（概要 → 詳細の順に1回のタップで開く：IOS-002・IOS-003） */}
+      <section className={`today-summary ${collapsed ? 'collapsed' : ''}`} aria-label="今日の要約" data-testid="today-summary">
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.div key="now" initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }} animate={reduce ? { opacity: 1 } : { opacity: 1, height: 'auto' }} exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }} transition={reduce ? { duration: 0.12 } : SPRING.sheet} style={{ overflow: 'hidden' }}>
+              <NowCard next={next} tasks={tasks} subtasksByTask={subtasksByTask} studioTypes={studioTypes} now={now} isToday={isToday} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <div className="today-chips" role="group" aria-label="今日の状況">
+          <Chip icon="warning" tone={alertCount ? 'warn' : 'quiet'} label="注意" value={issues.length ? `${issues.length}` : 'なし'} onClick={() => openSheet({ kind: 'issues', day })} testId="chip-issues" />
+          <Chip icon="inbox" tone={inbox ? 'tint' : 'quiet'} label="未割当" value={`${inbox}`} onClick={() => openSheet({ kind: 'inbox' })} testId="chip-inbox" />
+          <Chip icon="checklist" tone="quiet" label={isToday ? '今日のタスク' : 'タスク'} value={dayTasks.length ? `${doneCount}/${dayTasks.length}` : '0'} onClick={() => openSheet({ kind: 'dayTasks', day })} testId="chip-tasks" />
+          <Chip icon="sun" tone="quiet" label="余白" value={`${Math.round(free.ratio * 100)}%`} onClick={() => openSheet({ kind: 'review', day })} testId="chip-free" />
+          <button type="button" className="today-collapse" aria-label={collapsed ? '要約を広げる' : '要約をたたむ'} aria-expanded={!collapsed} onClick={() => void repo.updateSettings({ todaySummaryCollapsed: !collapsed })} data-testid="summary-toggle">
+            <Icon name="chevronDown" size={16} strokeWidth={2.6} style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 240ms var(--spring)' }} />
           </button>
-        )}
+        </div>
+      </section>
 
-        </div>
-        <div className="home-timeline">
-          <Timeline
-            testId="home-timeline"
-            startDay={homeDate}
-            days={days}
-            now={now}
-            events={events}
-            tasks={visibleTasks}
-            subtasksByTask={subtasksByTask}
-            calendarById={calendarById}
-            dayLabels={days > 1 ? 'all' : 'afterFirst'}
-            onPage={(dir) => setHomeDate(addDays(homeDate, dir))}
-            {...actions}
-          />
-        </div>
+      {/* レーンの見出し（タップでそのレーンを広く：IOS-006） */}
+      <div className="lane-head" style={{ ['--main' as string]: `${lanes.mainPct}%` }}>
+        <span className="lane-gutter" aria-hidden />
+        <button type="button" className={`lane-label main ${settings.laneFocus === 'main' ? 'on' : ''}`} onClick={() => focus('main')} aria-pressed={settings.laneFocus === 'main'} data-testid="lane-main">
+          <Icon name="calendar" size={14} strokeWidth={2.3} />予定<span className="lane-count">{dayEvents.length}</span>
+        </button>
+        <button type="button" className={`lane-label detail ${settings.laneFocus === 'detail' ? 'on' : ''}`} onClick={() => focus('detail')} aria-pressed={settings.laneFocus === 'detail'} data-testid="lane-detail">
+          <Icon name="checklist" size={14} strokeWidth={2.3} />タスク<span className="lane-count">{dayTasks.length + lanes.sessions.length}</span>
+        </button>
       </div>
-      <DatePickerPopup open={datePick} value={homeDate} title="日付を選択" onClose={() => setDatePick(false)} onPick={(d) => { setDatePick(false); setHomeDate(d); }} />
+      <div className="home-timeline">
+        <Timeline
+          testId="home-timeline"
+          startDay={day}
+          days={1}
+          now={now}
+          events={events}
+          tasks={visibleTasks}
+          subtasksByTask={subtasksByTask}
+          calendarById={calendarById}
+          dayLabels="none"
+          lanes={lanes}
+          onPage={(dir) => setHomeDate(addDays(day, dir))}
+          {...actions}
+        />
+      </div>
+      <DatePickerPopup open={datePick} value={day} title="日付を選択" onClose={() => setDatePick(false)} onPick={(d) => { setDatePick(false); setHomeDate(d); }} />
+    </div>
+  );
+}
+
+function Chip({ icon, label, value, tone, onClick, testId }: { icon: IconName; label: string; value: string; tone: 'warn' | 'tint' | 'quiet'; onClick: () => void; testId: string }) {
+  return (
+    <button type="button" className={`today-chip ${tone}`} onClick={onClick} data-testid={testId} aria-label={`${label} ${value}`}>
+      <Icon name={icon} size={15} strokeWidth={2.3} />
+      <span className="chip-label">{label}</span>
+      <span className="chip-value">{value}</span>
+    </button>
+  );
+}
+
+/** 今やること（P24）。実行中なら進捗と操作、そうでなければ次の1件だけ */
+function NowCard({ next, tasks, subtasksByTask, studioTypes, now, isToday }: { next: ReturnType<typeof nextAction>; tasks: Task[]; subtasksByTask: Map<string, Subtask[]>; studioTypes: ReturnType<typeof useData>['studioTypes']; now: number; isToday: boolean }) {
+  const { openSheet, showToast } = useUIActions();
+  const task = next.ref?.entity === 'task' ? tasks.find((t) => t.id === next.ref!.id) : undefined;
+  const open = () => { if (next.ref) openSheet({ kind: 'info', entity: next.ref.entity, id: next.ref.id }); else openSheet({ kind: 'quickAdd' }); };
+  const act = async (a: 'start' | 'pause' | 'finish') => {
+    if (!task) return;
+    try { await repo.taskAction(task.id, a); showToast(a === 'start' ? '開始しました' : a === 'pause' ? '停止しました' : '完了しました'); } catch (e) { showToast(e instanceof Error ? e.message : '操作できませんでした'); }
+  };
+  const label = { continue: '実行中', start: '次にやること', leave: '出発', event: '予定の最中', plan: '時間を決める', free: isToday ? 'この後' : 'この日' }[next.kind];
+  const pr = task ? progressOf(task, subtasksByTask.get(task.id) ?? [], studioTypes, now) : null;
+  return (
+    <div className={`now-card ${next.kind}`} data-testid="now-card" data-kind={next.kind}>
+      <button type="button" className="now-main" onClick={open} aria-label={`${label}：${next.title}、${next.detail}。タップで詳細`}>
+        {task ? <Ring value={pr?.value ?? null} ideal={idealProgress(task, now)} size={40} icon={task.icon} kind="do" running={task.status === 'running'} /> : <span className={`now-ico ${next.kind}`} aria-hidden><Icon name={next.kind === 'leave' ? 'train' : next.kind === 'event' ? 'calendar' : next.kind === 'free' ? 'sun' : 'clock'} size={20} strokeWidth={2.2} /></span>}
+        <span className="now-text">
+          <span className="now-label">{label}</span>
+          <span className="now-title" data-user-text>{next.title}</span>
+          <span className="now-detail">{task?.status === 'running' ? `${elapsed(workedMs(task, now))}${pr?.value != null ? `・実績${Math.round(pr.value * 100)}%` : ''}` : next.detail}{next.at != null && next.kind !== 'continue' && next.at > now ? `（${formatHm(next.at)}）` : ''}</span>
+        </span>
+      </button>
+      <div className="now-actions">
+        {task?.status === 'running' && <><button type="button" className="now-btn" onClick={() => void act('pause')} aria-label="停止" data-testid="now-pause"><Icon name="pause" size={18} strokeWidth={2.4} /></button><button type="button" className="now-btn green" onClick={() => void act('finish')} aria-label="完了" data-testid="now-finish"><Icon name="check" size={18} strokeWidth={2.6} /></button></>}
+        {task && next.kind === 'start' && <button type="button" className="now-btn tint" onClick={() => void act('start')} aria-label="開始" data-testid="now-start"><Icon name="play" size={18} strokeWidth={2.4} /></button>}
+        {next.kind === 'plan' && <button type="button" className="now-btn tint" onClick={() => openSheet({ kind: 'inbox' })} aria-label="未割当を開く" data-testid="now-plan"><Icon name="inbox" size={18} strokeWidth={2.2} /></button>}
+        {next.kind === 'free' && <button type="button" className="now-btn tint" onClick={() => openSheet({ kind: 'quickAdd' })} aria-label="追加" data-testid="now-add"><Icon name="plus" size={18} strokeWidth={2.4} /></button>}
+      </div>
     </div>
   );
 }

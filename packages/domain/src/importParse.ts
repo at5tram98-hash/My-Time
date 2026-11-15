@@ -1,3 +1,4 @@
+import type { CalEvent as CalEventT } from './types';
 import type { CalEvent, EpochMs } from './types';
 import { overlaps } from './layout';
 import { fromWall, wall } from './time';
@@ -108,4 +109,48 @@ export function classifyImport(c: ImportCandidate, events: readonly CalEvent[]):
   if (same) return { kind: 'same', existing: same, changed: same.title !== c.title || same.start !== c.start || same.end !== c.end };
   const ov = events.filter((e) => overlaps(e, c));
   return ov.length ? { kind: 'overlap', with: ov } : { kind: 'new' };
+}
+
+// ---------------- 書き出し（P15：ICS） ----------------
+const icsEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const icsUtc = (t: number) => new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+const icsDay = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
+/** 75 オクテットごとに折り返す（RFC 5545） */
+function fold(line: string): string {
+  const enc = new TextEncoder();
+  const out: string[] = [];
+  let cur = '';
+  for (const ch of line) {
+    if (enc.encode(cur + ch).length > 73) { out.push(cur); cur = ` ${ch}`; } else cur += ch;
+  }
+  out.push(cur);
+  return out.join('\r\n');
+}
+
+/**
+ * 予定を iCalendar（.ics）に書き出す。繰り返しは RRULE、取り消した回は EXDATE、その回だけの変更は RECURRENCE-ID 付きの別 VEVENT。
+ * 時刻は UTC で出力し、元のタイムゾーンは X-MYTIME-TZ に残す。
+ */
+export function toICS(events: readonly CalEventT[], calName = 'My Time', stamp = Date.now()): string {
+  const L: string[] = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//My Time//JA', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${icsEscape(calName)}`];
+  const freq = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY' } as const;
+  for (const e of events) {
+    const allDay = !!e.extra?.allDay;
+    const dt = (k: string, t: number) => (allDay ? `${k};VALUE=DATE:${icsDay(t)}` : `${k}:${icsUtc(t)}`);
+    const base = [`UID:${e.id}@mytime`, `DTSTAMP:${icsUtc(stamp)}`, dt('DTSTART', e.start), dt('DTEND', e.end), `SUMMARY:${icsEscape(e.title)}`, ...(e.notes ? [`DESCRIPTION:${icsEscape(e.notes)}`] : []), ...(e.extra?.place?.name ? [`LOCATION:${icsEscape(e.extra.place.name)}`] : []), `X-MYTIME-TZ:${e.timeZone}`];
+    L.push('BEGIN:VEVENT', ...base);
+    if (e.recurrence) {
+      const r = e.recurrence;
+      const by = r.freq === 'weekly' && r.byWeekday?.length ? `;BYDAY=${r.byWeekday.map((d) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][d]).join(',')}` : '';
+      L.push(`RRULE:FREQ=${freq[r.freq]};INTERVAL=${r.interval}${by}${r.until != null ? `;UNTIL=${icsUtc(r.until)}` : ''}`);
+      for (const x of e.exceptions) if (x.kind === 'cancelled' || x.kind === 'archived') L.push(allDay ? `EXDATE;VALUE=DATE:${icsDay(x.originalStart)}` : `EXDATE:${icsUtc(x.originalStart)}`);
+    }
+    L.push('END:VEVENT');
+    for (const x of e.exceptions) {
+      if (x.kind !== 'override') continue;
+      L.push('BEGIN:VEVENT', `UID:${e.id}@mytime`, `DTSTAMP:${icsUtc(stamp)}`, `RECURRENCE-ID:${icsUtc(x.originalStart)}`, dt('DTSTART', x.start ?? x.originalStart), dt('DTEND', x.end ?? x.originalStart + (e.end - e.start)), `SUMMARY:${icsEscape(x.title ?? e.title)}`, 'END:VEVENT');
+    }
+  }
+  L.push('END:VCALENDAR');
+  return L.map(fold).join('\r\n') + '\r\n';
 }

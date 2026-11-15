@@ -32,6 +32,10 @@ export const ITEM_ICONS = {
   plane: '旅行',
   dining: '食事',
   person: '人',
+  yen: 'お金',
+  train: '移動',
+  sun: '朝',
+  people: 'グループ',
   circle: 'その他',
 } as const;
 

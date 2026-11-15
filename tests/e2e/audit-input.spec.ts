@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { at, openApp, openNewTask, seed, task } from './helpers';
+import { at, openApp, openDayList, openNewTask, openSettings, seed, task } from './helpers';
 
 /** v3.1 点検：主要な入力欄に1文字ずつ入力し、値とフォーカスが保たれるか。画面を巡回してエラーが出ないか */
 async function typeKeep(page: Page, loc: Locator, text: string) {
@@ -34,15 +34,19 @@ test('点検：サブタスク・カレンダー・検索の入力欄', async ({
   page.on('pageerror', (e) => errors.push(e.message));
   await openApp(page);
   await seed(page, { tasks: [task({ id: 'a1', title: '点検用', plannedStart: at(14), plannedEnd: at(15) })] });
+  await openDayList(page);
   await page.getByTestId('task-row-a1').locator('.task-row-main').click();
   await typeKeep(page, page.getByLabel('サブタスク名'), '資料');
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('task-info')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('day-tasks')).toHaveCount(0);
   await page.getByTestId('tab-calendar').click();
   await page.getByTestId('cal-filter').click();
   await page.getByTestId('filter-add-calendar').click();
   await typeKeep(page, page.getByTestId('filter-add-name'), 'バイト');
   await page.keyboard.press('Escape');
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('nav-calendars').click();
   await page.getByRole('button', { name: /追加/ }).first().click();
   await typeKeep(page, page.getByTestId('calendar-name'), '新規');
@@ -54,8 +58,8 @@ test('点検：全タブ巡回でエラーなし', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::|404/.test(m.text())) errors.push(m.text()); });
   await openApp(page);
-  for (const t of ['tab-calendar', 'tab-tasks', 'tab-analysis', 'tab-other', 'tab-home']) {
-    await page.getByTestId(t).click();
+  for (const t of ['tab-calendar', 'tab-tasks', 'tab-analysis', 'open-settings', 'settings-close', 'tab-home']) {
+    await page.locator(`[data-testid="${t}"]:visible`).first().click();
     await page.waitForTimeout(400);
   }
   expect(errors).toEqual([]);

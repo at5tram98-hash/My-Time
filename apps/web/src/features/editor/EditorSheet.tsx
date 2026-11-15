@@ -20,6 +20,10 @@ import { ColorStrip, DatePickerPopup, describeRule, IconStrip, NotifyPopup, noti
 import { PlaceTravelPopup, placeSummary } from './place';
 import { ChoicePopup, normalizeTags, PriorityButtons, PRIO_TONE, TagInput } from './inputs';
 import { StudioFieldsForm } from '../studio/StudioFieldsForm';
+import { defaultDetails, isSpecType, SPEC_BY_ID, type SpecTypeId } from '@my-time/domain';
+import { SpecForm } from '../spec/SpecForm';
+import { SpecTypeGrid } from '../quickadd/QuickAddSheet';
+import { SpecBadge } from '../spec/SpecBadge';
 
 type Page = 'basic' | 'option' | 'special';
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -90,6 +94,10 @@ interface Draft {
   notes: string;
   priority: 0 | 1 | 2 | 3; flagged: boolean; tags: string[];
   studioTypeId: string | null; studioValues: Record<string, unknown>;
+  /** 専門の種類（S01〜S25）と詳細 */
+  specType: SpecTypeId | null; specDetails: Record<string, unknown>;
+  /** 先に終えるタスク（P28） */
+  dependsOn: string[];
 }
 
 /**
@@ -131,7 +139,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
       timed: exTask ? exTask.plannedStart != null : d.plannedStart !== null,
       taskKind: exTask?.kind ?? (d.kind as TaskKind | undefined) ?? 'do',
       checkAt: exTask?.checkAt ?? null,
-      estimate: exTask?.estimateMinutes ?? null,
+      estimate: exTask?.estimateMinutes ?? (d.estimateMinutes as number | undefined) ?? null,
       rule: exEvent?.recurrence ?? (exTask?.repeat ? { freq: exTask.repeat.freq, interval: exTask.repeat.interval, byWeekday: null, until: null } : null),
       calendarId: cal0,
       taskCalendarId: exTask?.calendarId ?? '',
@@ -149,6 +157,13 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
       notes: instance?.notes ?? exEvent?.notes ?? exTask?.notes ?? '',
       priority: exTask?.priority ?? 0, flagged: exTask?.flagged ?? false, tags: exTask?.tags ?? [],
       studioTypeId: x.studio?.typeId ?? (initialMode === 'event' ? calendarById.get(cal0)?.studioTypeId ?? null : null), studioValues: x.studio?.values ?? {},
+      ...(() => {
+        const st = isSpecType(x.spec?.type) ? x.spec!.type as SpecTypeId : isSpecType(d.specType) ? d.specType : null;
+        const det = x.spec?.details ?? (d.specDetails as Record<string, unknown> | undefined) ?? (st ? defaultDetails(st) : {});
+        const clean = { ...det }; delete clean.__allDay;
+        return { specType: st, specDetails: clean };
+      })(),
+      dependsOn: x.dependsOn ?? [],
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -173,8 +188,9 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
   const calendar = calendarById.get(v.calendarId);
   const evKind = calendar?.kind ?? 'general';
   const studioType = v.studioTypeId ? studioTypes.find((t) => t.id === v.studioTypeId) : undefined;
-  const hasSpecial = v.mode === 'event' ? evKind === 'class' || evKind === 'job' || !!studioType : v.special !== 'normal' || !!studioType;
-  const typeLabel = v.mode === 'event' ? calendar?.name ?? '一般' : studioType?.name ?? { normal: '一般', assignment: '課題', testPrep: 'テスト対策' }[v.special];
+  const hasSpecial = !!v.specType || (v.mode === 'event' ? evKind === 'class' || evKind === 'job' || !!studioType : v.special !== 'normal' || !!studioType);
+  const specDef = v.specType ? SPEC_BY_ID[v.specType] : null;
+  const typeLabel = specDef?.name ?? (v.mode === 'event' ? calendar?.name ?? '一般' : studioType?.name ?? { normal: '一般', assignment: '課題', testPrep: 'テスト対策' }[v.special]);
   const previewColor = v.color ?? (v.mode === 'event' ? calendar?.color : studioType?.color) ?? '#0A84FF';
 
   const switchPage = (p: Page) => {
@@ -218,6 +234,9 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
     urls: v.urls.filter((u) => u.url.trim()),
     attachments: v.attachments,
     studio: studioType ? { typeId: studioType.id, version: studioType.version, values: v.studioValues } : prev?.studio && !v.studioTypeId ? null : prev?.studio ?? null,
+    spec: v.specType ? { type: v.specType, details: v.specDetails } : prev?.spec ? null : null,
+    ...(v.mode === 'task' ? { dependsOn: v.dependsOn.filter((x) => x !== id) } : {}),
+    origin: prev?.origin ?? ((defaults as Record<string, unknown> | undefined)?.specType ? 'text' : 'manual'),
   });
 
   const save = async () => {
@@ -393,6 +412,26 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
     showToast('削除しました');
   };
 
+  // 専門の種類を選ぶ（S01〜S25）。予定・タスクの向きや既存の種類（授業カレンダー・勤務先・課題・テスト対策）も合わせる
+  const chooseSpec = (t: SpecTypeId | null) => {
+    setPick(null);
+    if (!t) return setV((o) => ({ ...o, specType: null, specDetails: {} }));
+    const def = SPEC_BY_ID[t];
+    if (!isNew && def.entity !== v.mode) return showToast(`${def.name}は${def.entity === 'event' ? '予定' : 'タスク'}の種類です。保存済みのものは予定とタスクを切り替えられません`);
+    setV((o) => {
+      const mode = isNew ? def.entity : o.mode;
+      const job = calendars.find((c) => c.kind === 'job');
+      const cls = calendars.find((c) => c.kind === 'class');
+      const calendarId = mode === 'event' && t === 'shift' && job ? job.id : mode === 'event' && t === 'class' && cls ? cls.id : o.calendarId;
+      return {
+        ...o, mode, specType: t, specDetails: { ...defaultDetails(t), ...(o.specType === t ? o.specDetails : {}) },
+        calendarId, studioTypeId: null,
+        ...(mode === 'task' ? { taskKind: def.taskKind, special: t === 'assignment' ? 'assignment' as const : t === 'exam' ? 'testPrep' as const : 'normal' as const, icon: isNew ? def.icon : o.icon } : {}),
+      };
+    });
+  };
+  const [depsOpen, setDepsOpen] = useState(false);
+
   const tabs: { id: Page; label: string }[] = [{ id: 'basic', label: '基本' }, { id: 'option', label: 'オプション' }, ...(hasSpecial ? [{ id: 'special' as Page, label: typeLabel }] : [])];
   const swipe = useRef<{ x: number; y: number } | null>(null);
 
@@ -436,7 +475,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
           </div>
         )}
         <div className="ed-preview">
-          {v.mode === 'task' ? <TaskBadge icon={v.icon} kind={v.taskKind} size={48} /> : <EventBadge icon={v.icon} color={previewColor} size={48} />}
+          {v.specType ? <SpecBadge type={v.specType} entity={v.mode} size={48} /> : v.mode === 'task' ? <TaskBadge icon={v.icon} kind={v.taskKind} size={48} /> : <EventBadge icon={v.icon} color={previewColor} size={48} />}
           <input className="ed-title" value={v.title} onChange={(e) => set('title', e.target.value)} placeholder={v.mode === 'event' ? '予定のタイトル' : 'タスクのタイトル'} aria-label="タイトル" data-testid="editor-title" />
         </div>
 
@@ -529,6 +568,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
                   <PriorityButtons value={v.priority} onChange={(p) => set('priority', p)} />
                 </div>
                 <Row icon="flag" color="#FF9500" label="フラグ"><Toggle label="フラグ" checked={v.flagged} onChange={(b) => set('flagged', b)} /></Row>
+                <Row icon="clock" color="#8E8E93" label="先に終えるタスク" onClick={() => setDepsOpen(true)} testId="editor-deps">{v.dependsOn.length ? `${v.dependsOn.length}件` : 'なし'}</Row>
               </div></div>
               <div className="group-header">タグ</div>
               <div className="group"><div className="group-body">
@@ -592,6 +632,7 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
 
         {/* ---------------- 専用 ---------------- */}
         <div className="ed-page" hidden={page !== 'special'} data-testid="editor-page-special">
+          {v.specType && <SpecForm type={v.specType} values={v.specDetails} onChange={(d) => set('specDetails', d)} />}
           {v.mode === 'event' && evKind === 'class' && (
             <>
               <div className="group-header">授業</div>
@@ -682,7 +723,22 @@ export function EditorSheet({ mode: initialMode, id, defaults, depth }: { mode: 
         items={[...new Set([...categories.map((c) => c.name), ...tasks.map((t) => t.category).filter((c): c is string => !!c), v.category].filter(Boolean))].map((name) => { const c = categories.find((x) => x.name === name); return { value: name, label: name, badge: c ? <EventBadge icon={c.icon} color={c.color} size={28} /> : undefined }; })} />
       <ChoicePopup open={pick === 'calendar'} title="カレンダー" value={v.taskCalendarId} onClose={() => setPick(null)} onPick={(c) => { setPick(null); set('taskCalendarId', c); }} testId="calendar-popup"
         items={calendars.map((c) => ({ value: c.id, label: c.name, badge: <EventBadge icon={c.icon} color={c.color} size={28} fallback={defaultCalendarIcon(c.kind)} /> }))} />
+      <Popup open={depsOpen} title="先に終えるタスク" onClose={() => setDepsOpen(false)} onDone={() => setDepsOpen(false)} testId="deps-popup" tall>
+        <p className="muted small">選んだタスクが終わるまで、このタスクを完了にするときに確認します。</p>
+        <div className="group"><div className="group-body">
+          {tasks.filter((t) => t.id !== id && t.status !== 'done' && !t.checked).slice(0, 80).map((t) => (
+            <button key={t.id} type="button" role="checkbox" aria-checked={v.dependsOn.includes(t.id)} className="row row-button" onClick={() => set('dependsOn', v.dependsOn.includes(t.id) ? v.dependsOn.filter((x) => x !== t.id) : [...v.dependsOn, t.id].slice(0, 20))}>
+              <span className={`sel-mark ${v.dependsOn.includes(t.id) ? 'on' : ''}`} aria-hidden><Icon name="check" size={12} strokeWidth={3} /></span>
+              <span className="row-label" data-user-text>{t.title}</span>
+            </button>
+          ))}
+        </div></div>
+      </Popup>
       <Popup open={pick === 'type'} title="種類" onClose={() => setPick(null)} testId="type-popup" tall>
+        <div className="group-header">専門の種類（選んだときだけ項目が増えます）</div>
+        {v.specType && <button type="button" className="type-card" onClick={() => chooseSpec(null)} data-testid="spec-clear"><SpecBadge type={null} size={40} /><span className="ed-row-label">専門の種類を外す<span className="sub-label">入力した詳細は消さずに外します</span></span></button>}
+        <SpecTypeGrid onPick={(t) => chooseSpec(t)} value={v.specType} entity={isNew ? undefined : v.mode} />
+        <div className="group-header">{v.mode === 'event' ? 'カレンダー' : '基本の種類'}</div>
         {v.mode === 'event' ? (
           <>
             {calendars.map((c) => {

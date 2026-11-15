@@ -1,10 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, event, openApp, openNewEvent, pickTime, readStore, saveEditor, seed, task } from './helpers';
+import { at, event, openApp, openDayList, openNewEvent, openSettings, pickTime, readStore, saveEditor, seed, task } from './helpers';
 
 /** Phase 2 の画面操作（ローカルのみ。サーバー連携は fullstack.spec.ts） */
 
 async function toOther(page: Page) {
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await expect(page.getByTestId('other-screen')).toBeVisible();
 }
 
@@ -162,6 +162,7 @@ test.describe('Phase 2', () => {
   test('自動予約：開始予約の時刻を過ぎるとタスクが自動で開始される', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'ar', title: '英単語', plannedStart: at(11), plannedEnd: at(11, 30) })] });
+    await openDayList(page);
     await page.locator('[data-task-title="英単語"]').first().click();
     await page.getByTestId('run-ar').click();
     await page.getByTestId('ar-start').fill('2026-10-12T10:45');

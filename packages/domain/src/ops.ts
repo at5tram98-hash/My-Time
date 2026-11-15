@@ -39,6 +39,25 @@ export interface PlannedNotice {
   body: string;
   /** タップしたときに開く対象 */
   target: { kind: 'task' | 'event' | 'settings'; id: string | null };
+  /** 重要度（P41）。high＝出発・勤務・開始時刻、normal＝それ以外 */
+  priority?: 'high' | 'normal';
+}
+
+/** 通知の好み（P42・P43）。省略時は従来どおり */
+export interface NoticePrefs {
+  /** 静穏時間（時。from>to は日付をまたぐ）。null で無効 */
+  quietFrom: number | null;
+  quietTo: number | null;
+  /** 静穏時間でも重要な通知（出発・勤務・開始時刻）は送る */
+  quietAllowImportant: boolean;
+  /** 移動時間のある予定で「出発の時刻」を知らせる */
+  departure: boolean;
+}
+
+export function inQuietHours(at: EpochMs, from: number | null, to: number | null): boolean {
+  if (from == null || to == null || from === to) return false;
+  const h = (at - startOfDay(at)) / HOUR;
+  return from < to ? h >= from && h < to : h >= from || h < to;
 }
 
 export const NOT_STARTED_BODY = 'タスク未開始。タスクを修正するか、今すぐ開始してください。';
@@ -58,7 +77,7 @@ export function beforeLabel(m: number): string {
   return `${m}分後`;
 }
 
-export function planNotices(tasks: readonly Task[], events: readonly CalEvent[], employers: readonly Employer[], now: EpochMs, windowMs: number): PlannedNotice[] {
+export function planNotices(tasks: readonly Task[], events: readonly CalEvent[], employers: readonly Employer[], now: EpochMs, windowMs: number, prefs?: NoticePrefs): PlannedNotice[] {
   const inWin = (at: EpochMs) => at <= now && at > now - windowMs;
   const out: PlannedNotice[] = [];
   for (const t of tasks) {
@@ -82,16 +101,25 @@ export function planNotices(tasks: readonly Task[], events: readonly CalEvent[],
       const at = e.start - m * MINUTE;
       if (inWin(at)) out.push({ key: `event:${e.id}:${e.start}:${m}`, at, title: e.title, body: m === 0 ? '時間になりました' : `${beforeLabel(m)}に始まります（${formatHm(e.start)}）`, target: { kind: 'event', id: e.id } });
     }
+    // 出発の時刻（P42）：移動時間を入れた予定だけ。位置情報は使わない
+    if (prefs?.departure && e.extra?.travelMinutes && !e.extra.allDay) {
+      const at = e.start - e.extra.travelMinutes * MINUTE;
+      if (inWin(at)) out.push({ key: `leave:${e.id}:${e.start}`, at, title: `${e.title}へ出発`, body: `移動${e.extra.travelMinutes}分で${formatHm(e.start)}に着きます`, target: { kind: 'event', id: e.id }, priority: 'high' });
+    }
     if (!e.employerId) continue;
     const emp = empById.get(e.employerId);
     if (!emp) continue;
     const at = e.start - emp.reminderHours * HOUR;
-    if (inWin(at)) out.push({ key: `job:${e.id}:${e.start}`, at, title: `【${emp.name}】${emp.reminderHours}時間前`, body: `${formatHm(e.start)} から勤務です`, target: { kind: 'event', id: e.id } });
+    if (inWin(at)) out.push({ key: `job:${e.id}:${e.start}`, at, title: `【${emp.name}】${emp.reminderHours}時間前`, body: `${formatHm(e.start)} から勤務です`, target: { kind: 'event', id: e.id }, priority: 'high' });
   }
   const setup = tasks.filter((t) => t.status !== 'done' && (t.special === 'assignment' || t.special === 'testPrep') && needsSetup(t));
   if (setup.length) {
     const at = startOfDay(now) + 20 * HOUR;
     if (inWin(at)) out.push({ key: `setup:${startOfDay(now)}`, at, title: '未設定のタスク', body: `作業時間が未入力の課題・テスト対策が${setup.length}件あります`, target: { kind: 'settings', id: null } });
   }
-  return out;
+  // 同じ内容は1件に（P41）。開始時刻ちょうどの通知は重要
+  const seen = new Set<string>();
+  const uniq = out.filter((n) => { const k = `${n.title}|${n.body}`; if (seen.has(k)) return false; seen.add(k); return true; }).map((n) => ({ ...n, priority: n.priority ?? (n.body === '時間になりました' ? 'high' as const : 'normal' as const) }));
+  if (!prefs) return uniq;
+  return uniq.filter((n) => !inQuietHours(n.at, prefs.quietFrom, prefs.quietTo) || (prefs.quietAllowImportant && n.priority === 'high'));
 }

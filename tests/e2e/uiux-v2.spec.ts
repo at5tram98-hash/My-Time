@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { at, center, event, mouseLongPressDrag, openApp, openNewTask, pickTime, readStore, saveEditor, seed, task, touchDrag } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openNewTask, openSettings, pickTime, readStore, saveEditor, seed, task, touchDrag } from './helpers';
 
 /** UI/UX v2（Q01〜Q111）の主な操作の回帰テスト */
 
@@ -105,7 +105,7 @@ test.describe('UI/UX v2：時間軸', () => {
 test.describe('UI/UX v2：Create Studio とカテゴリー', () => {
   test('空白から種類を作り、作成画面の専用タブで入力して保存できる', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.getByTestId('nav-studio').click();
     await page.getByTestId('studio-new-task').click();
     // テンプレートなし：最初は項目が空
@@ -137,7 +137,7 @@ test.describe('UI/UX v2：Create Studio とカテゴリー', () => {
 
   test('カテゴリーを追加できる', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.getByTestId('nav-categories').click();
     await page.getByTestId('add-category').click();
     await page.getByTestId('category-name').fill('ゼミ');
@@ -166,7 +166,7 @@ test.describe('UI/UX v2：分析・お知らせ', () => {
 
   test('お知らせがないときは空の表示', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.getByTestId('nav-notices').click();
     await expect(page.getByTestId('notices-empty')).toBeVisible();
   });

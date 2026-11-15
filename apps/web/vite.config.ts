@@ -29,6 +29,12 @@ export default defineConfig({
         orientation: 'portrait',
         background_color: '#F2F2F7',
         theme_color: '#F2F2F7',
+        // ホーム画面のアイコンを長押ししたときの近道（P44。対応する端末だけ。iOS では表示されないことがある）
+        shortcuts: [
+          { name: '追加', short_name: '追加', url: `${base}?action=add`, icons: [{ src: 'icon-192.png', sizes: '192x192' }] },
+          { name: '未割当', short_name: '未割当', url: `${base}?action=inbox`, icons: [{ src: 'icon-192.png', sizes: '192x192' }] },
+          { name: 'タスク', short_name: 'タスク', url: `${base}?tab=tasks`, icons: [{ src: 'icon-192.png', sizes: '192x192' }] },
+        ],
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },

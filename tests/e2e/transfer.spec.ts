@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { openApp, readStore, seed, task } from './helpers';
+import { openApp, openSettings, readStore, seed, task } from './helpers';
 
 test('別Originへの移行：書き出し→件数確認→取込→再起動、元データと同一', async ({ page, browser }, testInfo) => {
   await openApp(page);
   await seed(page, { tasks: [task({ id: 'origin-transfer-task', title: '移行する課題', notes: '元のメモも維持' })] });
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('nav-transfer').click();
   const downloadReady = page.waitForEvent('download');
   await page.getByTestId('export-device').click();
@@ -23,7 +23,7 @@ test('別Originへの移行：書き出し→件数確認→取込→再起動�
     db.close();
   });
   await target.reload();
-  await target.getByTestId('tab-other').click();
+  await openSettings(target);
   await target.getByTestId('nav-transfer').click();
   await target.getByLabel('移行ファイル', { exact: true }).setInputFiles({ name: 'device-transfer.json', mimeType: 'application/json', buffer: readFileSync(path) }); // パスに日本語を含む環境でも確実に渡す
   await target.getByTestId('import-device').click();

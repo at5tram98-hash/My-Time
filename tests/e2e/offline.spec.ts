@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { at, openApp, seed, task } from './helpers';
+import { at, openApp, openDayList, seed, task } from './helpers';
 
 test.use({ serviceWorkers: 'allow' });
 
@@ -15,12 +15,14 @@ test('Service Worker 登録後はオフラインで再起動でき、端末内�
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByTestId('home-screen')).toBeVisible();
+  await openDayList(page);
   await expect(page.getByTestId('task-row-off')).toBeVisible();
   // オフラインのまま編集（タスク開始）→ 再読み込みしても残る
   await page.getByTestId('task-row-off').locator('.task-row-main').click();
   await page.getByTestId('run-start').click();
   await expect(page.getByTestId('run-pause')).toBeVisible();
   await page.reload();
+  await openDayList(page);
   await expect(page.getByTestId('task-row-off')).toContainText('実行中');
   await context.setOffline(false);
 });

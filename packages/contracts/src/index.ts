@@ -36,6 +36,10 @@ export const extraSchema = z.object({
   urls: z.array(z.object({ id, title: text(200), url: urlText })).max(30).optional(),
   attachments: z.array(z.object({ id, name: text(255), mime: text(100), size: z.number().int().nonnegative().max(50 * 1024 * 1024), driveFileId: text(200).nullable(), sha256: text(64), createdAt: epoch })).max(30).optional(),
   studio: z.object({ typeId: id, version: z.number().int().min(1), values: z.record(z.string().max(128), z.unknown()) }).nullable().optional(),
+  // 専門の種類（S01〜S25）。詳細は種類ごとの小さな値（JSON で 20KB まで）
+  spec: z.object({ type: z.string().min(1).max(32), details: z.record(z.string().max(64), z.unknown()).refine((d) => JSON.stringify(d).length <= 20_000, '詳細が大きすぎます') }).nullable().optional(),
+  dependsOn: z.array(id).max(20).optional(),
+  origin: z.enum(['manual', 'text', 'import', 'plan']).nullable().optional(),
 }).optional();
 
 const freq = z.enum(['daily', 'weekly', 'monthly']);

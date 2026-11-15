@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useData, useSync } from '../../app/data';
 import { useUIActions } from '../../app/ui';
-import { Group } from '../../components/Controls';
+import { Group, Toggle } from '../../components/Controls';
 import { MenuButton } from '../../components/Menu';
 import { Icon } from '../../components/Icon';
 import { repo } from '../../data/repo';
@@ -92,8 +92,25 @@ export function NotificationSettings() {
     setState(await currentState());
   };
 
+  const hours = Array.from({ length: 24 }, (_, h) => h);
+  const quietOn = settings.quietFrom != null && settings.quietTo != null;
   return (
     <>
+      {/* 静穏時間と出発の通知（P42・P43）。設定は同期され、サーバーからの Push にも使う */}
+      <Group header="通知を控える時間" footer="この時間に当たる通知は送りません（あとからまとめて送ることもしません）。「重要な通知」は出発の時刻・勤務の前・開始の時刻です。">
+        <div className="row"><span className="row-label">通知を控える時間</span><Toggle label="通知を控える時間" checked={quietOn} onChange={(b) => void repo.updateSettings(b ? { quietFrom: 23, quietTo: 7 } : { quietFrom: null, quietTo: null })} /></div>
+        {quietOn && (
+          <div className="row" data-testid="quiet-range"><span className="row-label">時間</span><span className="row-value">
+            <select className="select-input" value={settings.quietFrom!} onChange={(e) => void repo.updateSettings({ quietFrom: Number(e.target.value) })} aria-label="開始">{hours.map((h) => <option key={h} value={h}>{h}:00</option>)}</select>
+            〜
+            <select className="select-input" value={settings.quietTo!} onChange={(e) => void repo.updateSettings({ quietTo: Number(e.target.value) })} aria-label="終了">{hours.map((h) => <option key={h} value={h}>{h}:00</option>)}</select>
+          </span></div>
+        )}
+        {quietOn && <div className="row"><span className="row-label">重要な通知は送る</span><Toggle label="重要な通知は送る" checked={settings.quietAllowImportant} onChange={(b) => void repo.updateSettings({ quietAllowImportant: b })} /></div>}
+      </Group>
+      <Group footer="場所と移動時間を入れた予定だけ、移動時間ぶん前に知らせます。位置情報は使いません。">
+        <div className="row"><span className="row-label">出発の時刻を知らせる</span><Toggle label="出発の時刻を知らせる" checked={settings.departureNotify} onChange={(b) => void repo.updateSettings({ departureNotify: b })} /></div>
+      </Group>
       <Group footer="iPhoneでは、Safariの共有メニューから「ホーム画面に追加」したアプリで通知を受け取れます。通知はOSと配信サービスを経由するため、届く時刻は前後することがあります。">
         <div className="row" data-testid="push-state">
           <span className="row-label">プッシュ通知</span>

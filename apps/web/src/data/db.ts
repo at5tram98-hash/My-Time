@@ -60,7 +60,7 @@ export interface LocalNotice {
 export type ThemePref = 'system' | 'light' | 'dark';
 export type TextSizePref = 'system' | 'small' | 'large' | 'xlarge';
 export type CalendarViewPref = 'day' | '2day' | '3day' | 'week' | 'month';
-export type TaskScope = 'today' | 'upcoming' | 'all' | 'flagged' | 'done';
+export type TaskScope = 'today' | 'upcoming' | 'inbox' | 'all' | 'flagged' | 'done';
 export type TaskGroup = 'category' | 'tag' | 'date';
 export type TaskSort = 'due' | 'priority' | 'manual';
 export type TaskKindFilter = 'all' | 'do' | 'check';
@@ -105,6 +105,17 @@ export interface AppSettings {
   /** TimeTree：読み込み専用の設定（Q52） */
   timetreeAutoSkipDuplicates: boolean;
   timetreeDefaultCalendarId: string | null;
+  /** ---- 再設計（2026-11） ---- */
+  /** 通知の静穏時間（時。null で無効）と、その間も重要な通知は送るか（P43） */
+  quietFrom: number | null;
+  quietTo: number | null;
+  quietAllowImportant: boolean;
+  /** 移動時間のある予定で出発の時刻を知らせる（P42） */
+  departureNotify: boolean;
+  /** 今日の画面のレーン：両方 / 予定を広く / タスクを広く（IOS-006） */
+  laneFocus: 'both' | 'main' | 'detail';
+  /** 今日の画面の要約カードを畳むか（IOS-003） */
+  todaySummaryCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -135,6 +146,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   placeHistory: [],
   timetreeAutoSkipDuplicates: true,
   timetreeDefaultCalendarId: null,
+  quietFrom: null,
+  quietTo: null,
+  quietAllowImportant: true,
+  departureNotify: true,
+  laneFocus: 'both',
+  todaySummaryCollapsed: false,
 };
 
 export class MyTimeDB extends Dexie {

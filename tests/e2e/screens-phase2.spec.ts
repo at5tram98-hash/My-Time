@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, event, openApp, seed } from './helpers';
+import { at, event, openApp, openSettings, seed } from './helpers';
 import { demo } from './demo';
 
 /** Phase 2 のレビュー用画面キャプチャ（docs/screenshots/p2-*.png）。データはテスト用に投入したもの。 */
@@ -65,7 +65,7 @@ test.describe('画面キャプチャ Phase2', () => {
     await shot(page, 'p2-06-analysis');
 
     // その他・各管理画面・取り込み
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await shot(page, 'p2-07-other');
     await page.getByTestId('nav-calendars').click();
     await shot(page, 'p2-08-calendars');

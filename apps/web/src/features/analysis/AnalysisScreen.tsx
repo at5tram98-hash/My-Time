@@ -5,6 +5,8 @@ import { useUIActions, type AnalysisMetric } from '../../app/ui';
 import { useNow } from '../../app/useNow';
 import { EventBadge } from '../../components/Identity';
 import { Icon } from '../../components/Icon';
+import { SettingsButton } from '../other/SettingsButton';
+import { PlanningInsights } from './PlanningInsights';
 import { repo } from '../../data/repo';
 import { Popup } from '../../ui/Popup';
 import { CategoryBars, ComboChart, Heatmap, MiniBars, PairBars } from './charts';
@@ -80,10 +82,11 @@ export function AnalysisScreen() {
     <div className="screen analysis" data-testid="analysis-screen">
       <header className="nav large">
         <div className="nav-row">
-          <h1 className="large-title">分析</h1>
+          <h1 className="large-title">振り返り</h1>
           <span className="nav-actions gap">
             <button type="button" className={`gbtn glass glass-i ${filter ? 'tint' : ''}`} aria-label={filter ? `絞り込み：${filter.kind === 'tag' ? '#' : ''}${filter.value || 'カテゴリーなし'}` : 'カテゴリー・タグで絞り込む'} onClick={() => setFilterPick(true)} data-testid="analysis-filter"><Icon name="tray" size={19} /></button>
             <button type="button" className="gbtn glass glass-i tint" aria-label="目標" onClick={() => setGoals(true)} data-testid="analysis-goals"><Icon name="target" size={20} /></button>
+            <SettingsButton />
           </span>
         </div>
         <div className="seg-full" role="tablist" aria-label="期間">
@@ -194,9 +197,10 @@ export function AnalysisScreen() {
             )}
           </>
         )}
+        <PlanningInsights now={now} />
         <p className="analysis-note">
           {PREV_LABEL[period]}と比べています。授業・アルバイトなどの予定は集計しません。複数日にまたがるタスクは予定開始の日に1回だけ数え、実行時間は実際に作業した時間帯に振り分けます。
-          {st.excluded > 0 && ` この期間は一時停止・自動開始/終了のタスク${st.excluded}件を除外しています（「その他」で含められます）。`}
+          {st.excluded > 0 && ` この期間は一時停止・自動開始/終了のタスク${st.excluded}件を除外しています（「設定」で含められます）。`}
           {st.untimed > 0 && ` 予定の時刻がない未完了の実行タスク${st.untimed}件は、件数の集計に含まれません。`}
         </p>
       </div>

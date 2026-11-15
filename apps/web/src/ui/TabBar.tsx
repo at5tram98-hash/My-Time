@@ -10,7 +10,7 @@ export interface TabDef { id: TabId; label: string; icon: IconName }
  * - 途中で画面は切り替えない。縦方向へ外れた・キャンセルされた場合は元のタブへ戻す。
  * - キーボード・VoiceOver は通常のボタンとして操作できる（aria-current）。
  */
-export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; current: TabId; onSelect: (t: TabId) => void; badge?: (t: TabId) => React.ReactNode }) {
+export function TabBar({ tabs, current, onSelect, badge, accessory }: { tabs: TabDef[]; current: TabId; onSelect: (t: TabId) => void; badge?: (t: TabId) => React.ReactNode; /** タブとは別の丸いボタン（追加）。タブの右に浮かべる */ accessory?: React.ReactNode }) {
   const glass = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x: number; idx: number } | null>(null);
   const st = useRef<{ id: number; x0: number; y0: number; moved: boolean } | null>(null);
@@ -98,6 +98,7 @@ export function TabBar({ tabs, current, onSelect, badge }: { tabs: TabDef[]; cur
           );
         })}
       </div>
+      {accessory}
     </nav>
   );
 }

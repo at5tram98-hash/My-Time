@@ -8,7 +8,7 @@ import { formatOverMinutes } from '@my-time/domain';
 import { UpcomingTime } from '../../components/UpcomingTime';
 import { TaskIcon } from '../../components/TaskIcon';
 import { openContextMenu, type CtxItem } from '../../ui/ContextMenu';
-import { deleteWithUndo } from '../../ui/undo';
+import { deleteWithUndo, offerUndo } from '../../ui/undo';
 import { Icon } from '../../components/Icon';
 import { useUIActions } from '../../app/ui';
 import { repo } from '../../data/repo';
@@ -144,12 +144,14 @@ export function TaskRow({ task, subtasks, now, showDate }: Props) {
     const items: CtxItem[] = [];
     if (task.kind === 'do') {
       if (task.status === 'notStarted') items.push({ label: '開始', icon: 'play', onSelect: () => void repo.taskAction(task.id, 'start') });
-      if (task.status === 'running') items.push({ label: '停止', icon: 'pause', onSelect: () => void repo.taskAction(task.id, 'pause') }, { label: '完了', icon: 'check', onSelect: () => void repo.taskAction(task.id, 'finish') });
+      if (task.status === 'running') items.push({ label: '停止', icon: 'pause', onSelect: () => void repo.taskAction(task.id, 'pause') }, { label: '完了', icon: 'check', onSelect: () => void repo.taskAction(task.id, 'finish').then(() => offerUndo(`finish:${task.id}`, `「${task.title}」を完了しました`, () => repo.taskAction(task.id, 'undoFinish').then(() => undefined))) });
       if (task.status === 'paused') items.push({ label: '再開', icon: 'play', onSelect: () => void repo.taskAction(task.id, 'resume') });
       if (task.status === 'done') items.push({ label: '完了を取り消す', icon: 'undo', onSelect: () => void repo.taskAction(task.id, 'undoFinish') });
     } else items.push({ label: task.checked ? 'チェックを外す' : '確認済みにする', icon: task.checked ? 'undo' : 'check', onSelect: () => void repo.toggleCheck(task.id) });
     // 長押しを使えない利用者も、メニューから同じ進捗パネルへ（C26）
     if (task.kind === 'do') items.push({ label: '進捗を変更', icon: 'chart', onSelect: () => openSheet({ kind: 'run', id: task.id, progress: true }) });
+    // すばやい延期（P45）：候補を見てから選ぶ。期限は動かさない
+    if (task.kind === 'do' && task.status !== 'done') items.push({ label: '延期…', icon: 'forward', onSelect: () => openSheet({ kind: 'reschedule', taskId: task.id, mode: 'postpone' }) });
     items.push({ label: '編集', icon: 'pencil', onSelect: () => openSheet({ kind: 'edit', mode: 'task', id: task.id }) });
     openContextMenu({
       anchor: el,

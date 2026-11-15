@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, FIXED_NOW, mouseLongPressDrag, openApp, openNewEvent, openNewTask, pickTime, saveEditor, seed, task, touchDrag } from './helpers';
+import { at, center, event, FIXED_NOW, mouseLongPressDrag, openApp, openDayList, openNewEvent, openNewTask, pickTime, saveEditor, seed, task, touchDrag } from './helpers';
 
 const readTask = (page: Page, id: string) =>
   page.evaluate(async (tid) => {
@@ -30,7 +30,7 @@ const readEvent = (page: Page, id: string) =>
   }, id);
 
 test.describe('ナビゲーションと表示', () => {
-  test('5タブが動作し、日付はホーム上部の1箇所だけ', async ({ page }) => {
+  test('4タブが動作し、日付は今日の上部の1箇所だけ', async ({ page }) => {
     await openApp(page);
     // v2：ホーム上部の大きな日付（年月・日・曜日）。日付はここ1箇所だけ
     await expect(page.getByTestId('home-date')).toContainText('12日');
@@ -38,21 +38,16 @@ test.describe('ナビゲーションと表示', () => {
     await expect(page.getByText('12日', { exact: true })).toHaveCount(1);
     // 1日表示ではタイムラインに日付見出しを出さない
     await expect(page.locator('[data-testid="home-timeline"] .tl-head')).toHaveCount(0);
-    for (const t of ['calendar', 'tasks', 'analysis', 'other', 'home'] as const) {
+    for (const t of ['calendar', 'tasks', 'analysis', 'home'] as const) {
       await page.getByTestId(`tab-${t}`).click();
       await expect(page.getByTestId(`tab-${t}`)).toHaveAttribute('aria-current', 'page');
     }
   });
 
-  test('ホームは1日⇔2日をアイコンで切替（v2：2日表示は両日の見出しを表示）', async ({ page }) => {
+  test('今日は1日だけ（2日表示の切替はない：再設計 2026-11）', async ({ page }) => {
     await openApp(page);
-    const cols = page.locator('[data-testid="home-timeline"] .tl-col');
-    await expect(cols).toHaveCount(1);
-    await page.getByTestId('days-toggle').click();
-    await expect(cols).toHaveCount(2);
-    await expect(page.locator('[data-testid="home-timeline"] .tl-day-label:not(.hidden)')).toHaveCount(2);
-    await page.getByTestId('days-toggle').click();
-    await expect(cols).toHaveCount(1);
+    await expect(page.locator('[data-testid="home-timeline"] .tl-col')).toHaveCount(1);
+    await expect(page.getByTestId('days-toggle')).toHaveCount(0);
   });
 
   test('カレンダータブは初期2日、日/週/月に切替できる', async ({ page }) => {
@@ -91,7 +86,7 @@ test.describe('ナビゲーションと表示', () => {
   });
 });
 
-test.describe('境界ハンドル', () => {
+test.describe('今日の要約とレーン（旧：境界ハンドル）', () => {
   test.beforeEach(async ({ page }) => {
     await openApp(page);
     await seed(page, {
@@ -103,38 +98,29 @@ test.describe('境界ハンドル', () => {
     });
   });
 
-  test('タップでは拡張しない', async ({ page }) => {
-    await page.getByTestId('split-handle').click();
-    await page.waitForTimeout(400);
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
+  test('実行中のタスクは「今やること」に必ず残り、要約をたたんでもチップは残る', async ({ page }) => {
+    await expect(page.getByTestId('now-card')).toHaveAttribute('data-kind', 'continue');
+    await expect(page.getByTestId('now-card')).toContainText('実行中タスク');
+    await page.getByTestId('summary-toggle').click();
+    await expect(page.getByTestId('now-card')).toHaveCount(0);
+    await expect(page.getByTestId('chip-tasks')).toBeVisible();
+    await page.getByTestId('summary-toggle').click();
+    await expect(page.getByTestId('now-card')).toBeVisible();
   });
 
-  test('上ドラッグで拡張し、縮小タスクカードが残る。下ドラッグで戻る', async ({ page }) => {
-    const h = await center(page.getByTestId('split-handle'));
-    await touchDrag(page, h, { x: h.x, y: h.y - 220 });
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
-    // v3（C01）：コンパクト表示は円だけ。名前・状態は読み上げ名に含める。つまみは描かない
-    await expect(page.getByTestId('fcard-running')).toBeVisible();
-    await expect(page.getByTestId('fcard-next').first()).toHaveAttribute('aria-label', /次のタスク/);
-    await expect(page.getByTestId('fcard-running')).toHaveAttribute('aria-label', /実行中タスク/);
-    await expect(page.getByTestId('split-handle')).toHaveCount(0);
-    await page.waitForTimeout(600); // スプリングの収束を待つ
-    // 円の列を下へスワイプで一覧に戻る
-    const row = await center(page.getByTestId('compact-row'));
-    await touchDrag(page, { x: row.x, y: row.y }, { x: row.x, y: row.y + 120 });
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
-    await expect(page.getByTestId('task-row-r1')).toBeVisible();
-  });
-
-  test('タスク一覧・時間軸の縦スクロールではハンドルが動かない', async ({ page }) => {
-    const before = (await page.getByTestId('split-handle').boundingBox())!.y;
-    const list = await center(page.getByTestId('home-task-list'));
-    await touchDrag(page, { x: list.x, y: list.y + 60 }, { x: list.x, y: list.y - 80 });
+  test('時間軸の縦スクロールでは要約もレーンの見出しも動かない', async ({ page }) => {
+    const before = (await page.getByTestId('lane-main').boundingBox())!.y;
     const tl = await center(page.getByTestId('home-timeline-scroll'));
     await touchDrag(page, { x: tl.x + 40, y: tl.y + 100 }, { x: tl.x + 40, y: tl.y - 120 });
     await page.waitForTimeout(300);
-    expect((await page.getByTestId('split-handle').boundingBox())!.y).toBeCloseTo(before, 0);
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
+    expect((await page.getByTestId('lane-main').boundingBox())!.y).toBeCloseTo(before, 0);
+    await expect(page.getByTestId('home-date')).toContainText('12日');
+  });
+
+  test('今日のタスク一覧は要約から開き、すべての行がある', async ({ page }) => {
+    await page.getByTestId('chip-tasks').click();
+    await expect(page.getByTestId('day-tasks').getByTestId('task-row-r1')).toBeVisible();
+    await expect(page.getByTestId('chip-tasks')).toContainText('0/10');
   });
 });
 
@@ -146,6 +132,7 @@ test.describe('作成・編集・永続化・日付', () => {
     await pickTime(page, 'editor-start-time', 14, 0);
     await pickTime(page, 'editor-end-time', 15, 30);
     await saveEditor(page);
+    await openDayList(page);
     const row = page.locator('[data-task-title="統計の宿題"]');
     await expect(row).toBeVisible();
     await expect(row).toContainText('14:00');
@@ -159,6 +146,7 @@ test.describe('作成・編集・永続化・日付', () => {
     await page.keyboard.press('Escape');
 
     await page.reload();
+    await openDayList(page);
     await expect(page.locator('[data-task-title="統計の宿題（第3章）"]')).toBeVisible();
   });
 
@@ -179,7 +167,7 @@ test.describe('作成・編集・永続化・日付', () => {
     expect((await readEvent(page, 'ex'))?.start).toBe(at(13));
   });
 
-  test('日付を横スワイプすると上段タスクは左端の日付のものだけになる', async ({ page }) => {
+  test('日付を横スワイプすると、その日のタスクだけが右のレーンに出る', async ({ page }) => {
     await openApp(page);
     await seed(page, {
       tasks: [
@@ -187,24 +175,17 @@ test.describe('作成・編集・永続化・日付', () => {
         task({ id: 'd1', title: '明日の作業', plannedStart: at(9, 0, 1), plannedEnd: at(10, 0, 1) }),
       ],
     });
-    await expect(page.getByTestId('task-row-d0')).toBeVisible();
-    await expect(page.getByTestId('task-row-d1')).toHaveCount(0);
+    await expect(page.getByTestId('tl-task:d0')).toBeVisible();
+    await expect(page.getByTestId('tl-task:d1')).toHaveCount(0);
     const tl = await center(page.getByTestId('home-timeline-scroll'));
     await touchDrag(page, { x: tl.x + 120, y: tl.y }, { x: tl.x - 140, y: tl.y + 4 }, { steps: 8 });
     await expect(page.getByTestId('home-date')).toContainText('13日火曜日');
-    await expect(page.getByTestId('task-row-d1')).toBeVisible();
-    await expect(page.getByTestId('task-row-d0')).toHaveCount(0);
-
-    // 2日表示でも上段は左端（13日）のタスク
-    await page.getByTestId('days-toggle').click();
-    await expect(page.getByTestId('task-row-d1')).toBeVisible();
-    await expect(page.getByTestId('task-row-d0')).toHaveCount(0);
-
-    // タスク一覧側の横スワイプでも戻せる
-    const list = await center(page.getByTestId('home-task-list'));
-    await touchDrag(page, { x: list.x - 120, y: list.y }, { x: list.x + 140, y: list.y + 4 }, { steps: 8 });
+    await expect(page.getByTestId('tl-task:d1')).toHaveCount(1);
+    await expect(page.getByTestId('tl-task:d0')).toHaveCount(0);
+    // 反対へのスワイプで戻せる
+    await touchDrag(page, { x: tl.x - 120, y: tl.y }, { x: tl.x + 140, y: tl.y + 4 }, { steps: 8 });
     await expect(page.getByTestId('home-date')).toContainText('12日月曜日');
-    await expect(page.getByTestId('task-row-d0')).toBeVisible();
+    await expect(page.getByTestId('tl-task:d0')).toBeVisible();
   });
 });
 
@@ -218,11 +199,13 @@ test.describe('進捗ジェスチャーと状態', () => {
       ],
       subtasks: [{ id: 's1', taskId: 'p2', title: '章1', done: false, completedAt: null, order: 0, createdAt: at(0), updatedAt: at(0) }],
     });
+    // 長押しの進捗入力は「今日のタスク」一覧で行う（再設計で今日の画面は時刻軸になった）
+    await openDayList(page);
   });
 
   test('通常タップは詳細シートを開く', async ({ page }) => {
     await page.getByTestId('task-row-p1').locator('.task-row-main').click();
-    await expect(page.getByRole('dialog')).toContainText('進捗テスト');
+    await expect(page.getByTestId('task-info')).toContainText('進捗テスト');
     await expect(page.getByTestId('progress-scrubber')).toHaveCount(0);
   });
 
@@ -248,7 +231,7 @@ test.describe('進捗ジェスチャーと状態', () => {
     await page.mouse.up();
     await page.waitForTimeout(200);
     expect((await readTask(page, 'p1'))?.manualProgress).toBeNull();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('task-info')).toHaveCount(0);
   });
 
   test('100%で離すと確認。キャンセルなら未完了、承認で完了', async ({ page }) => {
@@ -279,7 +262,7 @@ test.describe('進捗ジェスチャーと状態', () => {
     await page.getByRole('checkbox', { name: '章1を完了' }).click();
     await page.getByPlaceholder('サブタスクを追加').fill('章2');
     await page.getByPlaceholder('サブタスクを追加').press('Enter');
-    await expect(page.getByRole('dialog')).toContainText('50%');
+    await expect(page.getByTestId('task-info')).toContainText('50%');
   });
 
   test('一時停止・再開・終了・完了取り消しが実績とログに整合する', async ({ page }) => {
@@ -327,6 +310,7 @@ test.describe('時間軸', () => {
     expect(box.height).toBeGreaterThan(80);
     await expect(block.locator('.tl-overrun')).toHaveCount(1);
     await expect(page.getByTestId('tl-event:after')).toHaveClass(/greyed/);
+    await openDayList(page);
     await expect(page.getByTestId('task-row-late')).toContainText('+40分');
     expect((await readTask(page, 'late'))?.plannedEnd).toBe(at(10));
   });
@@ -349,12 +333,12 @@ test.describe('アクセシビリティ・画面サイズ', () => {
           document.documentElement.style.setProperty('--base-size', '22px');
         }, variant.size);
       }
-      for (const t of ['home', 'calendar', 'tasks', 'analysis', 'other'] as const) {
+      for (const t of ['home', 'calendar', 'tasks', 'analysis'] as const) {
         await page.getByTestId(`tab-${t}`).click();
         await page.waitForTimeout(100);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         expect(overflow, `${t} タブ`).toBeLessThanOrEqual(0);
-        const tabBox = await page.getByTestId('tab-other').boundingBox();
+        const tabBox = await page.getByTestId('quick-add').boundingBox();
         expect(tabBox!.x + tabBox!.width).toBeLessThanOrEqual(variant.w + 0.5);
       }
     });
@@ -364,6 +348,7 @@ test.describe('アクセシビリティ・画面サイズ', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'l', title: '遅延', plannedStart: at(9), plannedEnd: at(10) })] });
+    await openDayList(page);
     await expect(page.getByTestId('task-row-l').locator('.task-row-time')).not.toHaveClass(/blink/);
     await expect(page.getByTestId('task-row-l').getByLabel('遅延', { exact: true })).toBeVisible();
   });

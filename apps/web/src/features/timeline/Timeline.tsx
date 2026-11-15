@@ -29,15 +29,24 @@ interface Props {
   onEventMenu: (id: string, anchor?: HTMLElement | null) => void;
   onTapDay?: (day: number) => void;
   /** 空白の長押し→指で範囲を選んで離す：新規予定の作成（DB にはまだ書かない：Q27） */
-  onCreateRange?: (start: number, end: number) => void;
+  onCreateRange?: (start: number, end: number, lane?: 'main' | 'detail') => void;
   /** 予定の上下端をつかんで長さを変える（15分刻み：Q29） */
   onResize?: (id: string, start: number, end: number) => Promise<void>;
   testId?: string;
+  /**
+   * 1日の画面の左右レーン（IOS-004〜006）。左＝時間の決まった予定、右＝細かなタスク・作業枠・確認。
+   * mainPct は左のレーンの幅（%）。省略時はレーンに分けない（カレンダータブ）。
+   */
+  lanes?: { mainPct: number; sessions: { sub: Subtask; task: Task }[]; checks: Task[]; linkColor: Map<string, string> };
 }
 
 type Item =
   | { id: string; kind: 'event'; start: number; end: number; event: CalEvent }
-  | { id: string; kind: 'task'; start: number; end: number; task: Task; block: TaskBlock };
+  | { id: string; kind: 'task'; start: number; end: number; task: Task; block: TaskBlock }
+  /** 作業枠（日時付きサブタスク）。タップで親のタスクを開く。ドラッグはしない */
+  | { id: string; kind: 'session'; start: number; end: number; task: Task; sub: Subtask }
+  /** 確認タスク（確認日時に小さく） */
+  | { id: string; kind: 'check'; start: number; end: number; task: Task };
 
 interface DragState {
   item: Item;
@@ -59,7 +68,7 @@ interface DragState {
 }
 
 /** 空白の長押しで作る新規予定の仮範囲 */
-interface CreateState { pointerId: number; dayStart: number; colTop: number; x0: number; y0: number; anchorMin: number; curMin: number; active: boolean }
+interface CreateState { pointerId: number; dayStart: number; colTop: number; x0: number; y0: number; anchorMin: number; curMin: number; active: boolean; lane: 'main' | 'detail' }
 
 /** ドラッグ中または確認待ちの仮位置 */
 interface Ghost {
@@ -81,10 +90,11 @@ const mins = (m: number) => `calc(var(--hour) * ${(m / 60).toFixed(5)})`;
 
 const itemDuration = (it: Item) => (it.kind === 'task' ? it.block.plannedEnd : it.end) - it.start;
 const realId = (it: Item) => (it.kind === 'event' ? it.event.id : it.task.id);
+const laneOf = (it: Item): 'main' | 'detail' => (it.kind === 'event' ? 'main' : 'detail');
 
 /** Appleカレンダー風の時間軸。縦スクロール／ピンチ倍率はこの領域内だけで処理する。 */
 export function Timeline(props: Props) {
-  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onEventMenu, onTapDay, onCreateRange, onResize, testId } = props;
+  const { startDay, days, now, events, tasks, subtasksByTask, calendarById, dayLabels, onPage, onOpenEvent, onOpenTask, onMove, onEventMenu, onTapDay, onCreateRange, onResize, testId, lanes } = props;
   const createRef = useRef<CreateState | null>(null);
   const [creating, setCreating] = useState<CreateState | null>(null);
   /** 確定済みの倍率（文字の出し分けなどに使う）。ピンチ中は CSS 変数だけを毎フレーム更新する。 */
@@ -232,8 +242,12 @@ export function Timeline(props: Props) {
       const b = taskBlock(t, subtasksByTask.get(t.id) ?? [], now);
       if (b) out.push({ id: b.id, kind: 'task', start: b.start, end: b.end, task: t, block: b });
     }
+    if (lanes) {
+      for (const { sub, task } of lanes.sessions) if (sub.plannedStart != null && sub.plannedEnd != null) out.push({ id: `session:${sub.id}`, kind: 'session', start: sub.plannedStart, end: sub.plannedEnd, task, sub });
+      for (const t of lanes.checks) if (t.checkAt != null) out.push({ id: `check:${t.id}`, kind: 'check', start: t.checkAt, end: t.checkAt + 15 * MINUTE, task: t });
+    }
     return out;
-  }, [events, tasks, subtasksByTask, now]);
+  }, [events, tasks, subtasksByTask, now, lanes]);
 
   // ---- 予定・タスクの長押しドラッグ（15分スナップ。確定は onMove 側の確認後） ----
   const setDragBoth = (d: DragState | null) => {
@@ -245,6 +259,7 @@ export function Timeline(props: Props) {
 
   const onItemPointerDown = (e: RPointerEvent, item: Item, col: number) => {
     if (e.button !== 0 || dragRef.current || pending) return;
+    if (item.kind === 'session' || item.kind === 'check') return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     // 予定の上端・下端（約10px）をつかんだときは伸縮（Q29）。それ以外は移動
     const mode: DragState['mode'] = item.kind === 'event' && rect.height >= 30 ? (e.clientY - rect.top < 10 ? 'start' : rect.bottom - e.clientY < 10 ? 'end' : 'move') : 'move';
@@ -342,7 +357,7 @@ export function Timeline(props: Props) {
     if (d.moved && (d.deltaMin !== 0 || d.deltaDays !== 0)) {
       const start = ghostStart(d);
       setPending({ item: d.item, start, pending: true });
-      void onMove(d.item.kind, realId(d.item), start).finally(() => setPending(null));
+      void onMove(d.item.kind === 'event' ? 'event' : 'task', realId(d.item), start).finally(() => setPending(null));
     } else if (!d.moved && d.item.kind === 'event') {
       onEventMenu(d.item.event.id, rootRef.current?.querySelector(`[data-testid="tl-event:${d.item.event.id}"]`) as HTMLElement | null);
     }
@@ -373,7 +388,9 @@ export function Timeline(props: Props) {
   };
   const onColPointerDown = (e: RPointerEvent<HTMLDivElement>, dayStart: number) => {
     if (e.button !== 0 || e.target !== e.currentTarget || !onCreateRange || dragRef.current || pending) return;
-    const cs: CreateState = { pointerId: e.pointerId, dayStart, colTop: 0, x0: e.clientX, y0: e.clientY, anchorMin: 0, curMin: 0, active: false };
+    const r = e.currentTarget.getBoundingClientRect();
+    const lane: 'main' | 'detail' = lanes && (e.clientX - r.left) / Math.max(1, r.width) * 100 >= lanes.mainPct ? 'detail' : 'main';
+    const cs: CreateState = { pointerId: e.pointerId, dayStart, colTop: 0, x0: e.clientX, y0: e.clientY, anchorMin: 0, curMin: 0, active: false, lane };
     cs.anchorMin = Math.floor(minAt(cs, e.clientY) / SNAP_MIN) * SNAP_MIN;
     cs.curMin = cs.anchorMin + 60;
     createRef.current = cs;
@@ -412,7 +429,7 @@ export function Timeline(props: Props) {
     if (!commit) return; // キャンセル：何も作らない
     const a = Math.min(cs.anchorMin, cs.curMin);
     const b = Math.max(cs.anchorMin, cs.curMin);
-    onCreateRange?.(cs.dayStart + a * MINUTE, cs.dayStart + b * MINUTE);
+    onCreateRange?.(cs.dayStart + a * MINUTE, cs.dayStart + b * MINUTE, lanes ? cs.lane : undefined);
   };
 
   // 終日の予定は時間軸の上の専用領域へ（Q30）
@@ -425,7 +442,9 @@ export function Timeline(props: Props) {
     const dayItems = items.filter((it) => it.start < dayEnd && it.end > dayStart);
     const delayedTasks = dayItems.filter((it): it is Extract<Item, { kind: 'task' }> => it.kind === 'task' && it.block.delayed);
     const normal = dayItems.filter((it) => !(it.kind === 'task' && it.block.delayed));
-    const placed = layoutDay(normal, dayStart);
+    // レーンに分けるときは、左右それぞれで重なりを並べる（左の予定と右のタスクが同じ時刻でも互いに細くならない）
+    const laneBox = (it: Item) => (!lanes ? { l: 0, w: 100 } : laneOf(it) === 'main' ? { l: 0, w: lanes.mainPct } : { l: lanes.mainPct, w: 100 - lanes.mainPct });
+    const placed = lanes ? [...layoutDay(normal.filter((x) => laneOf(x) === 'main'), dayStart), ...layoutDay(normal.filter((x) => laneOf(x) === 'detail'), dayStart)] : layoutDay(normal, dayStart);
     const placedDelayed = layoutDay(delayedTasks, dayStart);
     const extensionWindows = delayedTasks.map((t) => ({ start: t.block.plannedEnd, end: Math.max(t.block.end, t.block.eta ?? 0) }));
     const isToday = isSameDay(dayStart, now);
@@ -436,10 +455,24 @@ export function Timeline(props: Props) {
       const it = p.item;
       const greyed = !overlay && it.kind === 'event' && extensionWindows.some((w) => overlaps(w, it));
       const cal = it.kind === 'event' ? calendarById.get(it.event.calendarId) : it.task.calendarId ? calendarById.get(it.task.calendarId) : undefined;
-      const color = it.kind === 'task' ? 'var(--blue)' : cal?.color ?? 'var(--blue)';
-      const leftPct = overlay ? 0 : (p.column / p.columns) * 100;
-      const widthPct = overlay ? 100 : 100 / p.columns;
-      const title = it.kind === 'event' ? it.event.title : it.task.title;
+      const color = it.kind !== 'event' ? 'var(--blue)' : it.event.extra?.color ?? cal?.color ?? 'var(--blue)';
+      const box = laneBox(it);
+      const leftPct = overlay ? box.l : box.l + (p.column / p.columns) * box.w;
+      const widthPct = overlay ? box.w : box.w / p.columns;
+      const link = lanes && it.kind !== 'event' ? lanes.linkColor.get(it.task.id) : undefined;
+      const title = it.kind === 'event' ? it.event.title : it.kind === 'session' ? `${it.task.title}・${it.sub.title}` : it.task.title;
+      if (it.kind === 'session' || it.kind === 'check') {
+        const done = it.kind === 'session' ? it.sub.done : !!it.task.checked;
+        return (
+          <button key={it.id} type="button" className={`tl-block ${it.kind} ${done ? 'st-done' : ''}`}
+            style={{ top: mins(p.top), height: `max(18px, calc(${mins(p.height)} - 2px))`, left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 3px)`, ['--c' as string]: it.kind === 'check' ? 'var(--check)' : 'var(--blue)', ...(link ? { ['--link' as string]: link } : {}) }}
+            aria-label={`${it.kind === 'session' ? '作業枠' : '確認'} ${title}、${formatHm(it.start)}${it.kind === 'session' ? `〜${formatHm(it.end)}` : ''}${done ? '、完了' : ''}`}
+            data-testid={`tl-${it.id}`} onClick={() => onItemClick(it)} onContextMenu={(e) => e.preventDefault()}>
+            <span className="tl-title"><TaskBadge icon={it.task.icon} kind={it.kind === 'check' ? 'check' : 'do'} size={16} done={done} className="tl-ticon" />{title}</span>
+            {showTime(p.height) && it.kind === 'session' && <span className="tl-time">{formatHm(it.start)}〜{formatHm(it.end)}</span>}
+          </button>
+        );
+      }
       const timeText = `${formatHm(it.start)}〜${formatHm(it.kind === 'task' ? it.block.plannedEnd : it.end)}`;
       const planEndMin = it.kind === 'task' && it.block.delayed ? (it.block.plannedEnd - Math.max(it.start, dayStart)) / MINUTE : null;
       const etaAt = it.kind === 'task' ? it.block.eta : null;
@@ -448,13 +481,14 @@ export function Timeline(props: Props) {
         <button
           key={it.id}
           type="button"
-          className={`tl-block ${it.kind} ${greyed ? 'greyed' : ''} ${overlay ? 'overlay' : ''} ${hiddenId === it.id ? 'lifted-ghost' : ''} ${it.kind === 'task' ? `st-${it.task.status}` : ''} ${p.clippedStart ? 'clip-start' : ''} ${p.clippedEnd ? 'clip-end' : ''}`}
+          className={`tl-block ${it.kind} ${greyed ? 'greyed' : ''} ${overlay ? 'overlay' : ''} ${hiddenId === it.id ? 'lifted-ghost' : ''} ${it.kind === 'task' ? `st-${it.task.status}` : ''} ${p.clippedStart ? 'clip-start' : ''} ${p.clippedEnd ? 'clip-end' : ''} ${link ? 'linked' : ''}`}
           style={{
             top: mins(p.top),
             height: `max(18px, calc(${mins(p.height)} - 2px))`,
             left: `calc(${leftPct}% + 1px)`,
             width: `calc(${widthPct}% - 3px)`,
             ['--c' as string]: color,
+            ...(link ? { ['--link' as string]: link } : {}),
           }}
           aria-label={`${it.kind === 'task' ? 'タスク' : '予定'} ${title}、${timeText}${it.kind === 'task' && it.block.delayed ? '、遅延中' : ''}`}
           data-testid={`tl-${it.id}`}
@@ -490,11 +524,12 @@ export function Timeline(props: Props) {
       if (gs < dayEnd && ge > dayStart) {
         const s = Math.max(gs, dayStart);
         const e = Math.min(ge, dayEnd);
-        const c = ghost.item.kind === 'task' ? 'var(--blue)' : calendarById.get(ghost.item.event.calendarId)?.color ?? 'var(--blue)';
+        const c = ghost.item.kind !== 'event' ? 'var(--blue)' : calendarById.get(ghost.item.event.calendarId)?.color ?? 'var(--blue)';
+        const gb = laneBox(ghost.item);
         ghostEl = (
           <div
             className={`tl-block lifted ${ghostConflict ? 'conflict' : ''} ${ghost.pending ? 'pending' : ''} ${gs < dayStart ? 'clip-start' : ''} ${ge > dayEnd ? 'clip-end' : ''}`}
-            style={{ top: mins((s - dayStart) / MINUTE), height: `max(18px, calc(${mins((e - s) / MINUTE)} - 2px))`, left: 1, width: 'calc(100% - 3px)', ['--c' as string]: c }}
+            style={{ top: mins((s - dayStart) / MINUTE), height: `max(18px, calc(${mins((e - s) / MINUTE)} - 2px))`, left: `calc(${gb.l}% + 1px)`, width: `calc(${gb.w}% - 3px)`, ['--c' as string]: c }}
             data-testid="tl-ghost"
             aria-hidden
           >
@@ -518,12 +553,20 @@ export function Timeline(props: Props) {
         onContextMenu={(e) => e.preventDefault()}
       >
         {creating && creating.dayStart === dayStart && (
-          <div className="tl-block lifted creating" data-testid="tl-create-ghost" aria-hidden style={{ top: mins(Math.min(creating.anchorMin, creating.curMin)), height: `calc(${mins(Math.abs(creating.curMin - creating.anchorMin))} - 2px)`, left: 1, width: 'calc(100% - 3px)', ['--c' as string]: 'var(--blue)' }}>
-            <span className="tl-title">新規予定</span>
+          <div className="tl-block lifted creating" data-testid="tl-create-ghost" aria-hidden style={{ top: mins(Math.min(creating.anchorMin, creating.curMin)), height: `calc(${mins(Math.abs(creating.curMin - creating.anchorMin))} - 2px)`, left: lanes ? `calc(${creating.lane === 'main' ? 0 : lanes.mainPct}% + 1px)` : 1, width: lanes ? `calc(${creating.lane === 'main' ? lanes.mainPct : 100 - lanes.mainPct}% - 3px)` : 'calc(100% - 3px)', ['--c' as string]: 'var(--blue)' }}>
+            <span className="tl-title">{lanes && creating.lane === 'detail' ? '新規タスク' : '新規予定'}</span>
             <span className="tl-time">{formatHm(dayStart + Math.min(creating.anchorMin, creating.curMin) * MINUTE)}〜{formatHm(dayStart + Math.max(creating.anchorMin, creating.curMin) * MINUTE)}</span>
           </div>
         )}
         {!isToday && todayIdx >= 0 && <div className="tl-now-guide" style={{ top: mins(nowMinAll) }} aria-hidden />}
+        {lanes && <div className="tl-lane-divider" style={{ left: `${lanes.mainPct}%` }} aria-hidden />}
+        {/* 移動の時間（P27）：予定の前に斜線で示す。予定とは別のもので、空き時間の計算で二重に数えない */}
+        {lanes && dayItems.filter((it): it is Extract<Item, { kind: 'event' }> => it.kind === 'event' && !!it.event.extra?.travelMinutes).map((it) => {
+          const tm = it.event.extra!.travelMinutes!;
+          const st = Math.max(dayStart, it.start - tm * MINUTE);
+          if (st >= it.start) return null;
+          return <div key={`buf-${it.id}`} className="tl-buffer" style={{ top: mins((st - dayStart) / MINUTE), height: mins((it.start - st) / MINUTE), left: 1, width: `calc(${lanes.mainPct}% - 3px)` }} data-testid={`tl-buffer:${it.event.id}`} aria-label={`「${it.event.title}」への移動 ${tm}分`} role="img"><span>移動 {tm}分</span></div>;
+        })}
         {placed.map((p) => renderBlock(p, false))}
         {placedDelayed.map((p) => renderBlock(p, true))}
         {ghostEl}

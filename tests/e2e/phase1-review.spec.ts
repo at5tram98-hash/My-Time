@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, mouseLongPressDrag, openApp, openNewEvent, openNewTask, pickTime, rawTouch, readStore, seed, task } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openDayList, openNewEvent, openNewTask, pickTime, rawTouch, readStore, seed, task } from './helpers';
 
 /** Phase 1 監査（差し戻し）指摘の回帰テスト */
 
@@ -18,7 +18,9 @@ test.describe('1. 予定の重複処理（確認前に保存しない）', () =>
         event({ id: 'B', title: '面談B', start: at(15), end: at(16) }),
       ],
     });
-    await page.getByTestId('tl-event:B').scrollIntoViewIfNeeded();
+    // 端の自動スクロールにかからないよう、予定を画面の中央に置いてから操作する
+    await page.getByTestId('tl-event:B').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(100);
   });
 
   async function dragB(page: Page, minutes: number) {
@@ -109,6 +111,7 @@ test.describe('2. 長押し進捗', () => {
     await seed(page, {
       tasks: [task({ id: 'p', title: '進捗', plannedStart: at(10), plannedEnd: at(12), status: 'running', intervals: [{ start: at(10), end: null }], actualStart: at(10), manualProgress: { value: 0.8, at: at(10, 30), workedMsAtSample: 30 * 60_000 } })],
     });
+    await openDayList(page);
   });
 
   test('初期値は実績ではなく理想進捗率', async ({ page }) => {
@@ -155,46 +158,23 @@ test.describe('2. 長押し進捗', () => {
   });
 });
 
-test.describe('3. ホーム', () => {
-  test('タスク一覧はガラスの枠（左右8px）の中で行を全幅に並べる（v2 Q13）', async ({ page }) => {
+test.describe('3. ホーム（再設計 2026-11：今日の画面）', () => {
+  test('今日のタスク一覧はシートの中で行を全幅に並べる（行ごとのカードを作らない）', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'w', title: '幅', plannedStart: at(11), plannedEnd: at(12) })] });
+    await openDayList(page);
     const row = (await page.getByTestId('task-row-w').boundingBox())!;
-    const pane = (await page.getByTestId('task-pane').boundingBox())!;
-    const vw = page.viewportSize()!.width;
-    expect(pane.x).toBe(8);
-    expect(pane.width).toBe(vw - 16);
-    // 枠の中では行ごとのカードや余白を作らない
-    expect(row.x).toBe(pane.x);
-    expect(row.width).toBe(pane.width);
-    const radius = await page.locator('.home .rows').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    const list = (await page.getByTestId('home-task-list').boundingBox())!;
+    expect(Math.abs(row.width - list.width)).toBeLessThan(2);
+    const radius = await page.locator('[data-testid="day-tasks"] .rows').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
     expect(radius).toBe('0px');
   });
 
-  test('ハンドル操作中の pointercancel では開閉を確定しない', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'CDP のタッチ入力が必要');
+  test('実行中・次のタスクがなければ「今やること」は空のカードを作らず、追加を案内する', async ({ page }) => {
     await openApp(page);
-    const h = await center(page.getByTestId('split-handle'));
-    const t = await rawTouch(page);
-    await t.start([h]);
-    for (let i = 1; i <= 10; i++) await t.move([{ x: h.x, y: h.y - i * 30 }]); // 十分に上へ
-    await t.cancel();
-    await t.detach();
-    await page.waitForTimeout(700);
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'false');
-    expect((await page.getByTestId('split-handle').boundingBox())!.y).toBeCloseTo(h.box.y, 0);
-  });
-
-  test('実行中・次のタスクがなければ拡張時に空のカードを出さない', async ({ page }) => {
-    await openApp(page);
-    const h = await center(page.getByTestId('split-handle'));
-    await mouseLongPressDrag(page, h, { x: h.x, y: h.y - 300 }, 0, 10);
-    await page.mouse.up();
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
-    await expect(page.locator('[data-testid="floating-cards"] .fcard')).toHaveCount(0);
-    await expect(page.getByText('実行中・予定のタスクはありません')).toHaveCount(0);
-    // v2：手を離した位置で止まり、一覧は見出しの帯だけを残して畳まれる（Q14）
-    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(60);
+    await expect(page.getByTestId('now-card')).toHaveAttribute('data-kind', 'free');
+    await expect(page.getByTestId('now-card')).toContainText('この後の予定はありません');
+    await expect(page.getByTestId('now-add')).toBeVisible();
   });
 });
 

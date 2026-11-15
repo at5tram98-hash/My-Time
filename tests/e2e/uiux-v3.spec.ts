@@ -1,53 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { at, center, event, openApp, openNewTask, pickDate, pickTime, readStore, saveEditor, seed, task, touchDrag } from './helpers';
+import { at, event, openApp, openDayList, openNewTask, openSettings, pickDate, pickTime, readStore, saveEditor, seed, task } from './helpers';
 
 /** 指示書 v3（C01〜C35・F1〜F6・R1〜R3）の受入条件の自動確認 */
 
 test.describe('v3 ホーム', () => {
-  test('C01/v3.1：一覧→円（Dynamic Island 風）→さらに上で非表示（線が残る）→線を下で円に戻る', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'CDP のタッチ入力が必要');
-    await openApp(page);
-    await seed(page, { tasks: [task({ id: 'r1', title: '実行中', plannedStart: at(10), plannedEnd: at(11), status: 'running', intervals: [{ start: at(10), end: null }], actualStart: at(10) })] });
-    const h = await center(page.getByTestId('split-handle'));
-    await touchDrag(page, h, { x: h.x, y: h.y - 400 });
-    // 1回目の上スライドではまだ消えない（円が残る）
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-expanded', 'true');
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
-    await expect(page.getByTestId('split-handle')).toHaveCount(0);
-    // v3.2：Dynamic Island ほどのカプセル。名前と経過時間を出す
-    await expect(page.getByTestId('fcard-running')).toContainText('実行中');
-    expect((await page.getByTestId('fcard-running').boundingBox())!.width).toBeGreaterThan(120);
-    await page.waitForTimeout(500);
-    const row = await center(page.getByTestId('compact-row'));
-    await touchDrag(page, { x: row.x, y: row.y }, { x: row.x, y: row.y - 60 }, { steps: 8 });
-    // 2回目で非表示。タブは移動せず、上に線が残る
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'true');
-    await expect(page.getByTestId('tab-home')).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
-    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeLessThan(1);
-    await page.waitForTimeout(400);
-    const line = await center(page.getByTestId('tasks-hidden-line'));
-    await touchDrag(page, line, { x: line.x, y: line.y + 60 }, { steps: 8 });
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
-    await expect(page.getByTestId('floating-cards')).toBeVisible();
-  });
-
-  test('空の日も最小化カプセルを残し、非表示と復帰を操作できる', async ({ page }) => {
-    await openApp(page);
-    await page.getByRole('button', { name: 'その他の操作' }).click();
-    await page.getByRole('menuitem', { name: 'タスクをコンパクト表示' }).click();
-    await expect(page.getByTestId('floating-cards')).toContainText('次のタスクはありません');
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
-    await expect.poll(async () => (await page.getByTestId('task-pane').boundingBox())?.height ?? 0).toBeGreaterThan(50);
-    await page.getByRole('button', { name: 'その他の操作' }).click();
-    await page.getByRole('menuitem', { name: 'タスク表示を隠す' }).click();
-    await expect(page.getByTestId('tasks-hidden-line')).toBeVisible();
-    await page.getByTestId('tasks-hidden-line').focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('floating-cards')).toBeVisible();
-    await expect(page.getByTestId('home-screen')).toHaveAttribute('data-hidden', 'false');
-  });
-
   test('v3.1：カレンダー選択から新しいカレンダーを追加できる', async ({ page }) => {
     await openApp(page);
     await page.getByTestId('tab-calendar').click();
@@ -80,6 +36,7 @@ test.describe('v3 アイコンと種別色', () => {
   test('C05・C25：リング中央の図形がリングの中心にある（0%・20%・100%）', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'p0', title: '未入力', plannedStart: at(13), plannedEnd: at(14) }), task({ id: 'p20', title: '20%', plannedStart: at(15), plannedEnd: at(16), manualProgress: { value: 0.2, at: at(10), workedMsAtSample: 0 } }), task({ id: 'p100', title: '完了', plannedStart: at(8), plannedEnd: at(9), status: 'done', actualStart: at(8), actualEnd: at(9), intervals: [{ start: at(8), end: at(9) }] })] });
+    await openDayList(page);
     for (const id of ['p0', 'p20', 'p100']) {
       await page.getByTestId(`task-row-${id}`).locator('.task-row-main').click();
       const ring = page.getByTestId('run-ring').locator('.ident').first();
@@ -130,6 +87,7 @@ test.describe('v3 編集と情報確認', () => {
     await saveEditor(page);
     const t = (await readStore(page, 'tasks')).find((x) => x.title === '図書館で勉強')!;
     expect(t.extra).toMatchObject({ place: { name: '大学図書館', lat: null }, travelMinutes: 15 });
+    await openDayList(page);
     await page.locator('[data-task-title="図書館で勉強"]').locator('.task-row-main').click();
     const info = page.getByTestId('task-info');
     await expect(info.getByText('大学図書館')).toHaveCount(1);
@@ -151,6 +109,7 @@ test.describe('v3 編集と情報確認', () => {
     await expect(pop.getByTestId('notify-summary')).toContainText('5分前');
     await pop.getByRole('button', { name: '完了' }).click();
     await saveEditor(page);
+    await openDayList(page);
     await page.locator('[data-task-title="通知2件"]').locator('.task-row-main').click();
     await expect(page.getByTestId('info-notify')).toHaveText('15分前・5分前');
   });
@@ -172,6 +131,7 @@ test.describe('v3 編集と情報確認', () => {
   test('C07・C08：サブタスクに日時と見積を設定・保持し、実績ログは初期は閉じている', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'pt', title: '親', plannedStart: at(13), plannedEnd: at(15) })], subtasks: [{ id: 'st1', taskId: 'pt', title: '構成', done: false, completedAt: null, order: 0, createdAt: at(9), updatedAt: at(9) }] });
+    await openDayList(page);
     await page.getByTestId('task-row-pt').locator('.task-row-main').click();
     await expect(page.getByTestId('log-toggle')).toHaveAttribute('aria-expanded', 'false');
     await page.getByTestId('sub-time-st1').click();
@@ -200,6 +160,7 @@ test.describe('v3 編集と情報確認', () => {
     }, at(9));
     await seed(page, { tasks: [task({ id: 'stt', title: '小説', plannedStart: at(13), plannedEnd: at(14), extra: { studio: { typeId: 'sty', version: 1, values: { pg: 20 } } } })] });
     await page.reload();
+    await openDayList(page);
     await page.getByTestId('task-row-stt').locator('.task-row-main').click();
     await expect(page.getByTestId('run-progress')).toHaveText('20/100ページ');
     await expect(page.getByTestId('progress-group')).toContainText('20/100ページ（20%）');
@@ -216,6 +177,7 @@ test.describe('v3 編集と情報確認', () => {
   test('F5：シートの見出しIDが一意で、ダイアログ名がタスク名になる', async ({ page }) => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'u1', title: '一意', plannedStart: at(13), plannedEnd: at(14) })] });
+    await openDayList(page);
     await page.getByTestId('task-row-u1').locator('.task-row-main').click();
     const dlg = page.getByRole('dialog', { name: '一意' });
     await expect(dlg).toBeVisible();
@@ -241,7 +203,7 @@ test.describe('v3 一覧・設定', () => {
 
   test('C32：カレンダーの並べ替えは矢印ボタンなし。ハンドルのキーボード操作で並び替えて保持', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.getByTestId('nav-calendars').click();
     await expect(page.getByRole('button', { name: /を上へ|を下へ/ })).toHaveCount(0);
     const h = page.getByTestId('calendar-handle-cal-general');
@@ -254,7 +216,7 @@ test.describe('v3 一覧・設定', () => {
 
   test('C33：カレンダー追加の途中で専用の種類を作り、戻って選択済みのまま保存できる', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.getByTestId('nav-calendars').click();
     await page.getByTestId('add-calendar').click();
     await page.getByTestId('calendar-name').fill('ゼミ');
@@ -274,7 +236,7 @@ test.describe('v3 一覧・設定', () => {
 
   test('C35：外観は一覧から詳細画面に入って選ぶ', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await expect(page.getByTestId('theme-menu')).toHaveCount(0);
     await page.getByTestId('nav-appearance').click();
     await page.getByTestId('theme-dark').click();
@@ -287,6 +249,7 @@ test.describe('v3 一覧・設定', () => {
 test('R1：未完了のサブタスクがある親を完了するときは確認し、子は自動で完了にしない', async ({ page }) => {
   await openApp(page);
   await seed(page, { tasks: [task({ id: 'r1p', title: '親R1', plannedStart: at(10), plannedEnd: at(12), status: 'running', actualStart: at(10), intervals: [{ start: at(10), end: null }] })], subtasks: [{ id: 'r1s', taskId: 'r1p', title: '子', done: false, completedAt: null, order: 0, createdAt: at(9), updatedAt: at(9) }] });
+  await openDayList(page);
   await page.getByTestId('task-row-r1p').locator('.task-row-main').click();
   await page.getByTestId('run-finish').click();
   await expect(page.getByRole('alertdialog')).toContainText('未完了のサブタスクがあります');
@@ -318,7 +281,7 @@ test.describe('v3.1 回帰：入力中にフォーカスが外れない', () => 
     await expect(q).toBeFocused();
     await page.getByTestId('place-popup').getByRole('button', { name: 'キャンセル' }).click();
     await saveEditor(page);
-    await page.getByTestId('home-add').click();
+    await openNewTask(page);
     await page.getByRole('tab', { name: '予定' }).or(page.getByRole('button', { name: '予定', exact: true })).first().click();
     const et = page.getByTestId('editor-title');
     await et.click();

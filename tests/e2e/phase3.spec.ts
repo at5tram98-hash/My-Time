@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, event, mouseLongPressDrag, openApp, openNewTask, readStore, seed, task } from './helpers';
+import { at, center, event, mouseLongPressDrag, openApp, openDayList, openNewTask, openSettings, readStore, seed, task } from './helpers';
 
 /** 絵文字・絵文字風の記号（アプリが表示するアイコンとして出てはいけないもの） */
 const EMOJI = /[\p{Extended_Pictographic}←-⇿›✓✔]/u;
@@ -29,6 +29,7 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
         task({ id: 'modern', title: '新しいID', icon: 'star', plannedStart: at(17), plannedEnd: at(18) }),
       ],
     });
+    await openDayList(page);
     const row = (id: string) => page.getByTestId(`task-row-${id}`);
     await expect(row('legacy').locator('[data-icon]').first()).toHaveAttribute('data-icon', 'flask');
     await expect(row('legacy').locator('[data-icon]').first()).toHaveAttribute('data-icon-source', 'legacy');
@@ -36,13 +37,16 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
     await expect(row('modern').locator('[data-icon]').first()).toHaveAttribute('data-icon-source', 'id');
     // ユーザーが入力したタイトルの絵文字は残す
     await expect(row('unknown')).toContainText('🦄');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('day-tasks')).toHaveCount(0);
 
-    for (const t of ['home', 'calendar', 'tasks', 'analysis', 'other'] as const) {
+    for (const t of ['home', 'calendar', 'tasks', 'analysis'] as const) {
       await page.getByTestId(`tab-${t}`).click();
       await page.waitForTimeout(200);
       expect(EMOJI.test(await appIconText(page)), `${t} にアイコンとしての絵文字がない`).toBe(false);
     }
     await page.getByTestId('tab-home').click();
+    await openDayList(page);
 
     // 変更せずに保存しても元の値のまま
     await row('unknown').getByRole('button').first().click();
@@ -53,7 +57,7 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
     // 編集シートが閉じて情報確認に戻ってから、情報確認も閉じる（閉じきるまで待つ）
     await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('[role="dialog"]:not([data-testid="day-tasks"])')).toHaveCount(0);
 
     // 旧値は対応するアイコンが選択済みとして表示され、別のアイコンを選ぶと新しい ID を保存
     await row('legacy').getByRole('button').first().click();
@@ -82,17 +86,19 @@ test.describe('Phase 3：アイコン刷新と旧データ互換', () => {
 });
 
 test.describe('Phase 3：タブバー', () => {
-  test('5タブの順番・名前・選択状態（色以外も）・44px 以上・素早い連続切替', async ({ page }) => {
+  test('4タブ（再設計）の順番・名前・選択状態（色以外も）・44px 以上・素早い連続切替', async ({ page }) => {
     await openApp(page);
-    const tabs = page.getByTestId('tabbar').getByRole('button');
-    await expect(tabs).toHaveText(['ホーム', 'カレンダー', 'タスク', '分析', 'その他']);
+    const tabs = page.getByTestId('tabbar').locator('.tab');
+    await expect(tabs).toHaveText(['今日', 'カレンダー', 'タスク', '振り返り']);
+    const add = (await page.getByTestId('quick-add').boundingBox())!;
+    expect(add.width).toBeGreaterThanOrEqual(44);
     for (const b of await tabs.all()) {
       const box = (await b.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(44);
       expect(box.width).toBeGreaterThanOrEqual(44);
     }
     // 素早い連続切替：最後に押したタブが選ばれ、画面も一致する
-    for (const t of ['calendar', 'tasks', 'analysis', 'other', 'home', 'tasks'] as const) await page.getByTestId(`tab-${t}`).click({ delay: 0 });
+    for (const t of ['calendar', 'tasks', 'analysis', 'home', 'tasks'] as const) await page.getByTestId(`tab-${t}`).click({ delay: 0 });
     await expect(page.getByTestId('tab-tasks')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[aria-current="page"]')).toHaveCount(1);
     // 選択中はラベルが太字（色だけに頼らない）・カプセルが選択タブの位置へ
@@ -107,7 +113,8 @@ test.describe('Phase 3：タブバー', () => {
 
   test('最下部の内容はタブバーに隠れずに操作でき、シートを開くとタブバーより前に出る', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('tab-other').click();
+    // 設定はタブバーの上に重なる別の階層になったため、タブの画面（振り返り）で確かめる
+    await page.getByTestId('tab-analysis').click();
     const body = page.locator('.tab-panel:not([hidden]) .scroll-body').first();
     await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
     await page.waitForTimeout(200);
@@ -202,12 +209,25 @@ test.describe('Phase 3：アクセシビリティ', () => {
     await openApp(page);
     await seed(page, { tasks: [task({ id: 'a11y', title: '名前の確認', icon: '📘', plannedStart: at(13), plannedEnd: at(14) })] });
     const problems: Record<string, string[]> = {};
-    for (const t of ['home', 'calendar', 'tasks', 'analysis', 'other'] as const) {
+    for (const t of ['home', 'calendar', 'tasks', 'analysis'] as const) {
       await page.getByTestId(`tab-${t}`).click();
       await page.waitForTimeout(250);
       const u = await unnamedControls(page);
       if (u.length) problems[t] = u;
     }
+    await openSettings(page);
+    await page.waitForTimeout(400);
+    const st = await unnamedControls(page);
+    if (st.length) problems.settings = st;
+    await page.getByTestId('settings-close').click();
+    await page.getByTestId('quick-add').click();
+    await page.getByTestId('quick-input').fill('明日18時からバイト、金曜までにレポート2時間');
+    await page.waitForTimeout(500);
+    const qa = await unnamedControls(page);
+    if (qa.length) problems.quickAdd = qa;
+    await page.getByRole('button', { name: 'キャンセル' }).first().click();
+    await page.getByRole('button', { name: '変更を破棄' }).click({ timeout: 1500 }).catch(() => undefined);
+    await expect(page.getByTestId('quick-add-sheet')).toHaveCount(0);
     await page.getByTestId('tab-home').click();
     await openNewTask(page);
     await page.waitForTimeout(400);
@@ -229,6 +249,7 @@ test('閉じかけのシートの入力内容を、次に開いたシートへ�
       task({ id: 'sb', title: '二つ目', icon: '🎯', plannedStart: at(15), plannedEnd: at(16) }),
     ],
   });
+  await openDayList(page);
   for (let round = 0; round < 3; round++) {
     await page.getByTestId('task-row-sa').getByRole('button').first().click();
     await page.getByTestId('info-edit').last().click();
@@ -242,7 +263,7 @@ test('閉じかけのシートの入力内容を、次に開いたシートへ�
     await expect(page.getByRole('radiogroup', { name: 'アイコン' }).last().getByRole('radio', { name: '目標' })).toHaveAttribute('aria-checked', 'true');
     await page.getByTestId('editor-save').last().click();
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('[role="dialog"]:not([data-testid="day-tasks"])')).toHaveCount(0);
   }
   const all = await readStore(page, 'tasks');
   expect(all.find((t) => t.id === 'sa')).toMatchObject({ title: '一つ目', icon: '🧪' });

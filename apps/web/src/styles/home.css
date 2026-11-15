@@ -191,10 +191,10 @@
 /* コンパクト・非表示では面を消し、カプセルだけを浮かべる */
 .home[data-expanded='true'] .task-glass { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; overflow: visible; }
 /* カレンダーはガラスの下まで描き、上余白でスクロールの起点だけずらす */
-.home .home-timeline { position: absolute; inset: 0; border-top: 0; }
-.home .home-timeline .tl-scroll { padding-top: var(--ov, 0px); scroll-padding-top: var(--ov, 0px); }
-.home .home-timeline .tl-head { position: absolute; top: var(--ov, 0px); left: 0; right: 0; z-index: 3; background: color-mix(in srgb, var(--bg-plain) 80%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
-.home .home-timeline .timeline:has(> .tl-head) .tl-scroll { padding-top: calc(var(--ov, 0px) + 30px); }
+.home:not(.today) .home-timeline { position: absolute; inset: 0; border-top: 0; }
+.home:not(.today) .home-timeline .tl-scroll { padding-top: var(--ov, 0px); scroll-padding-top: var(--ov, 0px); }
+.home:not(.today) .home-timeline .tl-head { position: absolute; top: var(--ov, 0px); left: 0; right: 0; z-index: 3; background: color-mix(in srgb, var(--bg-plain) 80%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.home:not(.today) .home-timeline .timeline:has(> .tl-head) .tl-scroll { padding-top: calc(var(--ov, 0px) + 30px); }
 .hidden-line { margin-top: 2px; }
 
 /* コンパクト表示：Dynamic Island ほどの大きさのカプセル（中身は独自） */

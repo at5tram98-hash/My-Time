@@ -16,3 +16,6 @@ export * from './ops';
 export * from './snapshot';
 export * from './icons';
 export * from './studio';
+export * from './spec';
+export * from './planner';
+export * from './nlparse';

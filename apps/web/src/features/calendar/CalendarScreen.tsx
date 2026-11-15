@@ -14,6 +14,7 @@ import { Timeline } from '../timeline/Timeline';
 import { InlineSearch } from '../search/InlineSearch';
 import { DatePickerPopup } from '../editor/pickers';
 import { useTimelineActions } from '../timeline/useTimelineActions';
+import { SettingsButton } from '../other/SettingsButton';
 
 const VIEW_LABEL: Record<CalendarViewPref, string> = { day: '1日', '2day': '2日', '3day': '3日', week: '週', month: '月' };
 
@@ -58,7 +59,7 @@ export function CalendarScreen() {
           </MenuButton>
           <button type="button" className="gbtn glass glass-i" aria-label="表示するカレンダー" onClick={() => openSheet({ kind: 'calendarFilter' })} data-testid="cal-filter"><Icon name="stack" size={19} /></button>
           <InlineSearch target="calendar" />
-          <button type="button" className="gbtn glass glass-i tint" aria-label="追加" onClick={() => openSheet({ kind: 'edit', mode: 'event' })} data-testid="cal-add"><Icon name="plus" size={20} strokeWidth={2.2} /></button>
+          <SettingsButton />
         </div>
         <DatePickerPopup open={monthPick} value={calDate} title="日付へ移動" onClose={() => setMonthPick(false)} onPick={(d) => { setMonthPick(false); setCalDate(d); }} />
       </header>

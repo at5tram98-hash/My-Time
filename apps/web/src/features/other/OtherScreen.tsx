@@ -18,14 +18,19 @@ import { LimitsPage } from './LimitsPage';
 import { AdvancedPage, CategoriesPage, TimeTreePage } from './MorePages';
 import { StudioPage } from '../studio/StudioPage';
 import { useEdgeSwipeBack } from '../../ui/gestures';
+import { ExportPage, HistoryPage, RecoveryPage } from './HistoryPages';
 
 const THEME_LABEL: Record<ThemePref, string> = { system: 'システムに合わせる', light: 'ライト', dark: 'ダーク' };
 const SIZE_LABEL: Record<TextSizePref, string> = { system: 'システムに合わせる', small: '小', large: '大', xlarge: '特大' };
 
-export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits' | 'categories' | 'studio' | 'timetree' | 'advanced' | 'appearance' | 'textsize';
+export type OtherPage = 'root' | 'calendars' | 'subjects' | 'employers' | 'backups' | 'restore' | 'notices' | 'notifications' | 'transfer' | 'limits' | 'categories' | 'studio' | 'timetree' | 'advanced' | 'appearance' | 'textsize' | 'history' | 'recovery' | 'export' | 'today';
 
 const PAGE_TITLE: Record<OtherPage, string> = {
-  root: 'その他',
+  root: '設定',
+  history: '変更履歴',
+  recovery: '同期で守った変更',
+  export: '予定の書き出し',
+  today: '今日の画面',
   transfer: 'データの移行',
   calendars: 'カレンダー',
   subjects: '授業の科目',
@@ -109,7 +114,7 @@ function syncLabel(s: ReturnType<typeof useSync>, pending: number): string {
   }
 }
 
-export function OtherScreen() {
+export function OtherScreen({ onClose }: { onClose?: () => void } = {}) {
   const { settings, outboxPending } = useData();
   const { openSheet, confirm } = useUIActions();
   const sync = useSync();
@@ -117,6 +122,9 @@ export function OtherScreen() {
   const [page, setPage] = useState<OtherPage>('root');
   const logCount = useLiveQuery(() => db.operationLog.count(), []) ?? 0;
   const loggedIn = Boolean(sync.me);
+  // 設定の最初の画面は、左端からの右スワイプでも閉じる（iOS の「戻る」と同じ：IOS-019）
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEdgeSwipeBack(rootRef, () => onClose?.());
 
   const logout = async () => {
     if (outboxPending > 0 && !(await confirm({ title: 'ログアウトしますか？', message: `まだ送信していない変更が${outboxPending}件あります。この端末には残り、同じアカウントでログインし直すと送信します。`, confirmLabel: 'ログアウト', destructive: true }))) return;
@@ -127,9 +135,10 @@ export function OtherScreen() {
   return (
     <div className="screen other" data-testid="other-screen">
       <header className="nav large">
-        <div className="nav-row"><h1 className="large-title">その他</h1></div>
+        {onClose && <button type="button" className="nav-back" onClick={onClose} data-testid="settings-close" aria-label="設定を閉じる"><Icon name="chevronLeft" size={22} strokeWidth={2.4} />戻る</button>}
+        <div className="nav-row"><h1 className="large-title">設定</h1></div>
       </header>
-      <div className="scroll-body other-body">
+      <div className="scroll-body other-body" ref={rootRef}>
         {/* アカウント（Q52・Q57）：状態はカードで、細かい項目はリストで */}
         <section className="status-card" data-testid="account-row">
           <span className="avatar" aria-hidden><Icon name="person" size={26} /></span>
@@ -161,6 +170,10 @@ export function OtherScreen() {
           <NavRow icon="briefcase" color="#FF9F0A" label="勤務先" onClick={() => setPage('employers')} testId="nav-employers" />
         </Group>
 
+        <Group header="今日の画面">
+          <NavRow icon="lanes" color="#0A84FF" label="予定とタスクの幅" value={{ both: '同じ幅', main: '予定を広く', detail: 'タスクを広く' }[settings.laneFocus]} onClick={() => setPage('today')} testId="nav-today" />
+        </Group>
+
         <Group header="通知と外観">
           <NavRow icon="bell" color="#FF2D55" label="通知" onClick={() => setPage('notifications')} testId="nav-notifications" />
           <NavRow icon="tray" color="#FF3B30" label="お知らせ" badge={attention} onClick={() => setPage('notices')} testId="nav-notices" />
@@ -175,6 +188,12 @@ export function OtherScreen() {
           <NavRow icon="stack" color="#30B0C7" label="データの移行" onClick={() => setPage('transfer')} testId="nav-transfer" />
           <NavRow icon="link" color="#34C759" label="予定の取り込み（TimeTreeなど）" onClick={() => openSheet({ kind: 'import' })} testId="nav-import" />
           <NavRow icon="calendar" color="#34C759" label="TimeTree の読み込み設定" onClick={() => setPage('timetree')} testId="nav-timetree" />
+          <NavRow icon="copy" color="#0A84FF" label="予定の書き出し（.ics）" onClick={() => setPage('export')} testId="nav-export" />
+        </Group>
+
+        <Group header="履歴">
+          <NavRow icon="history" color="#5856D6" label="変更履歴" value={logCount ? `${logCount}件` : undefined} onClick={() => setPage('history')} testId="nav-history" />
+          <NavRow icon="cloud" color="#30B0C7" label="同期で守った変更" onClick={() => setPage('recovery')} testId="nav-recovery" />
         </Group>
 
         <Group header="詳細設定">
@@ -207,6 +226,10 @@ export function OtherScreen() {
             {page === 'studio' && <StudioPage />}
             {page === 'timetree' && <TimeTreePage />}
             {page === 'advanced' && <AdvancedPage logCount={logCount} />}
+            {page === 'history' && <HistoryPage />}
+            {page === 'recovery' && <RecoveryPage />}
+            {page === 'export' && <ExportPage />}
+            {page === 'today' && <ChoicePage label="予定とタスクの幅" value={settings.laneFocus} options={[{ value: 'both', label: '同じ幅' }, { value: 'main', label: '予定を広く' }, { value: 'detail', label: 'タスクを広く' }]} onPick={(k) => void repo.updateSettings({ laneFocus: k })} footer="今日の画面で、左の予定と右のタスクの幅を選びます。見出しをタップしても切り替えられます。" testId="lanes" />}
             {page === 'appearance' && <ChoicePage label="外観" value={settings.theme} options={(Object.keys(THEME_LABEL) as ThemePref[]).map((k) => ({ value: k, label: THEME_LABEL[k] }))} onPick={(k) => void repo.updateSettings({ theme: k })} preview={<AppearancePreview />} footer="システムに合わせると、iPhone の設定（ライト／ダーク）に従います。" testId="theme" />}
             {page === 'textsize' && <ChoicePage label="文字サイズ" value={settings.textSize} options={(Object.keys(SIZE_LABEL) as TextSizePref[]).map((k) => ({ value: k, label: SIZE_LABEL[k] }))} onPick={(k) => void repo.updateSettings({ textSize: k })} preview={<p className="text-preview">今日のタスク・財政学レポート 10:00〜12:00</p>} footer="システムに合わせると、iPhone の「さらに大きな文字」の設定に従います。" testId="size" />}
           </SubPage>

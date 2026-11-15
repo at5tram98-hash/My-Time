@@ -156,7 +156,8 @@ export function useTimelineActions() {
     onMove,
     onEventMenu: (id: string, anchor?: HTMLElement | null) => void onEventMenu(id, anchor),
     onResize,
-    onCreateRange: (start: number, end: number) => openSheet({ kind: 'edit', mode: 'event', defaults: { start, end } }),
+    // 左のレーン（または通常の時間軸）は予定、右のレーンはタスクとして作る
+    onCreateRange: (start: number, end: number, lane?: 'main' | 'detail') => openSheet(lane === 'detail' ? { kind: 'edit', mode: 'task', defaults: { plannedStart: start, plannedEnd: end } } : { kind: 'edit', mode: 'event', defaults: { start, end } }),
     onOpenEvent: (id: string) => openSheet({ kind: 'info', entity: 'event', id }),
     onOpenTask: (id: string) => openSheet({ kind: 'info', entity: 'task', id }),
   };

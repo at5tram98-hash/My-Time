@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openApp, seed } from './helpers';
+import { openApp, openNewTask, openSettings, seed } from './helpers';
 import { demo } from './demo';
 
 /**
@@ -39,7 +39,7 @@ test.describe('画面キャプチャ Phase 3', () => {
       await page.screenshot({ path: `${OUT}/${test.info().project.name}-${scheme}-tabbar.png`, clip: { x: 0, y: box.y - 40, width: 393, height: box.height + 60 } });
       await page.getByTestId('tab-home').click();
       // タスクのアイコン選択
-      await page.getByTestId('home-add').click();
+      await openNewTask(page);
       await page.getByRole('menuitem', { name: '新規タスク' }).click();
       await expect(page.getByRole('radiogroup', { name: 'アイコン' })).toBeVisible();
       await page.getByRole('radiogroup', { name: 'アイコン' }).scrollIntoViewIfNeeded();
@@ -60,7 +60,7 @@ test.describe('画面キャプチャ Phase 3', () => {
     await page.setViewportSize({ width: 393, height: 852 });
     await page.evaluate(() => document.documentElement.setAttribute('data-text-size', 'xlarge'));
     await page.evaluate(() => document.documentElement.style.setProperty('--base-size', '22px'));
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await shoot(page, 'xlarge-other');
   });
 });

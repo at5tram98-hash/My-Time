@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { at, center, openApp, openNewTask, seed, task, touchDrag } from './helpers';
+import { at, center, openApp, openNewTask, openSettings, seed, task, touchDrag } from './helpers';
 import { demo } from './demo';
 
 /** 指示書 v3 のレビュー用キャプチャ（docs/screenshots/v3）。通常の E2E からは除外（--grep-invert 画面キャプチャ） */
@@ -19,7 +19,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await shot(page, `${scheme}-03-analysis-week`);
     await page.getByTestId('analysis-screen').locator('.scroll-body').evaluate((el) => el.scrollTo(0, 900));
     await shot(page, `${scheme}-04-analysis-more`);
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await shot(page, `${scheme}-05-other`);
     await page.getByTestId('nav-calendars').click();
     await shot(page, `${scheme}-06-calendars`);
@@ -66,7 +66,7 @@ test('画面キャプチャ v3 コンパクト・狭幅・長押し', async ({ p
   await page.getByTestId('tab-home').click();
   await page.getByRole('button', { name: 'その他の操作' }).click();
   await page.getByRole('menuitem', { name: 'タスク一覧を表示' }).click();
-  await page.getByTestId('home-add').click();
+  await openNewTask(page);
   await shot(page, '17-editor-320');
   await page.getByRole('button', { name: 'キャンセル' }).first().click();
   await page.setViewportSize({ width: 393, height: 852 });

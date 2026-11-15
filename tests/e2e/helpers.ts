@@ -173,10 +173,31 @@ export async function saveEditor(page: Page) {
   await expect(page.getByTestId('editor-sheet')).toHaveCount(0);
 }
 
-/** ホームの＋から新規タスク（Q20：＋で共通エディターを直接開く） */
+/** 右下の＋（文章で追加）から「詳しく入力」で共通エディターを開く（再設計 2026-11） */
 export async function openNewTask(page: Page) {
-  await page.getByTestId('home-add').click();
+  await page.getByTestId('quick-add').click();
+  await expect(page.getByTestId('quick-add-sheet')).toBeVisible();
+  await page.getByTestId('quick-detail').click();
   await expect(page.getByTestId('editor-sheet')).toBeVisible();
+}
+
+/** 今日の「タスク」チップから、その日のタスク一覧（長押しの進捗入力ができる行）を開く */
+export async function openDayList(page: Page) {
+  await page.getByTestId('chip-tasks').click();
+  await expect(page.getByTestId('day-tasks')).toBeVisible();
+  await settled(page.getByTestId('day-tasks'));
+}
+
+/** シートが開き終わる（位置が止まる）まで待つ。長押し・ドラッグの座標を動いている途中で測らない */
+export async function settled(l: Locator) {
+  let last = -1;
+  await expect.poll(async () => { const y = (await l.boundingBox())?.y ?? -2; const same = Math.abs(y - last) < 0.5; last = y; return same; }, { intervals: [80, 80, 80, 120, 160] }).toBe(true);
+}
+
+/** 設定（歯車）を開く。表示中の画面の歯車を押す */
+export async function openSettings(page: Page) {
+  await page.locator('[data-testid="open-settings"]:visible').first().click();
+  await expect(page.getByTestId('other-screen')).toBeVisible();
 }
 
 /** ホームの＋から新規予定（エディター上部で「予定」に切替） */

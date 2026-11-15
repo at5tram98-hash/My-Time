@@ -260,6 +260,12 @@ export interface ItemExtra {
   attachments?: Attachment[];
   /** Create Studio の専用種類と値（項目IDに結びつけた値。表示名を変えても値は保たれる） */
   studio?: { typeId: Id; version: number; values: Record<string, unknown> } | null;
+  /** 専門の種類（S01〜S25）と、その種類の詳細。種類を選んだときだけ使う */
+  spec?: { type: string; details: Record<string, unknown> } | null;
+  /** 先に終える必要があるタスク（P28。タスクのみ） */
+  dependsOn?: Id[];
+  /** 入力した方法（手入力・文章から・取り込み）。表示用（P18） */
+  origin?: 'manual' | 'text' | 'import' | 'plan' | null;
 }
 
 /** タスクのカテゴリー（Q55） */

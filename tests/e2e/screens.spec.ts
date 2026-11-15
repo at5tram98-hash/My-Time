@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { center, mouseLongPressDrag, openApp, seed } from './helpers';
+import { center, mouseLongPressDrag, openApp, openNewTask, openSettings, seed } from './helpers';
 import { demo } from './demo';
 
 /** レビュー用の画面キャプチャ（docs/screenshots に保存）。データはテスト用に投入したもの。 */
@@ -73,7 +73,7 @@ test.describe('画面キャプチャ', () => {
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${OUT}/10-analysis.png` });
 
-    await page.getByTestId('tab-other').click();
+    await openSettings(page);
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${OUT}/11-other.png` });
   });
@@ -91,7 +91,7 @@ test.describe('画面キャプチャ', () => {
 
   test('新規作成シート', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('home-add').click();
+    await openNewTask(page);
     await page.getByRole('menuitem', { name: '新規タスク' }).click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `${OUT}/14-new-task.png` });

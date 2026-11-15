@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openApp, seed } from './helpers';
+import { openApp, openNewTask, openSettings, seed } from './helpers';
 import { demo } from './demo';
 
 /** UI/UX v2 のレビュー用キャプチャ（docs/screenshots/v2）。通常の E2E からは除外（--grep-invert 画面キャプチャ） */
@@ -18,7 +18,7 @@ test.describe('画面キャプチャ v2', () => {
         await shot(page, `${scheme}-${t}`);
       }
       await page.getByTestId('tab-home').click();
-      await page.getByTestId('home-add').click();
+      await openNewTask(page);
       await expect(page.getByTestId('editor-sheet')).toBeVisible();
       await shot(page, `${scheme}-editor-basic`);
       await page.getByTestId('editor-tab-option').click();
@@ -34,7 +34,7 @@ test.describe('画面キャプチャ v2', () => {
 test('画面キャプチャ v2 Studio', async ({ page }) => {
   await openApp(page);
   await seed(page, demo);
-  await page.getByTestId('tab-other').click();
+  await openSettings(page);
   await page.getByTestId('nav-studio').click();
   await shot(page, 'studio-list');
   await page.getByTestId('studio-new-task').click();
@@ -57,7 +57,7 @@ test('画面キャプチャ v2 Studio', async ({ page }) => {
   await expect(page.getByTestId('studio-card-読書')).toBeVisible();
   await shot(page, 'studio-saved');
   await page.getByTestId('tab-home').click();
-  await page.getByTestId('home-add').click();
+  await openNewTask(page);
   await page.getByTestId('editor-type').click();
   await page.locator('[data-testid^="type-studio-"]').first().click();
   await page.getByTestId('editor-tab-special').click();

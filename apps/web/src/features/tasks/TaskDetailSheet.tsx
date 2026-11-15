@@ -26,6 +26,9 @@ import { Ring } from '../../ui/Ring';
 import { Popup } from '../../ui/Popup';
 import { deleteWithUndo } from '../../ui/undo';
 import { StudioValueView } from '../studio/StudioFieldsForm';
+import { SpecCard } from '../spec/SpecCard';
+import { OriginRows, NudgeBar } from '../plan/ItemPlanBits';
+import { blockingTasks, specOf } from '@my-time/domain';
 import type { PlaceValue, Subtask } from '@my-time/domain';
 
 
@@ -80,6 +83,9 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
   };
   // 完了は控えめに確定し、直後に取り消せる（Q92）
   const finish = async () => {
+    // 前に終えるタスクが残っていれば確認（P28：完了として扱う前に知らせる）
+    const blockers = blockingTasks(task, tasks);
+    if (blockers.length && !(await confirm({ title: '先に終えるタスクがあります', message: `${blockers.map((b) => `「${b.title}」`).join('、')}が未完了です。このまま完了にしますか？`, confirmLabel: '完了にする', cancelLabel: '戻る' }))) return;
     // 未完了のサブタスクが残っていれば確認（子は自動で完了にしない：R1）
     const open = subtasks.filter((x) => !x.done).length;
     if (open && !(await confirm({ title: '未完了のサブタスクがあります', message: `${open}件が未完了のまま親タスクを完了にします。サブタスクはそのまま残ります。`, confirmLabel: '完了にする', cancelLabel: '戻る' }))) return;
@@ -87,6 +93,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
     showToast('完了しました。取り消すには「完了を取り消す」');
   };
   const st = task.extra?.studio ? studioTypes.find((t) => t.id === task.extra!.studio!.typeId) : undefined;
+  const spec = specOf(task);
   const worked = workedMs(task, now);
   const pr = progressOf(task, subtasks, studioTypes, now);
   const notifies = task.extra?.notifies !== undefined ? task.extra.notifies : task.notifyMinutesBefore != null ? [task.notifyMinutesBefore] : [];
@@ -164,6 +171,19 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
         </div>
       )}
 
+      {spec && <SpecCard item={task} entity="task" spec={spec} />}
+      {task.kind === 'do' && task.status !== 'done' && (
+        <div className="plan-actions" role="group" aria-label="予定の調整">
+          <button type="button" className="gpill glass glass-i" onClick={() => openSheet({ kind: 'reschedule', taskId: task.id, mode: 'postpone' })} data-testid="task-postpone"><Icon name="forward" size={15} />延期</button>
+          <button type="button" className="gpill glass glass-i" onClick={() => openSheet({ kind: 'reschedule', taskId: task.id, mode: 'split' })} data-testid="task-split"><Icon name="split" size={15} />分けて進める</button>
+        </div>
+      )}
+      {task.kind === 'do' && task.plannedStart != null && task.plannedEnd != null && task.status === 'notStarted' && <NudgeBar entity="task" id={task.id} title={task.title} start={task.plannedStart} end={task.plannedEnd} />}
+      {blockingTasks(task, tasks).length > 0 && (
+        <div className="group" data-testid="task-deps"><div className="group-header">先に終えるタスク</div><div className="group-body">
+          {blockingTasks(task, tasks).map((b) => <button key={b.id} type="button" className="row row-button" onClick={() => openSheet({ kind: 'info', entity: 'task', id: b.id })}><Icon name="clock" size={18} className="muted" /><span className="row-label" data-user-text>{b.title}</span><span className="row-value">未完了</span></button>)}
+        </div></div>
+      )}
       {task.plannedStart != null && task.plannedEnd != null && <InfoTimePreview title={task.title} start={task.plannedStart} end={task.plannedEnd} color={cal?.color ?? 'var(--blue)'} />}
       <div className="group">
         <div className="group-body">
@@ -293,6 +313,7 @@ export function TaskDetailSheet({ id, depth, openProgress }: { id: string; depth
         </div>
       )}
       <InfoExtras extra={task.extra} />
+      <OriginRows entity="task" id={task.id} origin={task.extra?.origin ?? null} source={null} updatedAt={task.updatedAt} />
       <WorkLog task={task} logs={logs ?? []} />
 
       {task.notes && (

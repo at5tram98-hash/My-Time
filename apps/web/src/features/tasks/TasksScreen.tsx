@@ -19,9 +19,10 @@ import { deleteWithUndo } from '../../ui/undo';
 import { InlineSearch } from '../search/InlineSearch';
 import { Ring } from '../../ui/Ring';
 import { SPRING } from '../../ui/motion';
+import { SettingsButton } from '../other/SettingsButton';
 
-const SCOPE_LABEL: Record<TaskScope, string> = { today: '今日', upcoming: '近日', all: 'すべて', flagged: 'フラグ', done: '完了' };
-const SCOPE_ICON: Record<TaskScope, { icon: IconName; color: string }> = { today: { icon: 'today', color: '#0A84FF' }, upcoming: { icon: 'calendar', color: '#FF3B30' }, all: { icon: 'tray', color: '#3A3A3C' }, flagged: { icon: 'flag', color: '#FF9500' }, done: { icon: 'check', color: '#8E8E93' } };
+const SCOPE_LABEL: Record<TaskScope, string> = { today: '今日', upcoming: '近日', inbox: '未割当', all: 'すべて', flagged: 'フラグ', done: '完了' };
+const SCOPE_ICON: Record<TaskScope, { icon: IconName; color: string }> = { today: { icon: 'today', color: '#0A84FF' }, upcoming: { icon: 'calendar', color: '#FF3B30' }, inbox: { icon: 'inbox', color: '#5E5CE6' }, all: { icon: 'tray', color: '#3A3A3C' }, flagged: { icon: 'flag', color: '#FF9500' }, done: { icon: 'check', color: '#8E8E93' } };
 const GROUP_LABEL: Record<TaskGroup, string> = { category: 'カテゴリー', tag: 'タグ', date: '日付' };
 const SORT_LABEL: Record<TaskSort, string> = { due: '期限順', priority: '優先度順', manual: '手動' };
 
@@ -31,6 +32,8 @@ export function inScope(t: Task, scope: TaskScope, now: number): boolean {
   if (scope === 'done') return isDone;
   if (scope === 'flagged') return t.flagged && !isDone;
   if (scope === 'all') return true;
+  // 未割当（P22）：時間を決めていない実行タスク（課題の作業時間未設定もここ）
+  if (scope === 'inbox') return t.kind === 'do' && !isDone && t.plannedStart == null;
   const a = taskAnchor(t);
   const today = startOfDay(now);
   if (a == null) return scope === 'upcoming' ? false : needsSetup(t);
@@ -72,7 +75,7 @@ export function TasksScreen() {
   const counts = useMemo(() => {
     const k = tasks.filter((t) => kind === 'all' || t.kind === kind);
     const open = (t: Task) => t.status !== 'done' && !t.checked;
-    return Object.fromEntries((['today', 'upcoming', 'all', 'flagged', 'done'] as TaskScope[]).map((sc) => [sc, k.filter((t) => inScope(t, sc, now) && (sc === 'done' || open(t))).length])) as Record<TaskScope, number>;
+    return Object.fromEntries((['today', 'upcoming', 'inbox', 'all', 'flagged', 'done'] as TaskScope[]).map((sc) => [sc, k.filter((t) => inScope(t, sc, now) && (sc === 'done' || open(t))).length])) as Record<TaskScope, number>;
   }, [tasks, kind, now]);
 
   const sections = useMemo(() => {
@@ -227,6 +230,7 @@ export function TasksScreen() {
           <h1 className="large-title">タスク</h1>
           <div className="nav-actions gap">
             <InlineSearch target="tasks" scope="tasks" />
+            <SettingsButton />
             <MenuButton label="並び順と表示" className="gbtn glass glass-i" testId="tasks-sort" items={[
               ...(['due', 'priority', 'manual'] as TaskSort[]).map((s) => ({ label: SORT_LABEL[s], checked: sort === s, onSelect: () => setPref({ taskSort: s }) })),
               'separator',
@@ -244,7 +248,7 @@ export function TasksScreen() {
         <div className="tasks-top">
         {/* スマートリスト（C29）：今日・近日・すべて・フラグ・完了の件数カード */}
         <div className="smart-lists" role="group" aria-label="表示するタスク">
-          {(['today', 'upcoming', 'all', 'flagged', 'done'] as TaskScope[]).map((sc) => (
+          {(['today', 'upcoming', 'inbox', 'all', 'flagged', 'done'] as TaskScope[]).map((sc) => (
             <button key={sc} type="button" className={`smart-card ${scope === sc ? 'on' : ''} ${sc === 'done' ? 'wide' : ''}`} aria-pressed={scope === sc} onClick={() => setPref({ taskScope: sc })} data-testid={`scope-${sc}`}>
               <span className="smart-ico" style={{ background: SCOPE_ICON[sc].color }} aria-hidden><Icon name={SCOPE_ICON[sc].icon} size={17} strokeWidth={2.2} /></span>
               <span className="smart-count">{counts[sc]}</span>

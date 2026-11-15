@@ -25,7 +25,19 @@ export type SheetState =
   /** 同期の詳細（Q57） */
   | { kind: 'syncStatus' }
   /** 分析の詳細（Q49） */
-  | { kind: 'analysisDetail'; metric: AnalysisMetric; period: AnalysisPeriod; from: number };
+  | { kind: 'analysisDetail'; metric: AnalysisMetric; period: AnalysisPeriod; from: number }
+  /** 文章から追加（P01〜P05）。text は最初に入れる文章、defaults は時間軸から開いたときの初期値 */
+  | { kind: 'quickAdd'; text?: string; at?: { start: number; end: number; entity: 'event' | 'task' } }
+  /** 気づいたこと（問題の検知と修正案：P06〜P09） */
+  | { kind: 'issues'; day: number }
+  /** 未割当（日時が決まっていないタスク：P22） */
+  | { kind: 'inbox' }
+  /** その日のタスク一覧（長押しで進捗入力） */
+  | { kind: 'dayTasks'; day: number }
+  /** 1日の振り返りと翌日の提案（P40） */
+  | { kind: 'review'; day: number }
+  /** 延期・分割（P29・P30） */
+  | { kind: 'reschedule'; taskId: string; mode: 'postpone' | 'split' };
 
 export type AnalysisMetric = 'completion' | 'delay' | 'work' | 'planDiff' | 'interruptions';
 
@@ -63,12 +75,19 @@ interface UIContextValue {
   ask: <T>(o: { title: string; message?: string; buttons: AlertButton<T>[] }) => Promise<T | null>;
   toast: string | null;
   showToast: (msg: string) => void;
+  /** 設定の下にある画面（設定を開く前のタブ） */
+  baseTab: TabId;
+  closeSettings: () => void;
 }
 
 const Ctx = createContext<UIContextValue | null>(null);
 
 export function UIProvider({ children }: { children: ReactNode }) {
-  const [tab, setTab] = useState<TabId>('home');
+  const [tab, setTabRaw] = useState<TabId>('home');
+  // 設定（'other'）は下部タブではなく、今いる画面の上に重ねて開く。閉じると元の画面へ戻る
+  const prevTab = useRef<TabId>('home');
+  const setTab = useCallback((t: TabId) => setTabRaw((cur) => { if (t === 'other' && cur !== 'other') prevTab.current = cur; return t; }), []);
+  const closeSettings = useCallback(() => setTabRaw(prevTab.current), []);
   const [homeDate, setHomeDateRaw] = useState(() => startOfDay(Date.now()));
   const [calDate, setCalDateRaw] = useState(() => startOfDay(Date.now()));
   const [sheets, setSheets] = useState<(SheetState & { uid: number })[]>([]);
@@ -126,14 +145,14 @@ export function UIProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast }),
-    [tab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast],
+    () => ({ tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast, baseTab: tab === 'other' ? prevTab.current : tab, closeSettings }),
+    [tab, setTab, homeDate, setHomeDate, calDate, setCalDate, sheets, openSheet, closeSheet, alert, confirm, choose, ask, toast, showToast, closeSettings],
   );
   // 画面の大半は「操作（安定した関数）」と「日付」だけを使う。タブ・シート・トーストの変化で
   // 隠れているタブの画面やタスク行まで再描画しないよう、文脈を分ける。
   const actions = useMemo<UIActions>(
-    () => ({ setTab, setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast }),
-    [setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast],
+    () => ({ setTab, setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast, closeSettings }),
+    [setTab, setHomeDate, setCalDate, openSheet, closeSheet, confirm, choose, ask, showToast, closeSettings],
   );
   const dates = useMemo(() => ({ homeDate, calDate }), [homeDate, calDate]);
   return (
@@ -145,7 +164,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   );
 }
 
-type UIActions = Pick<UIContextValue, 'setTab' | 'setHomeDate' | 'setCalDate' | 'openSheet' | 'closeSheet' | 'confirm' | 'choose' | 'ask' | 'showToast'>;
+type UIActions = Pick<UIContextValue, 'setTab' | 'setHomeDate' | 'setCalDate' | 'openSheet' | 'closeSheet' | 'confirm' | 'choose' | 'ask' | 'showToast' | 'closeSettings'>;
 const ActionsCtx = createContext<UIActions | null>(null);
 const DatesCtx = createContext<{ homeDate: number; calDate: number } | null>(null);
 

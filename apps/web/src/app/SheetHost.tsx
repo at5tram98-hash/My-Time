@@ -10,6 +10,8 @@ import { ImportSheet } from '../features/other/ImportSheet';
 import { EditorSheet } from '../features/editor/EditorSheet';
 import { AnalysisDetailSheet } from '../features/analysis/AnalysisDetailSheet';
 import { CalendarFilterSheet, EventInfoSheet, SyncStatusSheet } from '../features/editor/InfoSheets';
+import { DayTasksSheet, InboxSheet, IssuesSheet, RescheduleSheet, ReviewSheet } from '../features/plan/PlanSheets';
+import { QuickAddSheet } from '../features/quickadd/QuickAddSheet';
 
 export function SheetHost() {
   const { sheets } = useUI();
@@ -45,6 +47,18 @@ export function SheetHost() {
             return <SyncStatusSheet key={key} depth={i} />;
           case 'analysisDetail':
             return <AnalysisDetailSheet key={key} depth={i} metric={s.metric} period={s.period} from={s.from} />;
+          case 'quickAdd':
+            return <QuickAddSheet key={key} depth={i} {...(s.text ? { text: s.text } : {})} {...(s.at ? { at: s.at } : {})} />;
+          case 'issues':
+            return <IssuesSheet key={key} depth={i} day={s.day} />;
+          case 'inbox':
+            return <InboxSheet key={key} depth={i} />;
+          case 'dayTasks':
+            return <DayTasksSheet key={key} depth={i} day={s.day} />;
+          case 'review':
+            return <ReviewSheet key={key} depth={i} day={s.day} />;
+          case 'reschedule':
+            return <RescheduleSheet key={key} depth={i} taskId={s.taskId} mode={s.mode} />;
         }
       })}
     </AnimatePresence>
