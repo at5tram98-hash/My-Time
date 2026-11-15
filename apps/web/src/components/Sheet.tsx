@@ -112,9 +112,15 @@ export function Sheet({ title, left, right, onClose, children, depth = 0, labell
     if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && openStack[openStack.length - 1] === me.current) void closeRef.current(); };
     window.addEventListener('keydown', onKey);
+    const panel = panelRef.current;
     return () => {
       window.removeEventListener('keydown', onKey);
-      prev?.focus?.({ preventScroll: true });
+      // 戻すのは、フォーカスがまだこのシートの中か、どこにもないときだけ。
+      // 退場アニメーションの間に次のシート（例：＋の「詳しく入力」→ 編集画面）で入力が始まっていたら、
+      // そこから奪わない（奪うと入力中の文字が消え、iPhone ではキーボードが閉じる）
+      const active = document.activeElement;
+      const stillHere = !active || active === document.body || (panel?.contains(active) ?? false);
+      if (stillHere && prev?.isConnected) prev.focus?.({ preventScroll: true });
     };
   }, []);
 
