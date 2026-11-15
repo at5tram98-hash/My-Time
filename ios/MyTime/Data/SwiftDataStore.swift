@@ -7,14 +7,16 @@ import MyTimeCore
 final class StoredRecord {
     /// `${entity}:${id}`
     @Attribute(.unique) var key: String
-    var entity: String
+    /// 種類名（"calendar" など）。Core Data では `entity` という名前が「エンティティ型」と解釈され、
+    /// `entity == "calendar"` の検索が失敗するため、別名で保存する
+    @Attribute(originalName: "entity") var entityName: String
     var recordId: String
     var json: Data
     var updatedAt: Date
 
     init(entity: String, recordId: String, json: Data) {
         key = "\(entity):\(recordId)"
-        self.entity = entity
+        entityName = entity
         self.recordId = recordId
         self.json = json
         updatedAt = .now
@@ -76,7 +78,7 @@ final class SwiftDataStore: RecordStore {
 
     func all(_ entity: EntityName) -> [JSONValue] {
         let name = entity.rawValue
-        let d = FetchDescriptor<StoredRecord>(predicate: #Predicate { $0.entity == name })
+        let d = FetchDescriptor<StoredRecord>(predicate: #Predicate { $0.entityName == name })
         return ((try? context.fetch(d)) ?? []).compactMap { decode($0.json) }
     }
 

@@ -76,21 +76,18 @@ struct TodayView: View {
                     .padding(.horizontal)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    StatusChip(symbol: "tray", label: "未割当", value: "\(model.inbox.count)", tint: model.inbox.isEmpty ? .secondary : .indigo) { router.open(.inbox) }
-                    StatusChip(symbol: "checklist", label: model.time.isSameDay(day, now) ? "今日のタスク" : "タスク", value: dayTasks.isEmpty ? "0" : "\(done)/\(dayTasks.count)") { router.open(.dayTasks(day)) }
-                    StatusChip(symbol: "sun.max", label: "余白", value: "\(Int((free * 100).rounded()))%") { router.tab = .review }
-                    Button {
-                        withAnimation(reduceMotion ? nil : Motion.sheet) { collapsed.toggle() }
-                    } label: {
-                        Image(systemName: "chevron.up").rotationEffect(.degrees(collapsed ? 180 : 0)).frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(collapsed ? "要約を広げる" : "要約をたたむ")
+            // 画面幅に収まる形を選ぶ：通常のラベル → 短いラベル → それでも入らなければ横スクロール（大きな文字サイズのとき）
+            let taskValue = dayTasks.isEmpty ? "0" : "\(done)/\(dayTasks.count)"
+            let isToday = model.time.isSameDay(day, now)
+            ViewThatFits(in: .horizontal) {
+                statusRow(taskLabel: isToday ? "今日のタスク" : "タスク", taskValue: taskValue, free: free)
+                    .padding(.horizontal)
+                statusRow(taskLabel: isToday ? "今日" : "タスク", taskValue: taskValue, free: free)
+                    .padding(.horizontal)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    statusRow(taskLabel: isToday ? "今日" : "タスク", taskValue: taskValue, free: free)
+                        .padding(.horizontal)
                 }
-                .padding(.horizontal)
             }
             laneHeader(mainFraction: mainFraction, events: dayEvents.count, tasks: dayTasks.count, focus: focus)
             DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: mainFraction)
@@ -137,6 +134,25 @@ struct TodayView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// 状況チップの1行（未割当・タスク・余白・要約をたたむ）
+    private func statusRow(taskLabel: String, taskValue: String, free: Double) -> some View {
+        HStack(spacing: 6) {
+            StatusChip(symbol: "tray", label: "未割当", value: "\(model.inbox.count)", tint: model.inbox.isEmpty ? .secondary : .indigo) { router.open(.inbox) }
+            StatusChip(symbol: "checklist", label: taskLabel, value: taskValue) { router.open(.dayTasks(day)) }
+            StatusChip(symbol: "sun.max", label: "余白", value: "\(Int((free * 100).rounded()))%") { router.tab = .review }
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(reduceMotion ? nil : Motion.sheet) { collapsed.toggle() }
+            } label: {
+                Image(systemName: "chevron.up").rotationEffect(.degrees(collapsed ? 180 : 0)).frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(collapsed ? "要約を広げる" : "要約をたたむ")
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func toggleFocus(_ f: String) {

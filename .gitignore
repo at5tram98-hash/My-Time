@@ -14,6 +14,7 @@ docs/media/*.webm
 ios/**/.build/
 ios/**/xcuserdata/
 ios/**/DerivedData/
+ios/build/
 ios/**/*.xcuserstate
 ios/**/.swiftpm/
 
