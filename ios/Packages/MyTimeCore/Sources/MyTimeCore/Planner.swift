@@ -3,22 +3,34 @@ import Foundation
 // Web 版 planner.ts の一部（次の行動・空き時間・余白）。提案と検知の全体は段階的に移植する。
 
 public struct BusyItem: Sendable, Equatable {
+    public enum Kind: String, Sendable { case event, task, session, buffer }
     public var id: String
     public var title: String
     public var start: EpochMs
     public var end: EpochMs
+    /// 固定（予定）か、動かせる（タスク・作業枠）か
     public var fixed: Bool
+    public var kind: Kind
+    /// 元の予定・タスク・サブタスクの ID
+    public var refId: String
+    public init(id: String, title: String, start: EpochMs, end: EpochMs, fixed: Bool, kind: Kind = .event, refId: String = "") {
+        self.id = id; self.title = title; self.start = start; self.end = end; self.fixed = fixed; self.kind = kind; self.refId = refId
+    }
 }
 
-/// 時間を使うもの（予定・時刻のあるタスク・移動のバッファ）。完了したタスクは含めない
-public func busyItems(events: [EventOccurrence], tasks: [MTTask]) -> [BusyItem] {
+/// 時間を使うもの（予定・時刻のあるタスク・作業枠・移動のバッファ）。完了したタスクは含めない
+public func busyItems(events: [EventOccurrence], tasks: [MTTask], subtasks: [MTSubtask] = []) -> [BusyItem] {
     var out: [BusyItem] = []
     for e in events where !e.event.allDay {
-        out.append(BusyItem(id: "event:\(e.id)", title: e.title, start: e.start, end: e.end, fixed: true))
-        if let tm = e.event.travelMinutes, tm > 0 { out.append(BusyItem(id: "buffer:\(e.id)", title: "移動", start: e.start - EpochMs(tm) * MINUTE, end: e.start, fixed: true)) }
+        out.append(BusyItem(id: "event:\(e.id)", title: e.title, start: e.start, end: e.end, fixed: true, kind: .event, refId: e.id))
+        if let tm = e.event.travelMinutes, tm > 0 { out.append(BusyItem(id: "buffer:\(e.id)", title: "\(e.title)への移動", start: e.start - EpochMs(tm) * MINUTE, end: e.start, fixed: true, kind: .buffer, refId: e.id)) }
     }
     for t in tasks where t.kind == .do && t.status != .done {
-        if let s = t.plannedStart, let e = t.plannedEnd { out.append(BusyItem(id: "task:\(t.id)", title: t.title, start: s, end: e, fixed: false)) }
+        if let s = t.plannedStart, let e = t.plannedEnd { out.append(BusyItem(id: "task:\(t.id)", title: t.title, start: s, end: e, fixed: false, kind: .task, refId: t.id)) }
+    }
+    let open = Set(tasks.filter { $0.status != .done }.map(\.id))
+    for s in subtasks where !s.done && open.contains(s.taskId) {
+        if let a = s.plannedStart, let b = s.plannedEnd { out.append(BusyItem(id: "session:\(s.id)", title: s.title, start: a, end: b, fixed: false, kind: .session, refId: s.id)) }
     }
     return out.sorted { $0.start < $1.start }
 }

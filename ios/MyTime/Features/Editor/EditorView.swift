@@ -15,6 +15,8 @@ struct EditorView: View {
     @State private var title = ""
     @State private var notes = ""
     @State private var spec: SpecTypeId?
+    /// 種類ごとの専用の項目（extra.spec.details。締切 dueAt は別に扱う）
+    @State private var details: [String: JSONValue] = [:]
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
     @State private var hasTime = true
@@ -52,6 +54,7 @@ struct EditorView: View {
                     specMenu
                 }
                 if kind == .event { eventFields } else { taskFields }
+                if let spec { SpecFieldsSection(spec: spec, details: $details) }
                 Section("メモ") {
                     TextField("メモ", text: $notes, axis: .vertical).lineLimit(3...8)
                 }
@@ -208,9 +211,11 @@ struct EditorView: View {
             if let s = t.plannedStart, let e = t.plannedEnd { start = model.time.date(s); end = model.time.date(e); hasTime = true } else { hasTime = false }
             if let d = t.deadline { hasDeadline = true; deadline = model.time.date(d) }
             if let m = t.estimateMinutes { hasEstimate = true; estimate = m }
+            details = t.extra?["spec"]?["details"]?.objectValue ?? [:]
         } else if let id = seed.eventId, let e = model.events.first(where: { $0.id == id }) {
             isNew = false; kind = .event; event = e
             title = e.title; notes = e.notes; spec = e.specType; calendarId = e.calendarId
+            details = e.extra?["spec"]?["details"]?.objectValue ?? [:]
             start = model.time.date(e.start); end = model.time.date(e.end); allDay = e.allDay
             repeatFreq = e.recurrence?.freq.rawValue ?? "none"; place = e.placeName ?? ""
         } else {
@@ -276,6 +281,9 @@ struct EditorView: View {
         guard let spec else { return nil }
         var o = old?.objectValue ?? [:]
         var details = o["type"]?.stringValue == spec.rawValue ? (o["details"]?.objectValue ?? [:]) : [:]
+        // 画面で編集した項目を重ねる（空にした項目は消す。知らない項目は残す）
+        let known = Set(SPEC_BY_ID[spec]!.fields.map(\.key))
+        for k in known where k != "dueAt" { details[k] = self.details[k] }
         details["dueAt"] = dueAt.map { .number(Double($0)) }
         o["type"] = .string(spec.rawValue)
         o["details"] = .object(details)

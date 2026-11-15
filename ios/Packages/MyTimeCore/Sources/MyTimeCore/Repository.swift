@@ -69,7 +69,7 @@ public final class Repository {
 
     // MARK: 記録
 
-    private func record(_ entity: EntityName, _ id: String, op: String, action: String, detail: [String: JSONValue]? = nil) {
+    func record(_ entity: EntityName, _ id: String, op: String, action: String, detail: [String: JSONValue]? = nil) {
         let at = clock()
         var log: [String: JSONValue] = ["id": newId().json, "at": at.json, "entity": entity.rawValue.json, "entityId": id.json, "action": action.json]
         if let detail { log["detail"] = .object(detail) }
@@ -257,6 +257,6 @@ public struct AppSettings: Equatable, Sendable {
     /// 今日の画面のレーン：both / main / detail
     public var laneFocus: String { get { get("laneFocus")?.stringValue ?? "both" } set { set("laneFocus", newValue.json) } }
     public var calendarView: String { get { get("calendarView")?.stringValue ?? "2day" } set { set("calendarView", newValue.json) } }
-    public var suggestFromHour: Int { Int(get("suggestFromHour")?.intValue ?? 7) }
-    public var suggestToHour: Int { Int(get("suggestToHour")?.intValue ?? 23) }
+    public var suggestFromHour: Int { get { Int(get("suggestFromHour")?.intValue ?? 7) } set { set("suggestFromHour", .number(Double(newValue))) } }
+    public var suggestToHour: Int { get { Int(get("suggestToHour")?.intValue ?? 23) } set { set("suggestToHour", .number(Double(newValue))) } }
 }

@@ -28,6 +28,9 @@ struct TodayView: View {
                             .disabled(model.time.isSameDay(day, model.now))
                         Button("日付を選択", systemImage: "calendar") { showDatePicker = true }
                         Divider()
+                        Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
+                        Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
+                        Divider()
                         Picker("レーンの幅", selection: Binding(get: { model.settings.laneFocus }, set: { v in model.updateSettings { $0.laneFocus = v } })) {
                             Label("予定とタスクを同じ幅で", systemImage: "rectangle.split.2x1").tag("both")
                             Label("予定を広く", systemImage: "calendar").tag("main")

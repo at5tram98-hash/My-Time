@@ -10,6 +10,19 @@ struct SettingsView: View {
     @State private var pending: DeviceTransfer.File?
     @State private var exportDoc: TransferDocument?
     @State private var exporting = false
+    @State private var icsDoc: ICSDocument?
+    @State private var exportingICS = false
+
+    private func setNotify(_ on: Bool) {
+        guard on else { model.setNotifications(enabled: false); return }
+        Task { @MainActor in
+            if await NotificationScheduler.requestAuthorization() {
+                model.setNotifications(enabled: true)
+            } else {
+                model.errorMessage = "通知が許可されていません。iPhone の「設定 › 通知 › My Time」で許可してください。"
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -31,6 +44,38 @@ struct SettingsView: View {
                     Text("データの移行")
                 } footer: {
                     Text("Web 版の「設定 › 端末間の移行」と同じ形式です。読み込みは追加だけで、この端末のデータを消したり上書きしたりしません。同じファイルを2回読み込んでも重複しません。")
+                }
+                Section {
+                    Toggle("通知", isOn: Binding(get: { model.notificationsEnabled }, set: setNotify))
+                    if model.notificationsEnabled {
+                        Picker("予定の通知", selection: Binding(get: { model.notifyMinutesBefore }, set: { model.setNotifications(minutes: $0) })) {
+                            ForEach([0, 5, 10, 15, 30, 60], id: \.self) { Text($0 == 0 ? "開始時刻" : "\($0)分前").tag($0) }
+                        }
+                    }
+                } header: {
+                    Text("通知")
+                } footer: {
+                    Text("予定（移動時間があるときは出発の時刻）、タスクを始める時刻、確認の時刻、締切の3時間前に、この iPhone から知らせます。7日先まで予約します。")
+                }
+                Section {
+                    Stepper("活動の始まり \(model.settings.suggestFromHour)時", value: Binding(get: { model.settings.suggestFromHour }, set: { v in model.updateSettings { $0.suggestFromHour = v } }), in: 0...12)
+                    Stepper("活動の終わり \(model.settings.suggestToHour)時", value: Binding(get: { model.settings.suggestToHour }, set: { v in model.updateSettings { $0.suggestToHour = v } }), in: 13...24)
+                } header: {
+                    Text("計画の支援")
+                } footer: {
+                    Text("空き時間を探す・余白を数えるときの時間帯です（Web 版と共通の設定）。")
+                }
+                Section {
+                    NavigationLink { HistoryView() } label: { Label("操作履歴", systemImage: "clock.arrow.circlepath") }
+                    Button("カレンダー（.ics）に書き出す", systemImage: "calendar.badge.plus") {
+                        icsDoc = ICSDocument(text: exportICS(events: model.events, tasks: model.tasks, now: model.now))
+                        exportingICS = true
+                    }
+                    .fileExporter(isPresented: $exportingICS, document: icsDoc, contentType: .calendarEvent, defaultFilename: "my-time") { result in
+                        if case .failure(let e) = result { model.errorMessage = e.localizedDescription } else { model.toast = AppModel.Toast(text: "書き出しました") }
+                    }
+                } footer: {
+                    Text(".ics はカレンダー App や Google カレンダーに読み込めます。My Time からほかのカレンダーへ自動で書き込むことはしません。")
                 }
                 Section("この端末") {
                     LabeledContent("タスク", value: "\(model.tasks.count)件")
@@ -120,6 +165,19 @@ struct ImportConfirmView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル", action: onClose) } }
             .sensoryFeedback(.success, trigger: done)
         }
+    }
+}
+
+/// 書き出し用の ICS 文書
+struct ICSDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.calendarEvent] }
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
 

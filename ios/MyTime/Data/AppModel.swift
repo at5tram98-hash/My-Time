@@ -47,7 +47,37 @@ final class AppModel {
         employers = repo.employers()
         settings = repo.settings()
         outboxPending = repo.store.outbox().filter { $0["synced"]?.intValue == 0 }.count
+        scheduleNotifications()
     }
+
+    // MARK: 通知（端末内の予約。変更のたびに少し待ってから予約し直す）
+
+    @ObservationIgnored private var notifyTask: Task<Void, Never>?
+    private var isPreview: Bool { ProcessInfo.processInfo.arguments.contains("-inMemory") }
+
+    func scheduleNotifications() {
+        guard !isPreview else { return }
+        notifyTask?.cancel()
+        notifyTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, !Task.isCancelled else { return }
+            await NotificationScheduler.reschedule(model: self)
+        }
+    }
+
+    /// iOS 版だけの設定（Web 版の設定に項目を足すだけ。Web 版は知らない項目を無視する）
+    var notificationsEnabled: Bool { settings.raw["iosNotifications"]?.boolValue ?? false }
+    var notifyMinutesBefore: Int { settings.raw["iosNotifyMinutes"]?.intValue.map(Int.init) ?? 10 }
+    func setNotifications(enabled: Bool? = nil, minutes: Int? = nil) {
+        updateSettings { s in
+            var o: [String: JSONValue] = [:]
+            if let enabled { o["iosNotifications"] = .bool(enabled) }
+            if let minutes { o["iosNotifyMinutes"] = .number(Double(minutes)) }
+            s.raw = s.raw.merging(.object(o))
+        }
+    }
+
+    var planOptions: PlanOptions { PlanOptions(fromHour: settings.suggestFromHour, toHour: settings.suggestToHour) }
 
     var now: EpochMs { EpochMs(Date().timeIntervalSince1970 * 1000) }
 

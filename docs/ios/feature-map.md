@@ -19,21 +19,21 @@
 | サブタスクの追加・完了・削除 | tasks | `TaskDetailView` | ✅（🧪） |
 | 確認タスク（チェック） | tasks | `TaskRow` | ✅（🧪） |
 | 予定詳細・繰り返しの「この回のみ／すべて」削除 | calendar | `EventDetailView` | ✅（🧪） |
-| 追加・編集（予定／タスク、種類 S01〜S25、締切、見積、繰り返し、場所、アイコン） | editor | `EditorView` | ✅（種類別の専用項目は ⏳） |
+| 追加・編集（予定／タスク、種類 S01〜S25、締切、見積、繰り返し、場所、アイコン、種類別の専用項目） | editor | `EditorView` / `SpecFieldsSection` | ✅ |
 | タスク一覧・スマートリスト・検索・スワイプ操作 | tasks / search | `TasksScreen` | ✅ |
 | 未割当・空き時間へ入れる | plan | `InboxView` | ✅（簡易版。Web の計画の支援全体は ⏳） |
-| カレンダー：月＋日の時刻軸・終日予定 | calendar | `CalendarScreen` | ✅（2日・週・月の一覧表示は ⏳） |
+| カレンダー：月＋日の時刻軸・終日予定・週・一覧 | calendar | `CalendarScreen` / `AgendaList` | ✅ |
 | 振り返り：作業時間・完了数・余白のグラフ | analysis | `ReviewScreen`（Swift Charts） | ✅ |
 | 設定：外観（システム／ライト／ダーク） | other | `SettingsView` | ✅ |
 | 端末間の移行（書き出し・読み込み・確認） | settings | `SettingsView` / `ImportConfirmView` | ✅（形式は 🧪） |
 | 取り消し付きの知らせ | toast | `ToastView` | ✅ |
-| 文章で追加（自然文の解析） | quickadd | — | ⏳ |
-| 計画の支援（提案・自動配置・依存関係） | plan | — | ⏳ |
+| 文章で追加（自然文の解析） | quickadd | `QuickAddView`（`NLParse.swift`） | 🧪 |
+| 計画の支援（提案・自動配置・依存関係） | plan | `PlanAssistView`（`PlanAssist.swift`） | 🧪 |
 | 課題・テスト対策・Studio（科目・授業） | studio / spec | 表示のみ（種類・締切） | ⏳ |
 | 勤務先・給与の見込み | spec | 予定詳細で給与見込みを表示 | ✅（勤務先の編集は ⏳） |
-| 予定の通知・出発リマインダー | sw / notifications | — | ⏳（UserNotifications で実装予定） |
-| ICS 書き出し | repo | — | ⏳ |
-| 操作履歴の画面・まとめて取り消し | history | — | ⏳（履歴自体は Web と同じ形で記録 🧪） |
+| 予定の通知・出発リマインダー | sw / notifications | `NotificationScheduler`（端末内の予約） | ✅ |
+| ICS 書き出し | repo | 設定 › カレンダー（.ics）に書き出す | 🧪 |
+| 操作履歴の画面・まとめて取り消し | history | `HistoryView` | ✅（まとめて取り消しは ⏳） |
 | オンボーディング | onboarding | — | ⏳（既定カレンダーは自動作成 🧪） |
 | クラウド同期・Google ログイン・Drive バックアップ | api / accounts | outbox に記録のみ | ⏳ |
 | ChatGPT 連携 | — | — | ➖（今回の対象外） |

@@ -11,6 +11,8 @@ enum SheetRoute: Identifiable, Hashable {
     case settings
     case inbox
     case dayTasks(EpochMs)
+    case quickAdd
+    case planAssist
 
     var id: String {
         switch self {
@@ -20,6 +22,8 @@ enum SheetRoute: Identifiable, Hashable {
         case .settings: return "settings"
         case .inbox: return "inbox"
         case .dayTasks(let d): return "day:\(d)"
+        case .quickAdd: return "quickAdd"
+        case .planAssist: return "planAssist"
         }
     }
 }
@@ -66,6 +70,19 @@ struct RootView: View {
                 .tag(AppTab.review)
         }
         .environment(router)
+        #if DEBUG
+        // 開発用：起動引数 `-route quickAdd|planAssist|settings` `-tab calendar|tasks|review` で画面を直接開く（UI テスト・スクリーンショット用）
+        .task {
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-tab"), i + 1 < args.count {
+                router.tab = ["calendar": .calendar, "tasks": .tasks, "review": .review][args[i + 1]] ?? .today
+            }
+            if let i = args.firstIndex(of: "-route"), i + 1 < args.count {
+                try? await Task.sleep(for: .milliseconds(400))
+                router.sheet = ["quickAdd": .quickAdd, "planAssist": .planAssist, "settings": .settings, "inbox": .inbox][args[i + 1]]
+            }
+        }
+        #endif
         .sheet(item: $router.sheet) { route in
             sheet(for: route)
                 .environment(model)
@@ -100,6 +117,8 @@ struct RootView: View {
         case .settings: SettingsView()
         case .inbox: InboxView()
         case .dayTasks(let day): DayTasksView(day: day)
+        case .quickAdd: QuickAddView()
+        case .planAssist: PlanAssistView()
         }
     }
 }
@@ -114,8 +133,20 @@ struct MainToolbar: ToolbarContent {
                 .accessibilityLabel("設定")
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button { router.open(.editor(EditorSeed(kind: addKind))) } label: { Image(systemName: "plus") }
-                .accessibilityLabel("追加")
+            // タップで追加、長押しで「文章で追加」などを選べる（iOS 標準の primaryAction 付きメニュー）
+            Menu {
+                Button("新しいタスク", systemImage: "checklist") { router.open(.editor(EditorSeed(kind: .task))) }
+                Button("新しい予定", systemImage: "calendar") { router.open(.editor(EditorSeed(kind: .event))) }
+                Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
+                Divider()
+                Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
+            } label: {
+                Image(systemName: "plus")
+            } primaryAction: {
+                router.open(.editor(EditorSeed(kind: addKind)))
+            }
+            .accessibilityLabel("追加")
+            .accessibilityHint("長押しで文章で追加・計画の支援")
         }
     }
 }

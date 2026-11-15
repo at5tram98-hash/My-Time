@@ -7,6 +7,8 @@ struct CalendarScreen: View {
     @Environment(Router.self) private var router
     @State private var selected = Date()
     @State private var showMonth = true
+    /// 表示：日（時刻軸）・週（7日の一覧）・一覧（30日）
+    @AppStorage("calendarMode") private var mode = "day"
 
     var body: some View {
         NavigationStack {
@@ -38,9 +40,24 @@ struct CalendarScreen: View {
                         }
                         .padding(.vertical, 6)
                     }
+                    Picker("表示", selection: $mode.animation(Motion.sheet)) {
+                        Text("日").tag("day")
+                        Text("週").tag("week")
+                        Text("一覧").tag("list")
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
                     Divider()
-                    DayTimeline(day: day, now: model.time.ms(ctx.date), events: occ, tasks: model.tasks, mainFraction: nil)
-                        .id(day)
+                    switch mode {
+                    case "week":
+                        AgendaList(from: model.time.addDays(day, -model.time.weekday(day)), days: 7, now: model.time.ms(ctx.date), selected: day) { selected = model.time.date($0) }
+                    case "list":
+                        AgendaList(from: day, days: 30, now: model.time.ms(ctx.date), selected: day, hideEmpty: true) { selected = model.time.date($0) }
+                    default:
+                        DayTimeline(day: day, now: model.time.ms(ctx.date), events: occ, tasks: model.tasks, mainFraction: nil)
+                            .id(day)
+                    }
                 }
             }
             .navigationTitle(model.dayTitle(day))
@@ -55,6 +72,115 @@ struct CalendarScreen: View {
                     Button("今日") { withAnimation(Motion.sheet) { selected = Date() } }
                 }
                 MainToolbar(addKind: .event)
+            }
+        }
+    }
+}
+
+
+/// 複数日の一覧（予定・時刻のあるタスク・締切）。日付をタップするとその日を選ぶ
+struct AgendaList: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Router.self) private var router
+    let from: EpochMs
+    let days: Int
+    let now: EpochMs
+    let selected: EpochMs
+    var hideEmpty = false
+    let select: (EpochMs) -> Void
+
+    private enum Item: Identifiable {
+        case event(EventOccurrence), task(MTTask, EpochMs), due(MTTask, EpochMs)
+        var id: String {
+            switch self {
+            case .event(let o): return "e:\(o.id)"
+            case .task(let t, _): return "t:\(t.id)"
+            case .due(let t, _): return "d:\(t.id)"
+            }
+        }
+        var at: EpochMs {
+            switch self {
+            case .event(let o): return o.event.allDay ? o.start - 1 : o.start
+            case .task(_, let a), .due(_, let a): return a
+            }
+        }
+    }
+
+    var body: some View {
+        let to = model.time.addDays(from, days)
+        let occ = model.visibleEvents(from: from, to: to)
+        let dayList = (0..<days).map { model.time.addDays(from, $0) }
+        ScrollViewReader { proxy in
+            List {
+                ForEach(dayList, id: \.self) { d in
+                    let items = items(on: d, occ: occ)
+                    if !(hideEmpty && items.isEmpty) {
+                        Section {
+                            if items.isEmpty {
+                                Text("予定はありません").font(.subheadline).foregroundStyle(.tertiary)
+                            }
+                            ForEach(items) { row($0) }.tint(.primary)
+                        } header: {
+                            Button { select(d) } label: {
+                                HStack {
+                                    Text(model.time.dayLabel(d)).font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(model.time.isSameDay(d, now) ? Color.accentColor : d == selected ? .primary : .secondary)
+                                    if model.time.isSameDay(d, now) { Text("今日").font(.caption2.weight(.bold)).foregroundStyle(Color.accentColor) }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .id(d)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .onAppear { proxy.scrollTo(selected, anchor: .top) }
+        }
+    }
+
+    private func items(on d: EpochMs, occ: [EventOccurrence]) -> [Item] {
+        let d1 = model.time.addDays(d, 1)
+        var out: [Item] = occ.filter { $0.start < d1 && $0.end > d && ($0.event.allDay || model.time.isSameDay($0.start, d) || $0.start < d) }.map { .event($0) }
+        for t in model.tasks {
+            if t.kind == .do, let s = t.plannedStart, s >= d, s < d1 { out.append(.task(t, s)) }
+            else if t.kind == .check, let c = t.checkAt, c >= d, c < d1 { out.append(.task(t, c)) }
+            if let due = t.deadline, due >= d, due < d1, !t.isDone { out.append(.due(t, due)) }
+        }
+        return out.sorted { $0.at < $1.at }
+    }
+
+    @ViewBuilder
+    private func row(_ item: Item) -> some View {
+        switch item {
+        case .event(let o):
+            Button { router.open(.event(o.id)) } label: {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 2).fill(Color(hex: model.eventColor(o.event))).frame(width: 4, height: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(o.title).foregroundStyle(.primary).lineLimit(1)
+                        Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+            }
+        case .task(let t, let at):
+            Button { router.open(.task(t.id)) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: t.isDone ? "checkmark.circle.fill" : t.kind == .check ? "circle" : "play.circle").foregroundStyle(t.isDone ? .green : .secondary).frame(width: 4 + 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t.title).foregroundStyle(t.isDone ? .secondary : .primary).strikethrough(t.isDone).lineLimit(1)
+                        Text(t.kind == .check ? "\(model.hm(at)) 確認" : "\(model.hm(at))〜\(t.plannedEnd.map(model.hm) ?? "")").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+            }
+        case .due(let t, let at):
+            Button { router.open(.task(t.id)) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "flag.fill").foregroundStyle(.red).frame(width: 22)
+                    Text("締切：\(t.title)").foregroundStyle(.primary).lineLimit(1)
+                    Spacer()
+                    Text(model.hm(at)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
             }
         }
     }
