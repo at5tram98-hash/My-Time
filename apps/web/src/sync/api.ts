@@ -74,25 +74,46 @@ export interface RestoreSession {
   restored_count: number;
 }
 
+/** 1回の通信の上限。応答が止まった接続で同期が「同期中」のまま動かなくならないように、切ってオフライン扱い（あとで再試行）にする */
+export const REQUEST_TIMEOUT_MS = 15_000;
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const account = ownerOf(db.name);
   const scoped = !['/config', '/me', '/auth/logout'].includes(path);
   if (scoped && !account) throw new ApiError('アカウントの保存領域に切り替えてから操作してください', 409);
-  let res: Response;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  const outer = init.signal;
+  const onOuter = () => ctrl.abort();
+  if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener('abort', onOuter, { once: true }); }
   try {
-    res = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
-      ...init,
-      credentials: 'same-origin',
-      headers: { 'x-mytime': '1', ...(scoped && account ? acct(account) : {}), ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
-    });
-  } catch {
-    throw new ApiError('オフラインです', 0);
+    let res: Response;
+    try {
+      res = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
+        ...init,
+        signal: ctrl.signal,
+        credentials: 'same-origin',
+        headers: { 'x-mytime': '1', ...(scoped && account ? acct(account) : {}), ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) },
+      });
+    } catch {
+      throw new ApiError('オフラインです', 0);
+    }
+    const type = res.headers.get('content-type') ?? '';
+    if (!type.includes('application/json')) throw new ApiError('サーバーがありません', res.status === 200 ? 404 : res.status);
+    let body: T & { error?: string };
+    try {
+      body = (await res.json()) as T & { error?: string };
+    } catch (e) {
+      // 本文の受信中に止まった・切れた：オフライン扱い
+      if (ctrl.signal.aborted) throw new ApiError('オフラインです', 0);
+      throw e;
+    }
+    if (!res.ok) throw new ApiError(body.error ?? `エラー（${res.status}）`, res.status);
+    return body;
+  } finally {
+    clearTimeout(timer);
+    outer?.removeEventListener('abort', onOuter);
   }
-  const type = res.headers.get('content-type') ?? '';
-  if (!type.includes('application/json')) throw new ApiError('サーバーがありません', res.status === 200 ? 404 : res.status);
-  const body = (await res.json()) as T & { error?: string };
-  if (!res.ok) throw new ApiError(body.error ?? `エラー（${res.status}）`, res.status);
-  return body;
 }
 
 export const api = {
