@@ -1,96 +1,144 @@
 import SwiftUI
 import MyTimeCore
 
-/// カレンダー。上に月（標準の日付選択）、下に選んだ日の時刻軸。終日の予定は時刻軸の上に並べる
+/// カレンダー。上にガラスの「日・週・月・一覧」と週の帯、下にそれぞれの表示。
+/// 日：今日の画面と同じ時刻軸（予定が主、右にタスクの細いレーン）／週：日ごとの列を左右になぞって1週間／
+/// 月：純正カレンダーと同じ操作の月表示／一覧：30日分
 struct CalendarScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selected = Date()
-    @State private var showMonth = true
-    /// 表示：日（時刻軸）・週（7日の一覧）・一覧（30日）
     @AppStorage("calendarMode") private var mode = "day"
     @State private var swipeEdge: Edge = .trailing
+    @State private var todayTick = 0
 
     var body: some View {
         NavigationStack {
             let day = model.time.startOfDay(model.time.ms(selected))
-            let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2))
-            let allDay = occ.filter { $0.event.allDay && $0.start < model.time.addDays(day, 1) && $0.end > day }
             TimelineView(.periodic(from: .now, by: 60)) { ctx in
-                VStack(spacing: 0) {
-                    if showMonth {
-                        DatePicker("日付", selection: $selected, displayedComponents: .date)
-                            .datePickerStyle(.graphical)
+                let now = model.time.ms(ctx.date)
+                VStack(spacing: 8) {
+                    GlassSegmented(items: [
+                        .init(value: "day", title: "日"), .init(value: "week", title: "週"),
+                        .init(value: "month", title: "月"), .init(value: "list", title: "一覧"),
+                    ], selection: $mode.animation(reduceMotion ? nil : Motion.sheet))
+                    .padding(.horizontal)
+                    if mode == "day" || mode == "list" {
+                        WeekStrip(selected: $selected)
                             .padding(.horizontal)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                    if !allDay.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(allDay) { o in
-                                    Button { router.open(.event(o.id)) } label: {
-                                        Label(o.title, systemImage: "sun.max").font(.caption.weight(.semibold))
-                                            .padding(.horizontal, 10).padding(.vertical, 6)
-                                            .background(Capsule().fill(Color(hex: model.eventColor(o.event)).opacity(0.2)))
-                                            .foregroundStyle(Color(hex: model.eventColor(o.event)))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal)
+                    if mode == "day" { allDayChips(day) }
+                    Group {
+                        switch mode {
+                        case "week":
+                            WeekTimeline(selected: $selected, now: now) { d in open(d) }
+                        case "month":
+                            MonthView(selected: $selected, todayTick: todayTick) { d in open(d) }
+                        case "list":
+                            AgendaList(from: day, days: 30, now: now, selected: day, hideEmpty: true) { selected = model.time.date($0) }
+                        default:
+                            dayView(day: day, now: now)
                         }
-                        .padding(.vertical, 6)
                     }
-                    Picker("表示", selection: $mode.animation(Motion.sheet)) {
-                        Text("日").tag("day")
-                        Text("週").tag("week")
-                        Text("一覧").tag("list")
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                    Divider()
-                    switch mode {
-                    case "week":
-                        AgendaList(from: model.time.addDays(day, -model.time.weekday(day)), days: 7, now: model.time.ms(ctx.date), selected: day) { selected = model.time.date($0) }
-                    case "list":
-                        AgendaList(from: day, days: 30, now: model.time.ms(ctx.date), selected: day, hideEmpty: true) { selected = model.time.date($0) }
-                    default:
-                        DayTimeline(day: day, now: model.time.ms(ctx.date), events: occ, tasks: model.tasks, mainFraction: nil)
-                            .id(day)
-                            .transition(.push(from: swipeEdge))
-                            // 左右にスワイプで前の日・次の日（今日の画面と同じ操作）
-                            .simultaneousGesture(
-                                DragGesture(minimumDistance: 40).onEnded { v in
-                                    guard abs(v.translation.width) > 80, abs(v.translation.width) > abs(v.translation.height) * 1.6 else { return }
-                                    let n = v.translation.width < 0 ? 1 : -1
-                                    swipeEdge = n > 0 ? .trailing : .leading
-                                    withAnimation(Motion.sheet) { selected = Calendar.current.date(byAdding: .day, value: n, to: selected) ?? selected }
-                                }
-                            )
-                    }
+                    .frame(maxHeight: .infinity)
                 }
+                .padding(.top, 4)
             }
-            .navigationTitle(model.dayTitle(day))
+            .background(Color(.systemBackground))
+            .navigationTitle(title(day))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(showMonth ? "月をたたむ" : "月を表示", systemImage: showMonth ? "chevron.up" : "calendar") {
-                        withAnimation(Motion.sheet) { showMonth.toggle() }
+                    Button {
+                        withAnimation(reduceMotion ? nil : Motion.sheet) { selected = Date() }
+                        todayTick += 1
+                    } label: {
+                        Text("今日").font(.subheadline.weight(.semibold))
+                            .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.secondary : Color.red)
                     }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("今日") { withAnimation(Motion.sheet) { selected = Date() } }
-                        .disabled(Calendar.current.isDateInToday(selected))
+                    .accessibilityLabel("今日へ移動")
                 }
                 MainToolbar(addKind: .event)
             }
         }
     }
+
+    private func title(_ day: EpochMs) -> String {
+        switch mode {
+        case "month": return "カレンダー"
+        case "week":
+            let ws = model.time.addDays(day, -model.time.weekday(day))
+            return "\(model.time.calendar.component(.month, from: model.time.date(ws)))月\(model.time.calendar.component(.day, from: model.time.date(ws)))日の週"
+        default: return model.dayTitle(day)
+        }
+    }
+
+    /// 週・月から日の表示へ
+    private func open(_ d: EpochMs) {
+        selected = model.time.date(d)
+        withAnimation(reduceMotion ? nil : Motion.sheet) { mode = "day" }
+    }
+
+    /// 終日の予定（ガラスの札）
+    @ViewBuilder
+    private func allDayChips(_ day: EpochMs) -> some View {
+        let allDay = model.visibleEvents(from: day, to: model.time.addDays(day, 1)).filter { $0.event.allDay }
+        if !allDay.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                GlassGroup(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ForEach(allDay) { o in
+                            let c = Color(hex: model.eventColor(o.event))
+                            Button { router.open(.event(o.id)) } label: {
+                                HStack(spacing: 5) {
+                                    Circle().fill(c).frame(width: 7, height: 7)
+                                    Text(o.title).font(.caption.weight(.semibold)).lineLimit(1)
+                                }
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .glass(Capsule(), interactive: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    /// 日の表示：予定が主、右にタスクの細いレーン（今日の画面より細く）
+    private func dayView(day: EpochMs, now: EpochMs) -> some View {
+        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2))
+        return VStack(spacing: 0) {
+            GeometryReader { geo in
+                let w = geo.size.width - DayTimeline.gutter
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: DayTimeline.gutter)
+                    Label("予定", systemImage: "calendar").frame(width: w * 0.7, alignment: .leading).padding(.leading, 6)
+                    Label("タスク", systemImage: "checklist").frame(width: w * 0.3, alignment: .leading).padding(.leading, 4)
+                }
+                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(height: 18)
+            Divider()
+            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: 0.7)
+                .id(day)
+                .transition(reduceMotion ? .opacity : .push(from: swipeEdge))
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 40).onEnded { v in
+                        guard abs(v.translation.width) > 80, abs(v.translation.width) > abs(v.translation.height) * 1.6 else { return }
+                        let n = v.translation.width < 0 ? 1 : -1
+                        swipeEdge = n > 0 ? .trailing : .leading
+                        withAnimation(Motion.sheet) { selected = Calendar.current.date(byAdding: .day, value: n, to: selected) ?? selected }
+                    }
+                )
+        }
+    }
 }
 
-
-/// 複数日の一覧（予定・時刻のあるタスク・締切）。日付をタップするとその日を選ぶ
 struct AgendaList: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router

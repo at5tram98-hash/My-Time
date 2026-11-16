@@ -10,6 +10,7 @@ struct TasksScreen: View {
     /// 一覧の上で直接入れる新しいタスク（純正リマインダーと同じ）
     @State private var quickTitle = ""
     @FocusState private var quickFocused: Bool
+    @Namespace private var filterNS
 
     enum Filter: String, CaseIterable, Identifiable {
         case open = "未完了", today = "今日", inbox = "未割当", check = "確認", flagged = "フラグ", done = "完了"
@@ -31,38 +32,15 @@ struct TasksScreen: View {
             let list = filtered
             List {
                 Section {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Filter.allCases) { f in
-                                Button { withAnimation(Motion.pop) { filter = f } } label: {
-                                    Label("\(f.rawValue) \(count(f))", systemImage: f.symbol)
-                                        .font(.subheadline.weight(filter == f ? .semibold : .regular))
-                                        .padding(.horizontal, 12).frame(minHeight: 34)
-                                        .background(Capsule().fill(filter == f ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill)))
-                                        .foregroundStyle(filter == f ? Color.accentColor : .primary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityAddTraits(filter == f ? .isSelected : [])
-                            }
-                        }
-                        .padding(.vertical, 2)
+                } header: {
+                    VStack(spacing: 10) {
+                        summaryTiles
+                        filterBar
                     }
-                }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-
-                if filter == .open || filter == .inbox {
-                    Section {
-                        HStack(spacing: 10) {
-                            Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(Color.accentColor)
-                            TextField("新しいタスク（改行で追加）", text: $quickTitle)
-                                .focused($quickFocused)
-                                .submitLabel(.next)
-                                .onSubmit(addQuick)
-                        }
-                    } footer: {
-                        if quickFocused { Text("時間を決めずに「未割当」へ入ります。続けて入力できます。") }
-                    }
+                    .textCase(nil)
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, -4)
+                    .padding(.bottom, 4)
                 }
 
                 if list.isEmpty {
@@ -78,10 +56,11 @@ struct TasksScreen: View {
                             ForEach(items, id: \.id) { taskRow($0) }
                         } header: {
                             HStack {
-                                Text(title).foregroundStyle(tint)
+                                Text(title).font(.subheadline.weight(.bold)).foregroundStyle(tint)
                                 Spacer()
-                                Text("\(items.count)").monospacedDigit()
+                                GlassPill(text: "\(items.count)", tint: tint)
                             }
+                            .textCase(nil)
                         }
                     }
                 } else {
@@ -90,10 +69,100 @@ struct TasksScreen: View {
             }
             .listStyle(.insetGrouped)
             .searchable(text: $query, prompt: "タスクを検索")
+            // 下に浮かぶガラスの入力欄（改行で続けて追加）
+            .safeAreaInset(edge: .bottom) { if filter == .open || filter == .inbox { quickAddBar } }
             .navigationTitle("タスク")
             .toolbar { MainToolbar() }
             .animation(Motion.pop, value: filter)
         }
+    }
+
+    // MARK: ガラスの部品
+
+    /// 上のまとめ（今日・期限切れ・フラグ）。押すとその絞り込みへ
+    private var summaryTiles: some View {
+        let late = model.tasks.filter { !$0.isDone && $0.kind == .do && ($0.plannedEnd.map { $0 < model.now } ?? false) }.count
+        return Group {
+            HStack(spacing: 10) {
+                tile("今日", "\(count(.today))", "sun.max.fill", .orange) { filter = .today }
+                tile("期限切れ", "\(late)", "exclamationmark.circle.fill", late > 0 ? .red : .secondary) { filter = .open }
+                tile("フラグ", "\(count(.flagged))", "flag.fill", .orange) { filter = .flagged }
+                tile("完了", "\(count(.done))", "checkmark.seal.fill", .green) { filter = .done }
+            }
+        }
+    }
+
+    private func tile(_ title: String, _ value: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+        Button { withAnimation(Motion.pop) { action() } } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
+                Text(value).font(.title3.weight(.bold)).monospacedDigit().contentTransition(.numericText())
+                Text(title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .glass(RoundedRectangle(cornerRadius: 16, style: .continuous), interactive: true)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("\(title) \(value)件")
+    }
+
+    /// 絞り込み：ガラスの帯の上を、選んだ印がなめらかに移動する
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(Filter.allCases) { f in
+                    let on = filter == f
+                    Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { filter = f } } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: f.symbol).imageScale(.small)
+                            Text(f.rawValue).lineLimit(1).fixedSize()
+                            Text("\(count(f))").monospacedDigit().foregroundStyle(on ? Color.accentColor.opacity(0.8) : .secondary)
+                        }
+                        .font(.subheadline.weight(on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.accentColor : .primary)
+                        .fixedSize()
+                        .padding(.horizontal, 12).frame(minHeight: 34)
+                        .background {
+                            if on {
+                                Capsule().fill(Color.accentColor.opacity(0.16))
+                                    .overlay(Capsule().strokeBorder(.white.opacity(0.5), lineWidth: 0.6))
+                                    .matchedGeometryEffect(id: "filter", in: filterNS)
+                            }
+                        }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .glass(Capsule(), interactive: true)
+            .padding(.vertical, 4)
+        }
+        .scrollClipDisabled()
+        .sensoryFeedback(.selection, trigger: filter)
+    }
+
+    /// 画面の下に浮かぶガラスの入力欄
+    private var quickAddBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Color.accentColor)
+            TextField("新しいタスク（改行で追加）", text: $quickTitle)
+                .focused($quickFocused)
+                .submitLabel(.next)
+                .onSubmit(addQuick)
+            if !quickTitle.isEmpty {
+                Button { addQuick() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+                    .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .glass(Capsule(), interactive: true)
+        .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+        .padding(.horizontal).padding(.bottom, 6)
+        .animation(.snappy, value: quickTitle.isEmpty)
     }
 
     @ViewBuilder

@@ -13,6 +13,7 @@ struct EventDetailView: View {
     @Environment(\.openURL) private var openURL
     @State private var confirmDelete = false
     @State private var deleted = 0
+    @State private var copyOccurrence: EventOccurrence?
 
     var body: some View {
         let parsed = parseOccurrenceId(occurrenceId)
@@ -97,6 +98,7 @@ struct EventDetailView: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             }
         }
+        .sheet(item: $copyOccurrence) { o in CopyToDaysSheet(occurrence: o).environment(model) }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
@@ -176,6 +178,9 @@ struct EventDetailView: View {
         HStack(spacing: 10) {
             roundButton("編集", "pencil") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
             roundButton("複製", "plus.square.on.square") { duplicate(ev, start: start, end: end) }
+            roundButton("複数日", "doc.on.doc") {
+                copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
+            }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 roundButton("参加", "video.fill") { openURL(u) }
             } else if let place = ev.placeName, !place.isEmpty {
