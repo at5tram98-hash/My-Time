@@ -12,6 +12,8 @@ struct CalendarScreen: View {
     @AppStorage("calendarMode") private var mode = "day"
     @State private var swipeEdge: Edge = .trailing
     @State private var todayTick = 0
+    /// 月から日へ広がるときの起点（タップした位置）
+    @State private var zoomAnchor: UnitPoint = .center
 
     var body: some View {
         NavigationStack {
@@ -33,13 +35,17 @@ struct CalendarScreen: View {
                     Group {
                         switch mode {
                         case "week":
-                            WeekTimeline(selected: $selected, now: now) { d in open(d) }
+                            WeekTimeline(selected: $selected, now: now) { d in open(d, from: .center) }
                         case "month":
-                            MonthView(selected: $selected, todayTick: todayTick) { d in open(d) }
+                            MonthView(selected: $selected, todayTick: todayTick) { d, p in open(d, from: p) }
+                                // 日へ行くとき：月はタップした所へ吸い込まれるように拡大して消える
+                                .transition(.asymmetric(insertion: .opacity, removal: .scale(scale: 2.2, anchor: zoomAnchor).combined(with: .opacity)))
                         case "list":
                             AgendaList(from: day, days: 30, now: now, selected: day, hideEmpty: true) { selected = model.time.date($0) }
                         default:
                             dayView(day: day, now: now)
+                                // 月から来たとき：タップした日の位置から「ひゅっ」と広がる
+                                .transition(.asymmetric(insertion: .scale(scale: 0.08, anchor: zoomAnchor).combined(with: .opacity), removal: .opacity))
                         }
                     }
                     .frame(maxHeight: .infinity)
@@ -75,10 +81,11 @@ struct CalendarScreen: View {
         }
     }
 
-    /// 週・月から日の表示へ
-    private func open(_ d: EpochMs) {
+    /// 週・月から日の表示へ（月からは、タップした所から広がる）
+    private func open(_ d: EpochMs, from anchor: UnitPoint) {
+        zoomAnchor = anchor
         selected = model.time.date(d)
-        withAnimation(reduceMotion ? nil : Motion.sheet) { mode = "day" }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.82)) { mode = "day" }
     }
 
     /// 終日の予定（ガラスの札）

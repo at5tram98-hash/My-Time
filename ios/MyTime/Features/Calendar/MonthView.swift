@@ -2,18 +2,25 @@ import SwiftUI
 import MyTimeCore
 
 /// 月の表示（純正カレンダーと同じ操作）。
-/// 上下にスクロールして月をまたぐ／日をタップでその日の表示へ／ピンチで「予定の名前を出す⇄点だけ」／
+/// 上下にスクロールして月をまたぐ／ピンチで行の高さを連続で変え、高さに合わせて詳しく（点→名前→時刻→場所）／
+/// 予定をタップで予定の詳細、日をタップで選ぶ、日をダブルタップでその日の表示へ（その場所から広がる）／
 /// 日を長押しでメニュー（新しい予定・この日の予定を複数の日にコピー）。今日は赤い丸、月の名前は1日の上に。
 struct MonthView: View {
     @Binding var selected: Date
     /// 「今日」ボタンを押すたびに増える（今日の月へスクロール）
     var todayTick: Int
-    var onOpenDay: (EpochMs) -> Void
+    /// 日を開く（タップした位置。画面に対する割合。そこから日の表示が広がる）
+    var onOpenDay: (EpochMs, UnitPoint) -> Void
 
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("calendar.monthDetailed") private var detailed = true
+    /// 1週の行の高さ（ピンチで連続して変わる）
+    @AppStorage("calendar.monthRowHeight") private var rowHeight: Double = 92
+    @State private var pinchBase: Double?
+    @State private var level = 0
+    @State private var openTick = 0
+    static let minRow: Double = 48, maxRow: Double = 280
     @State private var copyDay: EpochMs?
     @State private var visibleMonth = 0
 
@@ -46,15 +53,28 @@ struct MonthView: View {
                     withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(0, anchor: .top) }
                 }
             }
+            // ピンチ：指の動きに合わせて行が縦に伸び縮みする（離すと段階にそろえる）
             .simultaneousGesture(
-                MagnifyGesture().onEnded { v in
-                    let next = v.magnification > 1
-                    guard next != detailed else { return }
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85)) { detailed = next }
-                }
+                MagnifyGesture()
+                    .onChanged { v in
+                        let base = pinchBase ?? rowHeight
+                        pinchBase = base
+                        rowHeight = min(Self.maxRow, max(Self.minRow, base * v.magnification))
+                        let l = detailLevel(rowHeight)
+                        if l != level { level = l }
+                    }
+                    .onEnded { _ in
+                        pinchBase = nil
+                        let stops: [Double] = [50, 92, 150, 220, 280]
+                        let target = stops.min { abs($0 - rowHeight) < abs($1 - rowHeight) } ?? 92
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85)) { rowHeight = target }
+                        level = detailLevel(target)
+                    }
             )
         }
-        .sensoryFeedback(.selection, trigger: detailed)
+        .sensoryFeedback(.selection, trigger: level)
+        .sensoryFeedback(.impact(weight: .medium), trigger: openTick)
+        .onAppear { level = detailLevel(rowHeight) }
         .sheet(item: Binding(get: { copyDay.map(CopySource.init) }, set: { copyDay = $0?.day })) { src in
             CopyToDaysSheet(sourceDay: src.day).environment(model)
         }
@@ -115,18 +135,23 @@ struct MonthView: View {
                         }
                     }
                 }
-                .frame(height: detailed ? 92 : 50)
+                .frame(height: rowHeight)
                 .overlay(alignment: .top) { Rectangle().fill(Color(.separator).opacity(0.6)).frame(height: 0.5) }
             }
         }
     }
+
+    /// 0：点だけ／1：名前／2：名前と時刻／3：名前・時刻・場所や教室
+    private func detailLevel(_ h: Double) -> Int { h < 70 ? 0 : h < 135 ? 1 : h < 200 ? 2 : 3 }
 
     private func dayCell(_ d: EpochMs, events: [EventOccurrence]) -> some View {
         let today = model.time.isSameDay(d, model.now)
         let sel = model.time.isSameDay(d, model.time.ms(selected))
         let wd = model.time.weekday(d)
         let n = cal.component(.day, from: model.time.date(d))
-        let maxRows = 3
+        let lv = detailLevel(rowHeight)
+        let rowH: CGFloat = lv >= 3 ? 40 : lv == 2 ? 27 : 14
+        let maxRows = max(1, Int((CGFloat(rowHeight) - 36) / (rowH + 1)))
         return VStack(spacing: 2) {
             Text("\(n)")
                 .font(.callout.weight(today || sel ? .bold : .regular)).monospacedDigit()
@@ -136,20 +161,10 @@ struct MonthView: View {
                     if today { Circle().fill(Color.red) } else if sel { Circle().fill(Color.primary) }
                 }
                 .padding(.top, 3)
-            if detailed {
+            if lv >= 1 {
                 VStack(spacing: 1) {
                     ForEach(events.prefix(events.count > maxRows ? maxRows - 1 : maxRows), id: \.id) { o in
-                        let c = Color(hex: model.eventColor(o.event))
-                        HStack(spacing: 2) {
-                            if !o.event.allDay { RoundedRectangle(cornerRadius: 1).fill(c).frame(width: 2) }
-                            if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 7, weight: .bold)) }
-                            Text(o.title).font(.system(size: 9, weight: .medium)).lineLimit(1)
-                        }
-                        .foregroundStyle(o.event.allDay ? Color.white : Color.primary)
-                        .padding(.horizontal, 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 13)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(o.event.allDay ? AnyShapeStyle(c) : AnyShapeStyle(c.opacity(0.15))))
+                        eventRow(o, level: lv, height: rowH)
                     }
                     if events.count > maxRows {
                         Text("他\(events.count - (maxRows - 1))件").font(.system(size: 9)).foregroundStyle(.secondary)
@@ -165,12 +180,20 @@ struct MonthView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background { if sel && !today { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor.opacity(0.06)).padding(1) } }
+        .clipped()
         .contentShape(Rectangle())
-        .onTapGesture {
+        // ダブルタップ：その場所から日の表示へ広がる
+        .onTapGesture(count: 2, coordinateSpace: .global) { p in
+            openTick += 1
             selected = model.time.date(d)
-            onOpenDay(d)
+            let size = UIScreen.main.bounds.size
+            onOpenDay(d, UnitPoint(x: p.x / max(1, size.width), y: p.y / max(1, size.height)))
         }
+        // タップ：その日を選ぶ
+        .onTapGesture { withAnimation(.snappy) { selected = model.time.date(d) } }
         .contextMenu {
+            Button("この日を開く", systemImage: "calendar.day.timeline.left") { onOpenDay(d, .center) }
             Button("新しい予定", systemImage: "plus") {
                 let s = d + 9 * HOUR
                 router.open(.editor(EditorSeed(kind: .event, start: s, end: s + HOUR)))
@@ -186,10 +209,44 @@ struct MonthView: View {
         } preview: {
             DayPreview(day: d, events: events).environment(model)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(model.time.dayLabel(d) + (today ? "、今日" : "") + (events.isEmpty ? "" : "、予定\(events.count)件"))
-        .accessibilityHint("タップでその日を開きます。長押しでメニュー")
+        .accessibilityHint("ダブルタップでその日を開きます。長押しでメニュー")
+        .accessibilityAction(named: "この日を開く") { onOpenDay(d, .center) }
+    }
+
+    /// 予定の1行。タップで予定の詳細。高さに合わせて、名前→時刻→場所・教室まで出す
+    private func eventRow(_ o: EventOccurrence, level: Int, height: CGFloat) -> some View {
+        let c = Color(hex: model.eventColor(o.event))
+        let filled = o.event.allDay
+        let room = o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : "\($0)教室" }
+        let sub = room ?? o.event.placeName
+        return HStack(alignment: .top, spacing: 3) {
+            if !filled { RoundedRectangle(cornerRadius: 1).fill(c).frame(width: 2) }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 2) {
+                    if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 7, weight: .bold)) }
+                    Text(o.title).font(.system(size: level >= 2 ? 10 : 9, weight: .semibold)).lineLimit(1)
+                }
+                if level >= 2 && !filled {
+                    Text(model.hm(o.start)).font(.system(size: 9)).monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                }
+                if level >= 3, let sub, !sub.isEmpty {
+                    Text(sub).font(.system(size: 8)).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(filled ? Color.white : Color.primary)
+        .padding(.horizontal, 2).padding(.vertical, level >= 2 ? 2 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: height)
+        .background(RoundedRectangle(cornerRadius: 3).fill(filled ? AnyShapeStyle(c) : AnyShapeStyle(c.opacity(0.15))))
+        .contentShape(Rectangle())
+        .onTapGesture { router.open(.event(o.id)) }
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(o.title)、\(o.event.allDay ? "終日" : model.hm(o.start))")
     }
 }
 
