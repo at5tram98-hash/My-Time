@@ -75,7 +75,7 @@ struct SettingsView: View {
                         exportingICS = true
                     }
                     .fileExporter(isPresented: $exportingICS, document: icsDoc, contentType: .calendarEvent, defaultFilename: "my-time") { result in
-                        if case .failure(let e) = result { model.errorMessage = e.localizedDescription } else { model.toast = AppModel.Toast(text: "書き出しました") }
+                        if case .failure(let e) = result { model.errorMessage = e.localizedDescription } 
                     }
                 } footer: {
                     Text(".ics はカレンダー App や Google カレンダーに読み込めます。My Time からほかのカレンダーへ自動で書き込むことはしません。")
@@ -104,7 +104,7 @@ struct SettingsView: View {
                 }
             }
             .fileExporter(isPresented: $exporting, document: exportDoc, contentType: .json, defaultFilename: "my-time-transfer-\(model.time.dayLabel(model.now).replacingOccurrences(of: "/", with: "-"))") { result in
-                if case .failure(let e) = result { model.errorMessage = e.localizedDescription } else { model.toast = AppModel.Toast(text: "書き出しました") }
+                if case .failure(let e) = result { model.errorMessage = e.localizedDescription } 
             }
             .sheet(item: Binding(get: { pending.map(PendingImport.init) }, set: { if $0 == nil { pending = nil } })) { p in
                 ImportConfirmView(file: p.file) { pending = nil }
@@ -157,7 +157,7 @@ struct ImportConfirmView: View {
                         let ok = model.perform { added = try DeviceTransfer.importAddOnly(f, into: model.repo.store, now: model.now, newId: model.repo.newId) }
                         if ok {
                             done += 1
-                            model.toast = AppModel.Toast(text: added == 0 ? "すでに読み込み済みです（変更なし）" : "\(added)件を追加しました")
+                            model.errorMessage = nil
                             onClose()
                         }
                     }

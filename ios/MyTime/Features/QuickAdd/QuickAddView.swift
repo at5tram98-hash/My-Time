@@ -148,7 +148,6 @@ struct QuickAddView: View {
         let chosen = cs.filter { selected.contains($0.id) }
         var made = 0
         if model.perform(nil, { made = try model.repo.createFromCandidates(chosen) }) {
-            model.toast = AppModel.Toast(text: "\(made)件を追加しました")
             dismiss()
         }
     }

@@ -46,6 +46,14 @@ struct EventDetailView: View {
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        // 純正カレンダーと同じく、一番下に赤い「予定を削除」（中央ぞろえ）
+                        Section {
+                            Button(role: .destructive) { confirmDelete = true } label: {
+                                Text(ev.recurrence == nil ? "予定を削除" : "予定を削除…")
+                                    .font(.body.weight(.medium))
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
                     }
                     .contentMargins(.top, 0, for: .scrollContent)
                 }
@@ -59,33 +67,21 @@ struct EventDetailView: View {
                         Button("編集") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
                     }
                 }
-                // 純正カレンダーと同じく、削除は一番下の赤いボタン（いつでも親指が届く位置）
-                .safeAreaInset(edge: .bottom) {
-                    Button(role: .destructive) { confirmDelete = true } label: {
-                        Label("予定を削除", systemImage: "trash")
-                            .font(.body.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .confirmationDialog(ev.recurrence == nil ? "「\(ev.title)」を削除しますか？" : "繰り返しの予定です", isPresented: $confirmDelete, titleVisibility: .visible) {
-                        if let p = parsed, ev.recurrence != nil {
-                            Button("この回のみ削除", role: .destructive) {
-                                let snapshot = ev
-                                if model.perform("この回を削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }, { try model.repo.cancelOccurrence(masterId: p.masterId, originalStart: p.originalStart) }) { close() }
-                            }
-                        }
-                        Button(ev.recurrence == nil ? "予定を削除" : "すべての回を削除", role: .destructive) {
+                // 削除の確認は画面の中央に（吹き出しがずれたり重なったりしない）
+                .alert(ev.recurrence == nil ? "この予定を削除しますか？" : "繰り返しの予定を削除します", isPresented: $confirmDelete) {
+                    if let p = parsed, ev.recurrence != nil {
+                        Button("この回のみ削除", role: .destructive) {
                             let snapshot = ev
-                            if model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }, { try model.repo.deleteEvent(ev.id) }) { close() }
+                            if model.perform("この回を削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }, { try model.repo.cancelOccurrence(masterId: p.masterId, originalStart: p.originalStart) }) { close() }
                         }
-                    } message: {
-                        Text("削除したあとも、下に出るお知らせの「取り消す」で元に戻せます。")
                     }
-                    .buttonBorderShape(.roundedRectangle(radius: 14))
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-                    .background(.bar)
+                    Button(ev.recurrence == nil ? "削除" : "すべての回を削除", role: .destructive) {
+                        let snapshot = ev
+                        if model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }, { try model.repo.deleteEvent(ev.id) }) { close() }
+                    }
+                    Button("キャンセル", role: .cancel) {}
+                } message: {
+                    Text("「\(ev.title)」\n間違えたときは iPhone を振ると元に戻せます。")
                 }
                 .sensoryFeedback(.warning, trigger: deleted)
             } else {
@@ -256,6 +252,22 @@ struct EventDetailView: View {
             }
             if let m = ev.travelMinutes, m > 0 {
                 LabeledContent("移動", value: "\(m)分（\(model.hm(start - EpochMs(m) * MINUTE))に出発）")
+            }
+            if let room = ev.classInfo?["room"]?.stringValue, !room.isEmpty { LabeledContent("教室", value: room) }
+            if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
+                Link(destination: u) { LabeledContent("会議") { Label("参加する", systemImage: "video.fill").foregroundStyle(Color.accentColor) } }
+            }
+            ForEach(Array((ev.extra?["urls"]?.arrayValue ?? []).enumerated()), id: \.offset) { _, l in
+                if let s = l["url"]?.stringValue, let u = URL(string: s) {
+                    Link(destination: u) {
+                        LabeledContent(l["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? "リンク") {
+                            Text(u.host() ?? s).foregroundStyle(Color.accentColor).lineLimit(1)
+                        }
+                    }
+                }
+            }
+            if let n = ev.extra?["notifies"]?.arrayValue, !n.isEmpty {
+                LabeledContent("通知", value: n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
             }
             if let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
             if ev.specType == .shift, let wage = ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue,

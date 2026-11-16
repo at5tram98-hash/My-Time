@@ -1,13 +1,23 @@
 import SwiftUI
 import MyTimeCore
 
-/// 予定・タスクの追加と編集。保存できない入力は理由を表示し、入力はそのまま残す
+/// 予定・タスクの追加と編集（Web 版と同じく「基本」「オプション」「専用」の3つに分ける）。
+/// 基本：名前・日付（タップで月のカレンダー）・時間（なぞる／タップで時刻のホイール）・繰り返し・場所と移動・通知。
+/// オプション：カレンダー・色・カテゴリー・フラグ・会議の URL・リンク・メモ・終了後に隠す。
+/// 専用：種類ごとの項目、授業の科目と教室。
+/// 保存できない入力は理由を表示し、入力はそのまま残す。
 struct EditorView: View {
     var seed: EditorSeed
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @Environment(\.dismiss) private var dismiss
 
+    enum Page: String, CaseIterable { case basic = "基本", option = "オプション", special = "専用" }
+    /// その場で開いている行（1つだけ開く）
+    enum Open: Equatable { case none, date, time, place, deadline }
+
+    @State private var page: Page = .basic
+    @State private var open: Open = .none
     @State private var kind: EditorSeed.Kind = .task
     @State private var loaded = false
     @State private var isNew = true
@@ -28,70 +38,439 @@ struct EditorView: View {
     @State private var estimate = 30
     @State private var hasEstimate = false
     @State private var calendarId = "cal-general"
-    @State private var repeatFreq: String = "none"
-    @State private var place = ""
-    /// 予定の前の移動時間（分。0 は移動なし。Web 版と同じ extra.travelMinutes）
-    @State private var travel = 0
-    @State private var showIcons = false
-    @State private var showDetails = false
+    @State private var rule: RecurrenceRule?
+    @State private var place: PlaceValue?
+    @State private var travel: Int?
+    @State private var notifies: [Int] = []
+    @State private var meetingUrl = ""
+    @State private var links: [LinkItem] = []
+    @State private var color: String?
+    @State private var category = ""
+    @State private var taskCalendarId: String?
+    @State private var hideAfterEnd = false
+    @State private var subjectName = ""
+    @State private var room = ""
     @State private var flagged = false
     @State private var icon = "book"
     @State private var saved = 0
+    @State private var error: String?
+    @State private var keyboardUp = false
     @FocusState private var titleFocused: Bool
+
+    struct LinkItem: Identifiable, Equatable { var id = UUID().uuidString; var title = ""; var url = "" }
+
+    static let colors = ["#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#30B0C7", "#0A84FF", "#5E5CE6", "#BF5AF2", "#FF2D55", "#A2845E", "#8E8E93"]
+    static let notifyChoices = [0, 5, 10, 15, 30, 60, 120, 1440]
 
     var body: some View {
         NavigationStack {
             Form {
-                if isNew {
-                    Picker("種類", selection: $kind.animation(.snappy)) {
-                        Text("タスク").tag(EditorSeed.Kind.task)
-                        Text("予定").tag(EditorSeed.Kind.event)
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
+                header
+                if let error {
+                    Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                 }
-                Section {
-                    HStack {
-                    TextField(kind == .event ? "予定の名前" : "やること", text: $title)
-                        .font(.title3.weight(.medium))
-                        .focused($titleFocused)
-                        .submitLabel(canSave ? .done : .return)
-                        // 改行で、そのまま追加（純正リマインダーと同じ速さで入れられる）
-                        .onSubmit { if canSave { save() } else { titleFocused = false } }
-                        if isNew && title.isEmpty {
-                            // 「明日10時から1時間 歯医者」のように文章でまとめて入れる
-                            Button { router.open(.quickAdd) } label: {
-                                Image(systemName: "text.bubble").font(.title3).foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("文章で追加")
-                        }
-                    }
-                    // 候補は入力を始めてから出す（最初の画面を静かに）
-                    if isNew && !title.isEmpty && !suggestions.isEmpty { suggestionRow }
+                switch page {
+                case .basic: basicPage
+                case .option: optionPage
+                case .special: specialPage
                 }
-                if kind == .event { eventFields } else { taskFields }
-                detailsSection
             }
-            // 下へなぞるとキーボードを閉じる
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(isNew ? (kind == .event ? "新しい予定" : "新しいタスク") : "編集")
+            .contentMargins(.top, 4, for: .scrollContent)
+            .navigationTitle(isNew ? (kind == .event ? "新しい予定" : "新しいタスク") : (kind == .event ? "予定を編集" : "タスクを編集"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isNew ? "追加" : "保存", action: save).fontWeight(.semibold)
-                        .disabled(!canSave)
+                    Button(isNew ? "追加" : "保存", action: save).fontWeight(.semibold).disabled(!canSave)
                 }
             }
+            // キーボードが出ている間はタブを隠す（候補や入力欄を覆わない）
+            .safeAreaInset(edge: .bottom) { if !keyboardUp { pageTabs.transition(.move(edge: .bottom).combined(with: .opacity)) } }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in withAnimation(.snappy) { keyboardUp = true } }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.snappy) { keyboardUp = false } }
             .onAppear(perform: load)
             .sensoryFeedback(.success, trigger: saved)
+            .sensoryFeedback(.selection, trigger: page)
+            .animation(.snappy, value: open)
         }
         .interactiveDismissDisabled(!title.isEmpty && isNew)
     }
 
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    // MARK: 見出し（種類の切り替え・名前）
+
+    @ViewBuilder
+    private var header: some View {
+        if isNew {
+            Picker("作成する種類", selection: $kind.animation(.snappy)) {
+                Text("タスク").tag(EditorSeed.Kind.task)
+                Text("予定").tag(EditorSeed.Kind.event)
+            }
+            .pickerStyle(.segmented)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
+        }
+        Section {
+            HStack(spacing: 10) {
+                if kind == .event {
+                    Circle().fill(tint).frame(width: 12, height: 12).accessibilityHidden(true)
+                } else {
+                    Image(systemName: IconMap.symbol(icon)).foregroundStyle(tint).accessibilityHidden(true)
+                }
+                TextField(kind == .event ? "予定のタイトル" : "タスクのタイトル", text: $title)
+                    .font(.title3.weight(.medium))
+                    .focused($titleFocused)
+                    .submitLabel(canSave ? .done : .return)
+                    // 改行で、そのまま追加（純正リマインダーと同じ速さで入れられる）
+                    .onSubmit { if canSave { save() } else { titleFocused = false } }
+                if isNew && title.isEmpty {
+                    Button { router.open(.quickAdd) } label: {
+                        Image(systemName: "text.bubble").font(.title3).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("文章で追加")
+                }
+            }
+            if isNew && !title.isEmpty && !suggestions.isEmpty { suggestionRow }
+        }
+    }
+
+    /// 下の「基本・オプション・専用」（左右になぞっても切り替えられる）
+    private var pageTabs: some View {
+        let pages = Page.allCases.filter { $0 != .special || hasSpecial }
+        return HStack(spacing: 4) {
+            ForEach(pages, id: \.self) { p in
+                Button { withAnimation(.snappy) { page = p; open = .none } } label: {
+                    Text(p == .special ? specialLabel : p.rawValue)
+                        .font(.subheadline.weight(page == p ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .background(Capsule().fill(page == p ? Color.accentColor.opacity(0.16) : .clear))
+                        .foregroundStyle(page == p ? Color.accentColor : .primary)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(page == p ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
+        .padding(.horizontal, 40)
+        .padding(.bottom, 6)
+        .gesture(DragGesture(minimumDistance: 20).onEnded { v in
+            guard let i = pages.firstIndex(of: page) else { return }
+            let j = v.translation.width < 0 ? i + 1 : i - 1
+            if pages.indices.contains(j) { withAnimation(.snappy) { page = pages[j] } }
+        })
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("編集の項目")
+    }
+
+    private var hasSpecial: Bool { spec != nil || (kind == .event && calendarKind == .class) }
+    private var specialLabel: String { spec.flatMap { SPEC_BY_ID[$0]?.name } ?? (calendarKind == .class ? "授業" : "専用") }
+    private var calendarKind: CalendarKind? { model.calendar(calendarId)?.kind }
+    private var tint: Color { Color(hex: color ?? (kind == .event ? model.calendar(calendarId)?.color : nil) ?? "#0A84FF") }
+
+    // MARK: 基本
+
+    @ViewBuilder
+    private var basicPage: some View {
+        Section {
+            NavigationLink { SpecTypePicker(spec: $spec, onPick: apply) } label: {
+                row("種類", "square.stack.3d.up.fill", .gray, value: spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない")
+            }
+            if kind == .task {
+                Picker(selection: $isCheck.animation()) {
+                    Text("実行する").tag(false)
+                    Text("確認する").tag(true)
+                } label: { rowLabel("タスクの種類", "checklist", .blue) }
+            }
+        }
+
+        Section {
+            if kind == .event {
+                Toggle(isOn: $allDay.animation()) { rowLabel("終日", "sun.max.fill", .orange) }
+            } else if !isCheck {
+                Toggle(isOn: $hasTime.animation()) { rowLabel("日時を指定", "clock.fill", .orange) }
+            }
+            if showsTime { dateTimeRows }
+            if kind == .task && isCheck {
+                DatePicker(selection: $start) { rowLabel("確認日時", "checkmark.circle.fill", .green) }
+            }
+        } footer: {
+            if let c = conflict {
+                Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            } else if kind == .task && !isCheck && !hasTime {
+                Text("日時を決めないタスクは「未割当」に入ります。")
+            } else if end <= start && showsTime {
+                Text("終了は開始より後にしてください。").foregroundStyle(.red)
+            }
+        }
+
+        Section {
+            if kind == .event {
+                NavigationLink { RepeatEditor(rule: $rule, start: start) } label: {
+                    row("繰り返し", "repeat", .indigo, value: describeRule(rule))
+                }
+            }
+            if kind == .task && !isCheck {
+                Picker(selection: Binding(get: { hasEstimate ? estimate : 0 }, set: { v in hasEstimate = v > 0; if v > 0 { estimate = v } })) {
+                    Text("なし").tag(0)
+                    ForEach([10, 15, 20, 30, 45, 60, 90, 120, 180, 240], id: \.self) { Text(durationLabel($0)).tag($0) }
+                } label: { rowLabel("見積時間", "hourglass", .teal) }
+            }
+            PlaceTravelEditor(place: $place, travel: $travel, expanded: Binding(get: { open == .place }, set: { open = $0 ? .place : .none }), start: start, history: placeHistory)
+            NavigationLink { NotifyPicker(selection: $notifies, base: kind == .event ? "予定の開始" : isCheck ? "確認の時刻" : "開始の時刻") } label: {
+                row("通知", "bell.fill", .pink, value: notifySummary)
+            }
+        }
+    }
+
+    private var showsTime: Bool { kind == .event || (!isCheck && hasTime) }
+
+    /// 日付（タップで月のカレンダー・左右になぞって前後の日）と時間（なぞる／タップで時刻のホイール）
+    @ViewBuilder
+    private var dateTimeRows: some View {
+        // 1つの行にまとめる（行ごとの区切り線がずれて見えないように）
+        VStack(spacing: 10) {
+            DaySwipeRow(date: startKeepingLength, onShift: shiftDay, onTap: { toggle(.date) }, expanded: open == .date)
+            if !(kind == .event && allDay) {
+                TimeRangeBar(start: $start, end: $end, tint: tint)
+                Button { toggle(.time) } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(hm(start))〜\(hm(end))").font(.title2.weight(.semibold)).monospacedDigit()
+                            .contentTransition(.numericText())
+                        if !model.time.isSameDay(model.time.ms(start), model.time.ms(end) - 1) {
+                            Text("翌日").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        }
+                        Spacer()
+                        Text(lengthText).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                        Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(open == .time ? 180 : 0))
+                    }
+                    .foregroundStyle(end <= start ? Color.red : Color.primary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("タップすると時刻を細かく選べます")
+            }
+        }
+        .padding(.vertical, 4)
+        .animation(.snappy, value: start)
+        .animation(.snappy, value: end)
+
+        if open == .date {
+            DatePicker("日付", selection: startKeepingLength, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            if kind == .event && allDay {
+                DatePicker("終わる日", selection: $end, in: start..., displayedComponents: .date)
+            }
+        }
+        if open == .time {
+            DatePicker(selection: startKeepingLength, displayedComponents: [.date, .hourAndMinute]) { Text("開始") }
+            DatePicker(selection: $end, in: start..., displayedComponents: [.date, .hourAndMinute]) { Text("終了") }
+            HStack(spacing: 6) {
+                ForEach([15, 30, 60, 90, 120], id: \.self) { m in
+                    let on = Int(end.timeIntervalSince(start) / 60) == m
+                    Button { withAnimation(.snappy) { end = start.addingTimeInterval(TimeInterval(m * 60)) } } label: {
+                        Text(durationLabel(m)).font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                            .background(Capsule().fill(on ? Color.accentColor : Color(.tertiarySystemFill)))
+                            .foregroundStyle(on ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func toggle(_ o: Open) { withAnimation(.snappy) { open = open == o ? .none : o }; titleFocused = false }
+
+    // MARK: オプション
+
+    @ViewBuilder
+    private var optionPage: some View {
+        if kind == .event {
+            Section("カレンダー") { calendarChips }
+        } else {
+            Section {
+                Picker(selection: $taskCalendarId) {
+                    Text("なし").tag(String?.none)
+                    ForEach(model.calendars, id: \.id) { c in Text(c.name).tag(Optional(c.id)) }
+                } label: { rowLabel("カレンダー", "calendar", .blue) }
+                categoryPicker
+                Toggle(isOn: $flagged) { rowLabel("フラグ", "flag.fill", .orange) }
+            }
+        }
+        Section("色") { colorStrip }
+        if kind == .task {
+            Section { iconGrid } header: { Text("アイコン") }
+            Section {
+                Toggle(isOn: $hasDeadline.animation()) { rowLabel("締切", "flag.checkered", .red) }.disabled(spec == nil)
+                if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
+            } footer: {
+                if spec == nil { Text("締切は「種類」を選ぶと設定できます（Web 版と同じ保存形式）。") }
+            }
+        }
+        Section {
+            HStack(spacing: 12) {
+                RowIcon(symbol: "video.fill", tint: .green)
+                TextField("会議の URL（https://…）", text: $meetingUrl)
+                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+        } footer: {
+            if !meetingUrl.isEmpty && !validURL(meetingUrl) { Text("https:// から始まる URL を入力してください").foregroundStyle(.red) }
+        }
+        Section {
+            ForEach($links) { $l in
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("名前（任意）", text: $l.title)
+                    TextField("https://", text: $l.url)
+                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .foregroundStyle(l.url.isEmpty || validURL(l.url) ? Color.primary : Color.red)
+                }
+            }
+            .onDelete { links.remove(atOffsets: $0) }
+            Button { withAnimation { links.append(LinkItem()) } } label: { Label("リンクを追加", systemImage: "link.badge.plus") }
+        } header: { Text("リンク") }
+        Section("メモ") {
+            TextField("メモ", text: $notes, axis: .vertical).lineLimit(3...10)
+        }
+        if kind == .event && !allDay && rule == nil {
+            Section {
+                Toggle(isOn: $hideAfterEnd) { rowLabel("終わったらすぐ隠す", "eye.slash.fill", .gray) }
+            } footer: { Text("終わった予定を、今日の時刻軸からすぐに消します。") }
+        }
+    }
+
+    private var categoryPicker: some View {
+        let names = Array(Set(model.tasks.compactMap(\.category).filter { !$0.isEmpty } + (category.isEmpty ? [] : [category]))).sorted()
+        return Menu {
+            Button("なし") { category = "" }
+            ForEach(names, id: \.self) { n in Button(n) { category = n } }
+            Divider()
+            Button("新しいカテゴリー…", systemImage: "plus") { newCategoryPrompt = true }
+        } label: {
+            row("カテゴリー", "tray.fill", .brown, value: category.isEmpty ? "なし" : category)
+        }
+        .alert("新しいカテゴリー", isPresented: $newCategoryPrompt) {
+            TextField("名前", text: $newCategory)
+            Button("追加") { if !newCategory.trimmingCharacters(in: .whitespaces).isEmpty { category = newCategory.trimmingCharacters(in: .whitespaces) }; newCategory = "" }
+            Button("キャンセル", role: .cancel) { newCategory = "" }
+        }
+    }
+    @State private var newCategoryPrompt = false
+    @State private var newCategory = ""
+
+    private var colorStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                Button { color = nil } label: {
+                    ZStack {
+                        Circle().strokeBorder(Color(.separator), lineWidth: 1.5).frame(width: 30, height: 30)
+                        Image(systemName: "slash.circle").foregroundStyle(.secondary)
+                    }
+                    .overlay(Circle().strokeBorder(color == nil ? Color.primary : .clear, lineWidth: 2).padding(-4))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(kind == .event ? "カレンダーの色" : "色なし")
+                ForEach(Self.colors, id: \.self) { c in
+                    Button { color = c } label: {
+                        Circle().fill(Color(hex: c)).frame(width: 30, height: 30)
+                            .overlay(Circle().strokeBorder(color == c ? Color.primary : .clear, lineWidth: 2).padding(-4))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("色 \(c)")
+                    .accessibilityAddTraits(color == c ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 6).padding(.horizontal, 4)
+        }
+    }
+
+    private var iconGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
+            ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
+                Button { icon = key } label: {
+                    Image(systemName: IconMap.symbols[key]!)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(icon == key ? Color.accentColor.opacity(0.2) : Color.clear))
+                        .foregroundStyle(icon == key ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(key)
+                .accessibilityAddTraits(icon == key ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: 専用
+
+    @ViewBuilder
+    private var specialPage: some View {
+        if kind == .event && calendarKind == .class {
+            Section {
+                HStack(spacing: 12) {
+                    RowIcon(symbol: "graduationcap.fill", tint: .indigo)
+                    TextField("科目（未入力ならタイトル）", text: $subjectName)
+                }
+                HStack(spacing: 12) {
+                    RowIcon(symbol: "door.left.hand.open", tint: .gray)
+                    TextField("教室（例：3-201）", text: $room)
+                }
+            } header: { Text("授業") } footer: { Text("教室は「今日」の上のカードにも表示します。") }
+        }
+        if let spec { SpecFieldsSection(spec: spec, details: $details) }
+        if !hasSpecial {
+            Section { Text("「基本」の「種類」を選ぶと、その種類だけの項目をここで入力できます。").foregroundStyle(.secondary) }
+        }
+    }
+
+    // MARK: 部品
+
+    private func rowLabel(_ title: String, _ symbol: String, _ tint: Color) -> some View {
+        HStack(spacing: 12) {
+            RowIcon(symbol: symbol, tint: tint)
+            Text(title)
+        }
+    }
+
+    private func row(_ title: String, _ symbol: String, _ tint: Color, value: String) -> some View {
+        HStack(spacing: 12) {
+            RowIcon(symbol: symbol, tint: tint)
+            Text(title).foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+
+    private func durationLabel(_ m: Int) -> String { m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分" }
+
+    private var notifySummary: String {
+        if notifies.isEmpty { return "なし" }
+        return notifies.sorted().map { NotifyPicker.label($0) }.joined(separator: "・")
+    }
+
+    private func validURL(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return (t.hasPrefix("https://") || t.hasPrefix("http://")) && URL(string: t) != nil
+    }
+
+    private var placeHistory: [PlaceValue] {
+        var seen = Set<String>(), out: [PlaceValue] = []
+        for v in model.settings.placeHistory { if let p = PlaceValue(v), seen.insert(p.name).inserted { out.append(p) } }
+        for e in model.events.sorted(by: { $0.updatedAt > $1.updatedAt }) {
+            if let p = PlaceValue(e.extra?["place"]), seen.insert(p.name).inserted { out.append(p) }
+            if out.count >= 20 { break }
+        }
+        return out
+    }
 
     /// 開始を変えたら長さを保って終了も動かす（時間のバーは開始・終了を別々に動かすので、これを使わない）
     private var startKeepingLength: Binding<Date> {
@@ -108,198 +487,11 @@ struct EditorView: View {
         end = cal.date(byAdding: .day, value: n, to: end) ?? end
     }
 
-    /// 日付（スワイプで変更）＋時間のバー（なぞって変更）＋まとめの1行
-    @ViewBuilder
-    private var timeRows: some View {
-        DaySwipeRow(date: startKeepingLength, onShift: shiftDay)
-        TimeRangeBar(start: $start, end: $end, tint: kind == .event ? calendarTint : .accentColor)
-            .padding(.vertical, 4)
-        HStack {
-            Text("\(hm(start))〜\(hm(end))").font(.title3.weight(.semibold)).monospacedDigit()
-                .contentTransition(.numericText())
-            Spacer()
-            Text(lengthText).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                .contentTransition(.numericText())
-        }
-        .animation(.snappy, value: start)
-        .animation(.snappy, value: end)
-    }
-
-    private var calendarTint: Color { Color(hex: model.calendar(calendarId)?.color ?? "#0A84FF") }
-
     private func hm(_ d: Date) -> String { model.hm(model.time.ms(d)) }
 
-    private var lengthText: String {
-        let len = max(0, Int(end.timeIntervalSince(start) / 60))
-        return len < 60 ? "\(len)分" : len % 60 == 0 ? "\(len / 60)時間" : "\(len / 60)時間\(len % 60)分"
-    }
-
-    /// あまり使わない項目はここにまとめる（入っている値があれば最初から開く）
-    private var detailsSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $showDetails.animation(.snappy)) {
-                specMenu
-                if kind == .event {
-                    calendarChips
-                    HStack {
-                        Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary).frame(width: 22)
-                        TextField("場所", text: $place)
-                    }
-                    Stepper(value: $travel, in: 0...240, step: 5) {
-                        HStack {
-                            Image(systemName: "tram.fill").foregroundStyle(.secondary).frame(width: 22)
-                            Text("移動")
-                            Spacer()
-                            Text(travel == 0 ? "なし" : "\(travel)分・\(model.hm(model.time.ms(start) - EpochMs(travel) * MINUTE))発")
-                                .foregroundStyle(.secondary).monospacedDigit()
-                        }
-                    }
-                    Picker(selection: $repeatFreq) {
-                        Text("しない").tag("none")
-                        Text("毎日").tag("daily")
-                        Text("毎週（\(DomainTime.weekdayJa[model.time.weekday(model.time.ms(start))])曜日）").tag("weekly")
-                        Text("毎月（\(Calendar.current.component(.day, from: start))日）").tag("monthly")
-                    } label: { Label("繰り返し", systemImage: "repeat").foregroundStyle(.primary) }
-                    if !allDay {
-                        DatePicker("開始", selection: startKeepingLength)
-                        DatePicker("終了", selection: $end, in: start...)
-                    }
-                } else {
-                    Toggle(isOn: $hasDeadline.animation()) { Label("締切", systemImage: "flag.checkered") }.disabled(spec == nil)
-                    if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
-                    if !isCheck {
-                        Toggle(isOn: $hasEstimate.animation()) { Label("見積もり", systemImage: "hourglass") }
-                        if hasEstimate {
-                            Stepper("\(estimate)分", value: $estimate, in: 5...600, step: 5)
-                        }
-                    }
-                    Toggle(isOn: $flagged) { Label("フラグ", systemImage: "flag") }
-                    if hasTime && !isCheck {
-                        DatePicker("開始", selection: startKeepingLength)
-                        DatePicker("終了", selection: $end, in: start...)
-                    }
-                    iconPicker
-                }
-                if let spec { SpecFieldsSection(spec: spec, details: $details) }
-                TextField("メモ", text: $notes, axis: .vertical).lineLimit(2...8)
-            } label: {
-                HStack {
-                    Text("詳細")
-                    Spacer()
-                    Text(detailsSummary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-        } footer: {
-            if kind == .task && spec == nil && showDetails { Text("締切は「種類」を選ぶと設定できます（Web 版と同じ保存形式）。") }
-        }
-    }
-
-    /// 詳細をたたんでいるときに、入っている値を短く見せる
-    private var detailsSummary: String {
-        var parts: [String] = []
-        if let d = spec.flatMap({ SPEC_BY_ID[$0] }) { parts.append(d.name) }
-        if kind == .event {
-            parts.append(model.calendar(calendarId)?.name ?? "")
-            if !place.isEmpty { parts.append(place) }
-            if repeatFreq != "none" { parts.append("繰り返し") }
-        } else {
-            if hasDeadline { parts.append("締切") }
-            if flagged { parts.append("フラグ") }
-            if hasEstimate { parts.append("\(estimate)分") }
-        }
-        if !notes.isEmpty { parts.append("メモ") }
-        return parts.filter { !$0.isEmpty }.joined(separator: "・")
-    }
-
-    // MARK: 予定
-
-    @ViewBuilder
-    private var eventFields: some View {
-        Section {
-            Toggle("終日", isOn: $allDay.animation())
-            if allDay {
-                DatePicker("開始", selection: startKeepingLength, displayedComponents: .date)
-                DatePicker("終了", selection: $end, in: start..., displayedComponents: .date)
-            } else {
-                timeRows
-            }
-        } footer: {
-            if let c = conflict { Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
-            else if !allDay { Text("バーをなぞると時間を、日付を左右になぞると日を変えられます。") }
-        }
-    }
-
-    // MARK: タスク
-
-    @ViewBuilder
-    private var taskFields: some View {
-        Section {
-            Picker("タスクの種類", selection: $isCheck.animation()) {
-                Text("実行する").tag(false)
-                Text("確認する").tag(true)
-            }
-            .pickerStyle(.segmented)
-            if isCheck {
-                DatePicker("確認する時刻", selection: $start)
-            } else {
-                Toggle("時間を決める", isOn: $hasTime.animation())
-                if hasTime { timeRows }
-            }
-        } footer: {
-            if !isCheck && !hasTime { Text("時間を決めないタスクは「未割当」に入ります。") }
-        }
-    }
-
-    private var iconPicker: some View {
-        DisclosureGroup(isExpanded: $showIcons) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
-                ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
-                    Button { icon = key } label: {
-                        Image(systemName: IconMap.symbols[key]!)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(icon == key ? Color.accentColor.opacity(0.2) : Color.clear))
-                            .foregroundStyle(icon == key ? Color.accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(key)
-                    .accessibilityAddTraits(icon == key ? .isSelected : [])
-                }
-            }
-            .padding(.vertical, 4)
-        } label: {
-            HStack {
-                Label("アイコン", systemImage: "face.smiling")
-                Spacer()
-                Image(systemName: IconMap.symbol(icon)).foregroundStyle(Color.accentColor)
-            }
-        }
-    }
+    private var lengthText: String { durationLabel(max(0, Int(end.timeIntervalSince(start) / 60))) }
 
     // MARK: 種類（S01〜S25）
-
-    private var specMenu: some View {
-        Menu {
-            Button("指定しない") { spec = nil }
-            ForEach(SpecGroup.allCases, id: \.self) { g in
-                Section(g.label) {
-                    ForEach(SPEC_DEFS.filter { $0.group == g }) { d in
-                        Button { apply(d) } label: { Label(d.name, systemImage: d.symbol) }
-                    }
-                }
-            }
-        } label: {
-            HStack {
-                Text("種類").foregroundStyle(.primary)
-                Spacer()
-                if let d = spec.flatMap({ SPEC_BY_ID[$0] }) {
-                    Label(d.name, systemImage: d.symbol).foregroundStyle(d.tint)
-                } else {
-                    Text("指定しない").foregroundStyle(.secondary)
-                }
-                Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(.tertiary)
-            }
-        }
-    }
 
     /// 種類を選ぶと、予定かタスクか・確認かどうかの既定を合わせる（新規のときだけ）
     private func apply(_ d: SpecDef) {
@@ -311,28 +503,6 @@ struct EditorView: View {
         if d.isEvent, d.id == .shift || d.id == .class {
             calendarId = model.calendars.first { $0.kind == (d.id == .shift ? .job : .class) }?.id ?? calendarId
         }
-    }
-
-    // MARK: 入力を助ける部品
-
-    /// 横に並ぶ小さなボタン（選んでいるものは色つき）
-    private func chipRow(_ items: [(String, Bool, () -> Void)]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, it in
-                    Button(action: it.2) {
-                        Text(it.0).font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Capsule().fill(it.1 ? Color.accentColor : Color(.tertiarySystemFill)))
-                            .foregroundStyle(it.1 ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(it.1 ? .isSelected : [])
-                }
-            }
-            .padding(.vertical, 2)
-        }
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
     }
 
     /// カレンダーを色の丸で選ぶ（純正カレンダーの色分けと同じ考え方）
@@ -360,7 +530,7 @@ struct EditorView: View {
     }
 
     /// 前に使った名前（入力中の文字で絞り込む）。選ぶと長さ・カレンダー・場所も前回と同じにする
-    private struct Suggestion: Identifiable { var id: String { title }; var title: String; var minutes: Int?; var calendarId: String?; var place: String?; var travel: Int? }
+    private struct Suggestion: Identifiable { var id: String { title }; var title: String; var minutes: Int?; var calendarId: String?; var place: PlaceValue?; var travel: Int? }
 
     private var suggestions: [Suggestion] {
         let q = title.trimmingCharacters(in: .whitespaces)
@@ -369,7 +539,7 @@ struct EditorView: View {
             for e in model.events.sorted(by: { $0.updatedAt > $1.updatedAt }) where !e.title.isEmpty && !seen.contains(e.title) {
                 if !q.isEmpty && (!e.title.localizedCaseInsensitiveContains(q) || e.title == q) { continue }
                 seen.insert(e.title)
-                out.append(Suggestion(title: e.title, minutes: e.allDay ? nil : Int((e.end - e.start) / MINUTE), calendarId: e.calendarId, place: e.placeName, travel: e.travelMinutes))
+                out.append(Suggestion(title: e.title, minutes: e.allDay ? nil : Int((e.end - e.start) / MINUTE), calendarId: e.calendarId, place: PlaceValue(e.extra?["place"]), travel: e.travelMinutes))
                 if out.count >= 6 { break }
             }
         } else {
@@ -419,13 +589,22 @@ struct EditorView: View {
 
     // MARK: 読み込みと保存
 
+    private func loadCommon(_ extra: JSONValue?) {
+        place = PlaceValue(extra?["place"])
+        travel = extra?["travelMinutes"]?.intValue.map(Int.init)
+        meetingUrl = extra?["meetingUrl"]?.stringValue ?? ""
+        notifies = extra?["notifies"]?.arrayValue?.compactMap { $0.intValue.map(Int.init) } ?? []
+        links = extra?["urls"]?.arrayValue?.compactMap { v in
+            guard let u = v["url"]?.stringValue else { return nil }
+            return LinkItem(id: v["id"]?.stringValue ?? UUID().uuidString, title: v["title"]?.stringValue ?? "", url: u)
+        } ?? []
+        color = extra?["color"]?.stringValue
+        details = extra?["spec"]?["details"]?.objectValue ?? [:]
+    }
+
     private func load() {
         guard !loaded else { return }
         loaded = true
-        defer {
-            // 入っている値があれば詳細を最初から開く
-            showDetails = !isNew && (spec != nil || !notes.isEmpty || !place.isEmpty || repeatFreq != "none" || hasDeadline || flagged || hasEstimate)
-        }
         kind = seed.kind
         let now = model.now
         let base = seed.start ?? (((now / (15 * MINUTE)) + 1) * 15 * MINUTE)
@@ -436,27 +615,51 @@ struct EditorView: View {
             isNew = false; kind = .task; task = t
             title = t.title; notes = t.notes; spec = t.specType; isCheck = t.kind == .check
             flagged = t.flagged; icon = IconMap.symbols[t.icon] != nil ? t.icon : "book"
+            category = t.category ?? ""; taskCalendarId = t.calendarId
             if let c = t.checkAt { start = model.time.date(c) }
             if let s = t.plannedStart, let e = t.plannedEnd { start = model.time.date(s); end = model.time.date(e); hasTime = true } else { hasTime = false }
             if let d = t.deadline { hasDeadline = true; deadline = model.time.date(d) }
             if let m = t.estimateMinutes { hasEstimate = true; estimate = m }
-            details = t.extra?["spec"]?["details"]?.objectValue ?? [:]
+            loadCommon(t.extra)
+            if notifies.isEmpty, let n = t.notifyMinutesBefore { notifies = [n] }
         } else if let id = seed.eventId, let e = model.events.first(where: { $0.id == id }) {
             isNew = false; kind = .event; event = e
             title = e.title; notes = e.notes; spec = e.specType; calendarId = e.calendarId
-            details = e.extra?["spec"]?["details"]?.objectValue ?? [:]
             start = model.time.date(e.start); end = model.time.date(e.end); allDay = e.allDay
-            repeatFreq = e.recurrence?.freq.rawValue ?? "none"; place = e.placeName ?? ""
-            travel = e.travelMinutes ?? 0
+            rule = e.recurrence; hideAfterEnd = e.hideAfterEnd
+            subjectName = e.classInfo?["subjectName"]?.stringValue ?? ""
+            room = e.classInfo?["room"]?.stringValue ?? ""
+            loadCommon(e.extra)
         } else {
             titleFocused = true
             calendarId = model.calendars.first?.id ?? "cal-general"
+            if model.notifyMinutesBefore > 0 && model.notificationsEnabled { notifies = [model.notifyMinutesBefore] }
         }
     }
 
+    /// Web 版と同じ extra の項目（知らない項目は残す）
+    private func mergeExtra(_ old: JSONValue?, dueAt: EpochMs?) -> JSONValue? {
+        var extra = old?.objectValue ?? [:]
+        if kind == .event { extra["allDay"] = allDay ? .bool(true) : nil }
+        extra["color"] = color.map { .string($0) }
+        extra["place"] = place?.json
+        extra["travelMinutes"] = travel.map { .number(Double($0)) }
+        let url = meetingUrl.trimmingCharacters(in: .whitespaces)
+        extra["meetingUrl"] = url.isEmpty ? nil : .string(url)
+        extra["notifies"] = notifies.isEmpty ? nil : .array(notifies.sorted().map { .number(Double($0)) })
+        let ls = links.filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
+        extra["urls"] = ls.isEmpty ? nil : .array(ls.map { .object(["id": .string($0.id), "title": .string($0.title), "url": .string($0.url.trimmingCharacters(in: .whitespaces))]) })
+        extra["spec"] = specJSON(extra["spec"], dueAt: dueAt)
+        return extra.isEmpty ? (old == nil ? nil : .object([:])) : .object(extra)
+    }
+
     private func save() {
+        error = nil
         let now = model.now
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { page = .basic; error = "タイトルを入力してください"; return }
+        if showsTime && !(kind == .event && allDay) && end <= start { page = .basic; error = "終了は開始より後にしてください"; return }
+        if !meetingUrl.isEmpty && !validURL(meetingUrl) { page = .option; error = "会議の URL は https:// から始めてください"; return }
         let ok: Bool
         if kind == .event {
             var e = isNew ? MTEvent.make(title: name, calendarId: calendarId, start: 0, end: 0, now: now, id: model.repo.newId()) : event
@@ -470,18 +673,16 @@ struct EditorView: View {
                 e.start = model.time.ms(start)
                 e.end = model.time.ms(end)
             }
-            if repeatFreq == "none" {
-                e.recurrence = nil
-            } else if let f = RecurrenceFreq(rawValue: repeatFreq), e.recurrence?.freq != f {
-                e.recurrence = RecurrenceRule(freq: f, byWeekday: f == .weekly ? [model.time.weekday(e.start)] : nil)
+            e.recurrence = rule
+            e.hideAfterEnd = !allDay && rule == nil ? hideAfterEnd : false
+            if calendarKind == .class {
+                var ci = e.classInfo?.objectValue ?? [:]
+                ci["subjectName"] = .string(subjectName.trimmingCharacters(in: .whitespaces).isEmpty ? name : subjectName.trimmingCharacters(in: .whitespaces))
+                ci["room"] = .string(room.trimmingCharacters(in: .whitespaces))
+                e.classInfo = .object(ci)
             }
-            var extra = e.extra?.objectValue ?? [:]
-            extra["allDay"] = allDay ? .bool(true) : nil
-            if place.isEmpty { extra["place"] = nil } else { extra["place"] = (extra["place"] ?? .object([:])).merging(.object(["name": .string(place)])) }
-            extra["spec"] = specJSON(extra["spec"], dueAt: nil)
-            extra["travelMinutes"] = travel > 0 ? .number(Double(travel)) : nil
-            e.extra = extra.isEmpty ? (e.extra == nil ? nil : .object([:])) : .object(extra)
-            ok = model.perform(isNew ? "予定を追加しました" : "保存しました") { try model.repo.saveEvent(e, isNew: isNew) }
+            e.extra = mergeExtra(e.extra, dueAt: nil)
+            ok = model.perform { try model.repo.saveEvent(e, isNew: isNew) }
         } else {
             var t = isNew ? MTTask.make(title: name, kind: isCheck ? .check : .do, now: now, id: model.repo.newId()) : task
             t.title = name
@@ -489,6 +690,9 @@ struct EditorView: View {
             t.kind = isCheck ? .check : .do
             t.flagged = flagged
             t.icon = icon
+            t.category = category.isEmpty ? nil : category
+            t.calendarId = taskCalendarId
+            t.notifyMinutesBefore = notifies.sorted().first
             if isCheck {
                 t.checkAt = model.time.ms(start); t.plannedStart = nil; t.plannedEnd = nil
             } else if hasTime {
@@ -497,13 +701,23 @@ struct EditorView: View {
                 t.plannedStart = nil; t.plannedEnd = nil; t.checkAt = nil
             }
             t.estimateMinutes = hasEstimate && !isCheck ? estimate : nil
-            var extra = t.extra?.objectValue ?? [:]
-            extra["spec"] = specJSON(extra["spec"], dueAt: hasDeadline && spec != nil ? model.time.ms(deadline) : nil)
-            t.extra = extra.isEmpty ? (t.extra == nil ? nil : .object([:])) : .object(extra)
+            t.extra = mergeExtra(t.extra, dueAt: hasDeadline && spec != nil ? model.time.ms(deadline) : nil)
             if !hasDeadline, t.assignment != nil, var a = t.assignment?.objectValue { a["deadline"] = .null; t.assignment = .object(a) }
-            ok = model.perform(isNew ? "タスクを追加しました" : "保存しました") { try model.repo.saveTask(t, isNew: isNew) }
+            ok = model.perform { try model.repo.saveTask(t, isNew: isNew) }
         }
-        if ok { saved += 1; dismiss() }
+        if ok {
+            rememberPlace()
+            saved += 1
+            dismiss()
+        }
+    }
+
+    /// 使った場所を履歴の先頭に（Web 版の placeHistory と同じ）
+    private func rememberPlace() {
+        guard let p = place, p.name != "自宅" else { return }
+        model.updateSettings { s in
+            s.placeHistory = [p.json] + s.placeHistory.filter { PlaceValue($0)?.name != p.name }
+        }
     }
 
     /// `extra.spec`（Web 版と同じ形：`{ type, details: { dueAt, … } }`）。知らない項目は残す
@@ -519,5 +733,76 @@ struct EditorView: View {
         o["type"] = .string(spec.rawValue)
         o["details"] = .object(details)
         return .object(o)
+    }
+}
+
+/// 種類を選ぶ画面（グループごと）
+struct SpecTypePicker: View {
+    @Binding var spec: SpecTypeId?
+    var onPick: (SpecDef) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                Button { spec = nil; dismiss() } label: {
+                    HStack { Text("指定しない").foregroundStyle(.primary); Spacer(); if spec == nil { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) } }
+                }
+            }
+            ForEach(SpecGroup.allCases, id: \.self) { g in
+                Section(g.label) {
+                    ForEach(SPEC_DEFS.filter { $0.group == g }) { d in
+                        Button { onPick(d); dismiss() } label: {
+                            HStack(spacing: 12) {
+                                SpecBadge(type: d.id, isEvent: d.isEvent, size: 28)
+                                Text(d.name).foregroundStyle(.primary)
+                                Spacer()
+                                if spec == d.id { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("種類")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// 通知の時刻を選ぶ（いくつでも。Web 版の extra.notifies と同じ「何分前」）
+struct NotifyPicker: View {
+    @Binding var selection: [Int]
+    var base: String
+    @Environment(AppModel.self) private var model
+
+    static func label(_ m: Int) -> String {
+        m == 0 ? "ちょうど" : m == 1440 ? "1日前" : m >= 60 && m % 60 == 0 ? "\(m / 60)時間前" : "\(m)分前"
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(EditorView.notifyChoices, id: \.self) { m in
+                    Button {
+                        if selection.contains(m) { selection.removeAll { $0 == m } } else { selection.append(m) }
+                    } label: {
+                        HStack {
+                            Text(Self.label(m)).foregroundStyle(.primary)
+                            Spacer()
+                            if selection.contains(m) { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } footer: {
+                Text("\(base)を基準に知らせます。いくつでも選べます。" + (model.notificationsEnabled ? "" : "\n通知は「その他 › 通知」でオンにすると届きます。"))
+            }
+            if !selection.isEmpty {
+                Section { Button("通知なし", role: .destructive) { selection = [] } }
+            }
+        }
+        .navigationTitle("通知")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

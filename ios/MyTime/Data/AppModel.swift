@@ -18,7 +18,7 @@ final class AppModel {
     private(set) var settings = AppSettings(json: nil)
     private(set) var outboxPending = 0
 
-    /// 画面下に短く出す知らせ（取り消し付きのこともある）
+    /// 直前の操作（画面には出さない。iPhone を振ると取り消せる）
     var toast: Toast?
     var errorMessage: String?
 
@@ -87,8 +87,9 @@ final class AppModel {
         do {
             try body()
             reload()
-            if let message {
-                toast = Toast(text: message, undo: undo.map { u in { [weak self] in self?.perform { try u() } } })
+            // 取り消せる操作だけを覚えておく（知らせは表示しない）
+            if let undo {
+                toast = Toast(text: message ?? "直前の変更", undo: { [weak self] in self?.perform { try undo() } })
             }
             return true
         } catch {

@@ -7,12 +7,30 @@ import MyTimeCore
 struct MoreScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
+    @AppStorage(AccountKeys.name) private var accountName = ""
+    @AppStorage(AccountKeys.school) private var accountSchool = ""
 
     var body: some View {
         @Bindable var router = router
         NavigationStack(path: $router.morePath) {
             let stats = weekStats()
             List {
+                // アカウント（「設定」アプリの一番上と同じ形）
+                Section {
+                    NavigationLink { AccountView() } label: {
+                        HStack(spacing: 14) {
+                            Text(initials)
+                                .font(.title2.weight(.semibold)).foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                                .background(LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(accountName.isEmpty ? "名前を設定" : accountName).font(.title3.weight(.semibold))
+                                Text(accountSchool.isEmpty ? "アカウント・自宅と学校・データ" : "\(accountSchool)・アカウント").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
                 Section { header(stats) }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -48,10 +66,6 @@ struct MoreScreen: View {
                 }
 
                 Section {
-                    NavigationLink(value: MoreRoute.settings) { row("設定", "gearshape.fill", .gray, "活動時間・データの移行・カレンダーへ書き出し") }
-                }
-
-                Section {
                     LabeledContent("バージョン", value: version)
                     LabeledContent("保存している予定", value: "\(model.events.count)件")
                     LabeledContent("保存しているタスク", value: "\(model.tasks.count)件")
@@ -62,6 +76,12 @@ struct MoreScreen: View {
                 }
             }
             .navigationTitle("その他")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: MoreRoute.settings) { Image(systemName: "gearshape") }
+                        .accessibilityLabel("設定")
+                }
+            }
             .navigationDestination(for: MoreRoute.self) { r in
                 switch r {
                 case .review: ReviewScreen(embedded: true)
@@ -163,6 +183,11 @@ struct MoreScreen: View {
                 model.errorMessage = "通知が許可されていません。iPhone の「設定 › 通知 › My Time」で許可してください。"
             }
         }
+    }
+
+    private var initials: String {
+        let n = accountName.trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? "?" : String(n.prefix(n.unicodeScalars.first.map { $0.value < 0x3000 } == true ? 2 : 1)).uppercased()
     }
 
     private var version: String {

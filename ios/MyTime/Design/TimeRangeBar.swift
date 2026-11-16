@@ -121,6 +121,9 @@ struct TimeRangeBar: View {
 struct DaySwipeRow: View {
     @Binding var date: Date
     var onShift: (Int) -> Void
+    /// 日付をタップしたとき（月のカレンダーを開く）
+    var onTap: (() -> Void)? = nil
+    var expanded = false
     @State private var offset: CGFloat = 0
     @State private var tick = 0
 
@@ -129,12 +132,25 @@ struct DaySwipeRow: View {
             Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("前の日")
             Spacer()
-            VStack(spacing: 1) {
-                Text(Self.label(date)).font(.headline)
-                Text(Self.relative(date)).font(.caption).foregroundStyle(.secondary)
+            Button { onTap?() } label: {
+                VStack(spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text(Self.label(date)).font(.headline).foregroundStyle(expanded ? Color.accentColor : .primary)
+                        if onTap != nil {
+                            Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(expanded ? Color.accentColor : .secondary)
+                                .rotationEffect(.degrees(expanded ? 180 : 0))
+                        }
+                    }
+                    Text(Self.relative(date)).font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 4)
+                .background(Capsule().fill(expanded ? Color.accentColor.opacity(0.12) : Color.clear))
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .offset(x: offset)
             .contentTransition(.numericText())
+            .accessibilityHint("タップすると月のカレンダーが開きます。左右にスワイプすると日を変えられます")
             Spacer()
             Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 32) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("次の日")

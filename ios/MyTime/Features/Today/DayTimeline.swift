@@ -91,7 +91,8 @@ struct DayTimeline: View {
                                     onMove: { move(b, to: $0) },
                                     onResize: { s, e in resize(b, start: s, end: e) },
                                     onTap: { open(b) },
-                                    onMenu: { menuFor = b }
+                                    // 動かさずに長押し：カードを開く（編集・複製・ずらす・削除はカードから）
+                                    onMenu: { open(b) }
                                 )
                                 .frame(width: max(8, laneWidth(b.lane, width) / CGFloat(b.placed.columns) - 3), height: max(18, CGFloat(b.placed.height) / 60 * hourHeight - 2))
                                 .offset(x: Self.gutter + laneX(b.lane, width) + laneWidth(b.lane, width) * CGFloat(b.placed.column) / CGFloat(b.placed.columns) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight + 1)
@@ -120,19 +121,12 @@ struct DayTimeline: View {
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: createFeedback)
         .sensoryFeedback(.selection, trigger: createSnap)
-        .confirmationDialog(menuFor?.title ?? "", isPresented: Binding(get: { menuFor != nil }, set: { if !$0 { menuFor = nil } }), titleVisibility: .visible, presenting: menuFor) { b in
-            menuButtons(b)
-        } message: { b in
-            Text("\(model.hm(b.start))〜\(model.hm(b.end))")
-        }
-        .confirmationDialog("繰り返しの予定です", isPresented: Binding(get: { pendingOccurrence != nil }, set: { if !$0 { pendingOccurrence = nil } }), titleVisibility: .visible, presenting: pendingOccurrence) { p in
+        // 確認は画面の中央に（吹き出しの矢印がずれない）
+        .alert("繰り返しの予定です", isPresented: Binding(get: { pendingOccurrence != nil }, set: { if !$0 { pendingOccurrence = nil } }), presenting: pendingOccurrence) { p in
             Button("この回のみ\(p.verb)") { commitOccurrence(p) }
             Button("キャンセル", role: .cancel) { pendingOccurrence = nil }
         } message: { p in
             Text("\(model.hm(p.start))〜\(model.hm(p.end))に\(p.verb)します。ほかの回は変わりません。")
-        }
-        .confirmationDialog(confirmDelete.map { "「\($0.title)」を削除しますか？" } ?? "", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible, presenting: confirmDelete) { b in
-            deleteButtons(b)
         }
     }
 

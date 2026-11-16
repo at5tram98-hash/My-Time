@@ -289,4 +289,6 @@ public struct AppSettings: Equatable, Sendable {
     public var calendarView: String { get { get("calendarView")?.stringValue ?? "2day" } set { set("calendarView", newValue.json) } }
     public var suggestFromHour: Int { get { Int(get("suggestFromHour")?.intValue ?? 7) } set { set("suggestFromHour", .number(Double(newValue))) } }
     public var suggestToHour: Int { get { Int(get("suggestToHour")?.intValue ?? 23) } set { set("suggestToHour", .number(Double(newValue))) } }
+    /// 使った場所の履歴（Web 版と同じ形：{ name, address, lat, lng }。新しい順・20件まで）
+    public var placeHistory: [JSONValue] { get { get("placeHistory")?.arrayValue ?? [] } set { set("placeHistory", .array(Array(newValue.prefix(20)))) } }
 }

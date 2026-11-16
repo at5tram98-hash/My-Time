@@ -59,6 +59,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var router = Router()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showUndo = false
 
     var body: some View {
         TabView(selection: $router.tab) {
@@ -100,18 +101,16 @@ struct RootView: View {
                 .environment(model)
                 .environment(router)
         }
-        .overlay(alignment: .bottom) {
-            if let t = model.toast {
-                ToastView(toast: t) { t.undo?(); model.toast = nil }
-                    .padding(.bottom, 64)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-                    .task(id: t.id) {
-                        try? await Task.sleep(for: .seconds(5))
-                        if model.toast?.id == t.id { model.toast = nil }
-                    }
-            }
+        // 操作のあとに画面下へ知らせは出さない。取り消しは iPhone を振る（純正アプリと同じ「シェイクで取り消す」）
+        .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+            if model.toast?.undo != nil { showUndo = true }
         }
-        .animation(reduceMotion ? nil : Motion.sheet, value: model.toast)
+        .alert("取り消しますか？", isPresented: $showUndo, presenting: model.toast) { t in
+            Button("取り消す") { t.undo?(); model.toast = nil }
+            Button("キャンセル", role: .cancel) {}
+        } message: { t in
+            Text("直前の操作：\(t.text)")
+        }
         .alert("できませんでした", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {
@@ -165,5 +164,19 @@ struct MainToolbar: ToolbarContent {
             .accessibilityLabel("追加")
             .accessibilityHint("長押しで文章で追加・計画の支援")
         }
+    }
+}
+
+// MARK: シェイクで取り消す
+
+extension Notification.Name {
+    static let deviceDidShake = Notification.Name("deviceDidShake")
+}
+
+extension UIWindow {
+    /// iPhone を振ったことを SwiftUI に知らせる（直前の操作の取り消しに使う）
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake { NotificationCenter.default.post(name: .deviceDidShake, object: nil) }
+        super.motionEnded(motion, with: event)
     }
 }
