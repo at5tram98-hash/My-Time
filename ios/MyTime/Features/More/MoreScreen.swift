@@ -1,8 +1,9 @@
 import SwiftUI
+import Charts
 import MyTimeCore
 
-/// その他タブ。iPhone の「設定」アプリのように、色つきのアイコンと短い説明で並べる。
-/// 上：今日のまとめ。続いて：便利な機能・記録・表示・データ・このアプリについて
+/// その他タブ。「今日」でできることは置かない。
+/// ここだけにあるもの：記録（連続日数・今週の作業・振り返り・操作履歴）、使い方、通知と外観、設定、このアプリについて
 struct MoreScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
@@ -10,50 +11,54 @@ struct MoreScreen: View {
     var body: some View {
         @Bindable var router = router
         NavigationStack(path: $router.morePath) {
-            TimelineView(.periodic(from: .now, by: 60)) { ctx in
-                let now = model.time.ms(ctx.date)
-                List {
-                    Section { summary(now: now) }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+            let stats = weekStats()
+            List {
+                Section { header(stats) }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
 
-                    Section("便利な機能") {
-                        action("文章で追加", "text.bubble.fill", .blue, detail: "「明日10時 歯医者」のように書くだけ") { router.open(.quickAdd) }
-                        action("計画の支援", "wand.and.stars", .purple, detail: "重なり・詰め込み・期限を確かめる") { router.open(.planAssist) }
-                        action("未割当のタスク", "tray.fill", .indigo, badge: model.inbox.count, detail: "時間を決めていないタスク") { router.open(.inbox) }
+                Section("記録") {
+                    NavigationLink(value: MoreRoute.review) {
+                        HStack(spacing: 12) {
+                            icon("chart.bar.xaxis", .green)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("振り返り")
+                                Text("直近7日の作業時間・完了・余白").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            sparkline(stats.minutes)
+                        }
                     }
+                    NavigationLink { HistoryView() } label: { row("操作履歴", "clock.arrow.circlepath", .gray, "いつ何を変えたか") }
+                }
 
-                    Section("記録") {
-                        link(.review, "振り返り", "chart.bar.xaxis", .green, detail: "直近7日の作業時間・完了・余白")
-                        NavigationLink { HistoryView() } label: { row("操作履歴", "clock.arrow.circlepath", .gray, detail: "いつ何を変えたか") }
-                    }
+                Section("使い方") {
+                    NavigationLink { GestureGuideView() } label: { row("操作のしかた", "hand.draw.fill", .pink, "長押し・なぞる・スワイプでできること") }
+                }
 
-                    Section("表示") {
-                        Picker(selection: Binding(get: { model.settings.theme }, set: { v in model.updateSettings { $0.theme = v } })) {
-                            Text("自動").tag("system")
-                            Text("ライト").tag("light")
-                            Text("ダーク").tag("dark")
-                        } label: { row("外観", "circle.lefthalf.filled", .black, detail: nil) }
-                        Picker(selection: Binding(get: { model.settings.laneFocus }, set: { v in model.updateSettings { $0.laneFocus = v } })) {
-                            Text("同じ幅").tag("both")
-                            Text("予定を広く").tag("main")
-                            Text("タスクを広く").tag("detail")
-                        } label: { row("今日のレーン", "rectangle.split.2x1", .orange, detail: nil) }
+                Section("通知と表示") {
+                    Toggle(isOn: Binding(get: { model.notificationsEnabled }, set: setNotify)) {
+                        row("通知", "bell.badge.fill", .red, model.notificationsEnabled ? "予定の\(model.notifyMinutesBefore == 0 ? "開始時刻" : "\(model.notifyMinutesBefore)分前")に知らせる" : "オフ")
                     }
+                    Picker(selection: Binding(get: { model.settings.theme }, set: { v in model.updateSettings { $0.theme = v } })) {
+                        Text("自動").tag("system")
+                        Text("ライト").tag("light")
+                        Text("ダーク").tag("dark")
+                    } label: { row("外観", "circle.lefthalf.filled", .indigo, nil) }
+                }
 
-                    Section {
-                        link(.settings, "設定", "gearshape.fill", .gray, detail: "通知・活動時間・データの移行・書き出し")
-                    }
+                Section {
+                    NavigationLink(value: MoreRoute.settings) { row("設定", "gearshape.fill", .gray, "活動時間・データの移行・カレンダーへ書き出し") }
+                }
 
-                    Section {
-                        LabeledContent("バージョン", value: version)
-                        LabeledContent("予定", value: "\(model.events.count)件")
-                        LabeledContent("タスク", value: "\(model.tasks.count)件")
-                    } header: {
-                        Text("このアプリについて")
-                    } footer: {
-                        Text("データはこの iPhone の中に保存されます。Web 版とは「設定 › データの移行」でやり取りできます。")
-                    }
+                Section {
+                    LabeledContent("バージョン", value: version)
+                    LabeledContent("保存している予定", value: "\(model.events.count)件")
+                    LabeledContent("保存しているタスク", value: "\(model.tasks.count)件")
+                } header: {
+                    Text("このアプリについて")
+                } footer: {
+                    Text("データはこの iPhone の中に保存されます。Web 版とは「設定 › データの移行」でやり取りできます。")
                 }
             }
             .navigationTitle("その他")
@@ -66,84 +71,160 @@ struct MoreScreen: View {
         }
     }
 
-    // MARK: 今日のまとめ
+    // MARK: 見出し（連続日数と今週の作業）
 
-    private func summary(now: EpochMs) -> some View {
-        let d0 = model.time.startOfDay(now), d1 = model.time.addDays(d0, 1)
-        let today = tasksForDay(model.tasks, day: d0, time: model.time)
-        let done = today.filter(\.isDone).count
-        let events = model.visibleEvents(from: d0, to: d1).filter { !$0.event.allDay && $0.end > now }.count
-        let weekEvents = model.visibleEvents(from: d0, to: model.time.addDays(d0, 7)).count
-        return VStack(alignment: .leading, spacing: 12) {
-            Text(model.dayTitle(d0)).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                .padding(.leading, 6)
-            HStack(spacing: 10) {
-                tile("今日のタスク", today.isEmpty ? "0" : "\(done)/\(today.count)", "checklist", .blue) { router.open(.dayTasks(d0)) }
-                tile("この後の予定", "\(events)", "calendar", .red) { router.tab = .today }
-                tile("今週の予定", "\(weekEvents)", "calendar.badge.clock", .orange) { router.tab = .calendar }
-            }
+    private struct WeekStats { var minutes: [Int]; var streak: Int; var weekMinutes: Int; var weekDone: Int }
+
+    private func header(_ s: WeekStats) -> some View {
+        HStack(spacing: 10) {
+            stat(s.streak > 0 ? "\(s.streak)日" : "-", "続けて記録", "flame.fill", .orange)
+            stat(formatDuration(EpochMs(s.weekMinutes) * MINUTE), "今週の作業", "timer", .blue)
+            stat("\(s.weekDone)件", "今週の完了", "checkmark.seal.fill", .green)
         }
         .padding(.vertical, 4)
     }
 
-    private func tile(_ title: String, _ value: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
-                Text(value).font(.title2.weight(.bold)).monospacedDigit().contentTransition(.numericText())
-                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    private func stat(_ value: String, _ title: String, _ symbol: String, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
+            Text(value).font(.title3.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) \(value)")
+    }
+
+    private func sparkline(_ minutes: [Int]) -> some View {
+        Chart(Array(minutes.enumerated()), id: \.offset) { i, m in
+            BarMark(x: .value("日", i), y: .value("分", m)).foregroundStyle(Color.green.gradient).cornerRadius(2)
+        }
+        .chartXAxis(.hidden).chartYAxis(.hidden)
+        .frame(width: 64, height: 26)
+        .accessibilityHidden(true)
+    }
+
+    /// 直近7日の作業（分）・連続して作業か完了がある日数・今週（月曜から）の合計
+    private func weekStats() -> WeekStats {
+        let today = model.time.startOfDay(model.now)
+        func worked(_ d0: EpochMs) -> Int {
+            let d1 = model.time.addDays(d0, 1)
+            var ms: EpochMs = 0
+            for t in model.tasks { for iv in t.intervals { let s = max(iv.start, d0), e = min(iv.end ?? model.now, d1); if e > s { ms += e - s } } }
+            return Int(ms / MINUTE)
+        }
+        func done(_ d0: EpochMs) -> Int {
+            let d1 = model.time.addDays(d0, 1)
+            return model.tasks.filter { t in
+                guard let at = t.status == .done ? t.actualEnd : (t.checked ? t.checkedAt : nil) else { return false }
+                return at >= d0 && at < d1
+            }.count
+        }
+        let minutes = (0..<7).reversed().map { worked(model.time.addDays(today, -$0)) }
+        var streak = 0
+        // 今日まだ何もしていなくても、昨日まで続いていれば数える
+        var d = worked(today) + done(today) > 0 ? today : model.time.addDays(today, -1)
+        while streak < 365, worked(d) + done(d) > 0 { streak += 1; d = model.time.addDays(d, -1) }
+        let monday = model.time.addDays(today, -((model.time.weekday(today) + 6) % 7))
+        var wm = 0, wd = 0
+        var x = monday
+        while x <= today { wm += worked(x); wd += done(x); x = model.time.addDays(x, 1) }
+        return WeekStats(minutes: minutes, streak: streak, weekMinutes: wm, weekDone: wd)
     }
 
     // MARK: 行
 
+    private func icon(_ symbol: String, _ tint: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
     /// iPhone の「設定」と同じ、角丸の色つきアイコン＋名前＋小さな説明
-    private func row(_ title: String, _ symbol: String, _ tint: Color, badge: Int = 0, detail: String?) -> some View {
+    private func row(_ title: String, _ symbol: String, _ tint: Color, _ detail: String?) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            icon(symbol, tint)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).foregroundStyle(.primary)
                 if let detail { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
-            Spacer(minLength: 0)
-            if badge > 0 {
-                Text("\(badge)").font(.subheadline.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.red))
-                    .accessibilityLabel("\(badge)件")
-            }
         }
     }
 
-    private func action(_ title: String, _ symbol: String, _ tint: Color, badge: Int = 0, detail: String?, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            HStack {
-                row(title, symbol, tint, badge: badge, detail: detail)
-                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+    private func setNotify(_ on: Bool) {
+        guard on else { model.setNotifications(enabled: false); return }
+        Task { @MainActor in
+            if await NotificationScheduler.requestAuthorization() {
+                model.setNotifications(enabled: true)
+            } else {
+                model.errorMessage = "通知が許可されていません。iPhone の「設定 › 通知 › My Time」で許可してください。"
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-    }
-
-    private func link(_ r: MoreRoute, _ title: String, _ symbol: String, _ tint: Color, detail: String?) -> some View {
-        NavigationLink(value: r) { row(title, symbol, tint, detail: detail) }
     }
 
     private var version: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
         return "\(v)（\(b)）"
+    }
+}
+
+/// 操作のしかた（タップ以外の操作をまとめて見られる）
+struct GestureGuideView: View {
+    private struct Item: Identifiable { var id: String { title }; var symbol: String; var title: String; var detail: String }
+
+    private let sections: [(String, [Item])] = [
+        ("今日・カレンダーの時刻軸", [
+            Item(symbol: "hand.tap", title: "予定をタップ", detail: "カードが開き、編集・複製・ずらす・削除ができます"),
+            Item(symbol: "hand.point.up.left.and.text", title: "空いている所を長押し→上下になぞる", detail: "その時間で新しく追加します（左は予定、右はタスク）"),
+            Item(symbol: "arrow.up.and.down", title: "予定を長押し→上下になぞる", detail: "15分刻みで動かします。重なると赤い枠が出ます"),
+            Item(symbol: "arrow.up.and.down.square", title: "上端・下端を長押し→なぞる", detail: "開始・終了だけを変えます"),
+            Item(symbol: "hand.raised", title: "動かさずに長押し", detail: "開く・編集・複製・削除のメニュー"),
+            Item(symbol: "arrow.left.and.right", title: "左右にスワイプ", detail: "前の日・次の日へ（今日の画面）"),
+            Item(symbol: "arrow.up.left.and.arrow.down.right", title: "ピンチ", detail: "時刻軸を広げたり縮めたりします"),
+        ]),
+        ("タスク", [
+            Item(symbol: "slider.horizontal.below.rectangle", title: "行を長押し→横になぞる", detail: "進み具合（実績）を記録します。100%で完了の確認"),
+            Item(symbol: "arrow.right", title: "一覧で右へスワイプ", detail: "完了にします"),
+            Item(symbol: "arrow.left", title: "一覧で左へスワイプ", detail: "削除・フラグ"),
+            Item(symbol: "contextualmenu.and.cursorarrow", title: "一覧で長押し", detail: "開く・完了・フラグ・今日にする・削除"),
+        ]),
+        ("新しく追加", [
+            Item(symbol: "slider.horizontal.3", title: "時間のバーをなぞる", detail: "中ほどで時間ごと移動、端で開始・終了を変更（5分刻み）"),
+            Item(symbol: "calendar.day.timeline.left", title: "日付を左右になぞる", detail: "前の日・次の日にします（時刻はそのまま）"),
+            Item(symbol: "return", title: "名前を入れて改行", detail: "そのまま追加します"),
+            Item(symbol: "text.bubble", title: "文章で追加", detail: "「明日10時から1時間 歯医者」のように書くだけ"),
+        ]),
+        ("取り消し", [
+            Item(symbol: "arrow.uturn.backward", title: "下に出るお知らせの「取り消す」", detail: "移動・削除・完了などを元に戻せます（5秒間）"),
+        ]),
+    ]
+
+    var body: some View {
+        List {
+            ForEach(sections, id: \.0) { title, items in
+                Section(title) {
+                    ForEach(items) { it in
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: it.symbol)
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 30)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(it.title).font(.body.weight(.medium))
+                                Text(it.detail).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        .navigationTitle("操作のしかた")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

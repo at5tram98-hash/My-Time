@@ -20,8 +20,11 @@ struct ReviewScreen: View {
     var body: some View {
         OptionalNavigationStack(embedded: embedded) {
             let stats = makeStats()
+            let prev = makeStats(offsetDays: 7)
             let total = stats.reduce(0) { $0 + $1.workedMinutes }
+            let prevTotal = prev.reduce(0) { $0 + $1.workedMinutes }
             let done = stats.reduce(0) { $0 + $1.done }
+            let best = stats.max { $0.workedMinutes < $1.workedMinutes }
             List {
                 Section {
                     HStack {
@@ -30,6 +33,19 @@ struct ReviewScreen: View {
                         metric("完了", "\(done)件", "checkmark.seal")
                     }
                     .padding(.vertical, 6)
+                    // 先週との比べ（増えた・減った）
+                    if prevTotal > 0 || total > 0 {
+                        let diff = total - prevTotal
+                        Label(diff == 0 ? "先週と同じ" : "先週より\(formatDuration(EpochMs(abs(diff)) * MINUTE))\(diff > 0 ? "多い" : "少ない")",
+                              systemImage: diff > 0 ? "arrow.up.right" : diff < 0 ? "arrow.down.right" : "equal")
+                            .font(.subheadline)
+                            .foregroundStyle(diff > 0 ? .green : diff < 0 ? .orange : .secondary)
+                    }
+                    LabeledContent("1日あたり", value: formatDuration(EpochMs(total / 7) * MINUTE))
+                    if let best, best.workedMinutes > 0 {
+                        LabeledContent("いちばん進んだ日", value: "\(model.time.dayLabel(best.day))（\(formatDuration(EpochMs(best.workedMinutes) * MINUTE))）")
+                    }
+                    LabeledContent("予定に使った時間", value: formatDuration(eventMinutes() * MINUTE))
                 } header: { Text("直近7日") }
 
                 Section("作業した時間（分）") {
@@ -77,8 +93,16 @@ struct ReviewScreen: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func makeStats() -> [DayStat] {
+    /// 直近7日の予定（終日を除く）の合計（分）
+    private func eventMinutes() -> EpochMs {
         let today = model.time.startOfDay(model.now)
+        let from = model.time.addDays(today, -6), to = model.time.addDays(today, 1)
+        return model.visibleEvents(from: from, to: to).filter { !$0.event.allDay }
+            .reduce(0) { $0 + max(0, min($1.end, to) - max($1.start, from)) } / MINUTE
+    }
+
+    private func makeStats(offsetDays: Int = 0) -> [DayStat] {
+        let today = model.time.addDays(model.time.startOfDay(model.now), -offsetDays)
         let occ = model.visibleEvents(from: model.time.addDays(today, -7), to: model.time.addDays(today, 1))
         let busy = busyItems(events: occ, tasks: model.tasks)
         return (0..<7).reversed().map { i in

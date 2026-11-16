@@ -9,6 +9,7 @@ struct CalendarScreen: View {
     @State private var showMonth = true
     /// 表示：日（時刻軸）・週（7日の一覧）・一覧（30日）
     @AppStorage("calendarMode") private var mode = "day"
+    @State private var swipeEdge: Edge = .trailing
 
     var body: some View {
         NavigationStack {
@@ -57,6 +58,16 @@ struct CalendarScreen: View {
                     default:
                         DayTimeline(day: day, now: model.time.ms(ctx.date), events: occ, tasks: model.tasks, mainFraction: nil)
                             .id(day)
+                            .transition(.push(from: swipeEdge))
+                            // 左右にスワイプで前の日・次の日（今日の画面と同じ操作）
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 40).onEnded { v in
+                                    guard abs(v.translation.width) > 80, abs(v.translation.width) > abs(v.translation.height) * 1.6 else { return }
+                                    let n = v.translation.width < 0 ? 1 : -1
+                                    swipeEdge = n > 0 ? .trailing : .leading
+                                    withAnimation(Motion.sheet) { selected = Calendar.current.date(byAdding: .day, value: n, to: selected) ?? selected }
+                                }
+                            )
                     }
                 }
             }
@@ -70,6 +81,7 @@ struct CalendarScreen: View {
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("今日") { withAnimation(Motion.sheet) { selected = Date() } }
+                        .disabled(Calendar.current.isDateInToday(selected))
                 }
                 MainToolbar(addKind: .event)
             }
@@ -167,6 +179,12 @@ struct AgendaList: View {
                         .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+            }
+            .contextMenu {
+                Button("開く", systemImage: "arrow.up.forward.app") { router.open(.event(o.id)) }
+                Button("編集", systemImage: "pencil") { router.open(.editor(EditorSeed(kind: .event, eventId: o.masterId))) }
+                Divider()
+                Button(o.isOccurrence ? "この回を削除" : "削除", systemImage: "trash", role: .destructive) { deleteEvent(o) }
             }
             // 純正カレンダー・リマインダーと同じく、左へなぞると削除（取り消せる）
             .swipeActions(edge: .trailing) {

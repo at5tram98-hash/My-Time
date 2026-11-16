@@ -171,6 +171,8 @@ struct NowCard: View {
     var next: NextAction
     var now: EpochMs
     @State private var feedback = 0
+    /// 右へなぞったときのずれ（タップ以外で開始・完了できる）
+    @State private var swipe: CGFloat = 0
 
     var body: some View {
         let task = next.taskId.flatMap { id in model.tasks.first { $0.id == id } }
@@ -211,6 +213,31 @@ struct NowCard: View {
         }
         .padding(10)
         .glass(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(alignment: .leading) {
+            // なぞっている間、下から出てくる操作の名前
+            if let p = swipePrimary(task) {
+                Label(p.label, systemImage: p.symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(p.tint)
+                    .padding(.leading, 18)
+                    .opacity(Double(min(1, swipe / 80)))
+            }
+        }
+        .offset(x: swipe)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { v in
+                    guard swipePrimary(task) != nil, v.translation.width > 0, abs(v.translation.width) > abs(v.translation.height) else { return }
+                    swipe = min(140, v.translation.width * 0.8)
+                }
+                .onEnded { _ in
+                    if swipe > 80, let p = swipePrimary(task) { p.run() }
+                    withAnimation(.snappy) { swipe = 0 }
+                }
+        )
+        .accessibilityActions {
+            if let p = swipePrimary(task) { Button(p.label) { p.run() } }
+        }
         .overlay {
             if next.kind == .continue { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.green.opacity(0.45), lineWidth: 1) }
         }
@@ -247,6 +274,20 @@ struct NowCard: View {
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel(label)
+    }
+
+    private struct Primary { var label: String; var symbol: String; var tint: Color; var run: () -> Void }
+
+    /// 右へなぞったときの操作：実行中なら完了、始める時刻なら開始
+    private func swipePrimary(_ task: MTTask?) -> Primary? {
+        guard let task else { return nil }
+        if task.status == .running {
+            return Primary(label: "完了", symbol: "checkmark.circle.fill", tint: .green) { act(task.id, .finish, "完了しました", undo: .undoFinish) }
+        }
+        if next.kind == .start {
+            return Primary(label: "開始", symbol: "play.circle.fill", tint: .accentColor) { act(task.id, .start, "開始しました", undo: .undoStart) }
+        }
+        return nil
     }
 
     private func act(_ id: String, _ a: TaskAction, _ msg: String, undo: TaskAction? = nil) {

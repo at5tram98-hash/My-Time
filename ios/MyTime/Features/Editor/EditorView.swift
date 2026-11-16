@@ -20,8 +20,6 @@ struct EditorView: View {
     @State private var details: [String: JSONValue] = [:]
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
-    /// 開始の変更で終了をそろえるときの基準（load で設定）
-    @State private var lastStart: Date?
     @State private var hasTime = true
     @State private var allDay = false
     @State private var isCheck = false
@@ -35,6 +33,7 @@ struct EditorView: View {
     /// 予定の前の移動時間（分。0 は移動なし。Web 版と同じ extra.travelMinutes）
     @State private var travel = 0
     @State private var showIcons = false
+    @State private var showDetails = false
     @State private var flagged = false
     @State private var icon = "book"
     @State private var saved = 0
@@ -44,7 +43,7 @@ struct EditorView: View {
         NavigationStack {
             Form {
                 if isNew {
-                    Picker("種類", selection: $kind) {
+                    Picker("種類", selection: $kind.animation(.snappy)) {
                         Text("タスク").tag(EditorSeed.Kind.task)
                         Text("予定").tag(EditorSeed.Kind.event)
                     }
@@ -53,51 +52,227 @@ struct EditorView: View {
                     .listRowInsets(EdgeInsets())
                 }
                 Section {
+                    HStack {
                     TextField(kind == .event ? "予定の名前" : "やること", text: $title)
-                        .font(.title3)
+                        .font(.title3.weight(.medium))
                         .focused($titleFocused)
-                        .submitLabel(.done)
-                        .onSubmit { titleFocused = false }
-                    if isNew && !suggestions.isEmpty { suggestionRow }
-                    specMenu
-                } footer: {
-                    if isNew {
-                        Button {
-                            router.open(.quickAdd)
-                        } label: {
-                            Label("「明日10時から1時間 歯医者」のように文章で追加", systemImage: "text.bubble")
-                                .font(.footnote)
+                        .submitLabel(canSave ? .done : .return)
+                        // 改行で、そのまま追加（純正リマインダーと同じ速さで入れられる）
+                        .onSubmit { if canSave { save() } else { titleFocused = false } }
+                        if isNew && title.isEmpty {
+                            // 「明日10時から1時間 歯医者」のように文章でまとめて入れる
+                            Button { router.open(.quickAdd) } label: {
+                                Image(systemName: "text.bubble").font(.title3).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("文章で追加")
                         }
                     }
+                    // 候補は入力を始めてから出す（最初の画面を静かに）
+                    if isNew && !title.isEmpty && !suggestions.isEmpty { suggestionRow }
                 }
                 if kind == .event { eventFields } else { taskFields }
-                if let spec { SpecFieldsSection(spec: spec, details: $details) }
-                Section("メモ") {
-                    TextField("メモ", text: $notes, axis: .vertical).lineLimit(3...8)
-                }
+                detailsSection
             }
+            // 下へなぞるとキーボードを閉じる
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(isNew ? (kind == .event ? "新しい予定" : "新しいタスク") : "編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isNew ? "追加" : "保存", action: save).fontWeight(.semibold)
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(!canSave)
                 }
             }
             .onAppear(perform: load)
-            .onChange(of: start) { _, new in
-                // 開始を動かしたら、長さを保って終了も動かす。
-                // 長さは「前回そろえた開始」から測る（読み込み直後に初期値の現在時刻から測ると、終了がずれるため）
-                if let prev = lastStart {
-                    let len = end.timeIntervalSince(prev)
-                    if len > 0 { end = new.addingTimeInterval(len) }
-                }
-                lastStart = new
-            }
             .sensoryFeedback(.success, trigger: saved)
         }
         .interactiveDismissDisabled(!title.isEmpty && isNew)
+    }
+
+    private var canSave: Bool { !title.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// 開始を変えたら長さを保って終了も動かす（時間のバーは開始・終了を別々に動かすので、これを使わない）
+    private var startKeepingLength: Binding<Date> {
+        Binding(get: { start }, set: { new in
+            let len = end.timeIntervalSince(start)
+            start = new
+            if len > 0 { end = new.addingTimeInterval(len) }
+        })
+    }
+
+    private func shiftDay(_ n: Int) {
+        let cal = Calendar.current
+        start = cal.date(byAdding: .day, value: n, to: start) ?? start
+        end = cal.date(byAdding: .day, value: n, to: end) ?? end
+    }
+
+    /// 日付（スワイプで変更）＋時間のバー（なぞって変更）＋まとめの1行
+    @ViewBuilder
+    private var timeRows: some View {
+        DaySwipeRow(date: startKeepingLength, onShift: shiftDay)
+        TimeRangeBar(start: $start, end: $end, tint: kind == .event ? calendarTint : .accentColor)
+            .padding(.vertical, 4)
+        HStack {
+            Text("\(hm(start))〜\(hm(end))").font(.title3.weight(.semibold)).monospacedDigit()
+                .contentTransition(.numericText())
+            Spacer()
+            Text(lengthText).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .animation(.snappy, value: start)
+        .animation(.snappy, value: end)
+    }
+
+    private var calendarTint: Color { Color(hex: model.calendar(calendarId)?.color ?? "#0A84FF") }
+
+    private func hm(_ d: Date) -> String { model.hm(model.time.ms(d)) }
+
+    private var lengthText: String {
+        let len = max(0, Int(end.timeIntervalSince(start) / 60))
+        return len < 60 ? "\(len)分" : len % 60 == 0 ? "\(len / 60)時間" : "\(len / 60)時間\(len % 60)分"
+    }
+
+    /// あまり使わない項目はここにまとめる（入っている値があれば最初から開く）
+    private var detailsSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showDetails.animation(.snappy)) {
+                specMenu
+                if kind == .event {
+                    calendarChips
+                    HStack {
+                        Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary).frame(width: 22)
+                        TextField("場所", text: $place)
+                    }
+                    Stepper(value: $travel, in: 0...240, step: 5) {
+                        HStack {
+                            Image(systemName: "tram.fill").foregroundStyle(.secondary).frame(width: 22)
+                            Text("移動")
+                            Spacer()
+                            Text(travel == 0 ? "なし" : "\(travel)分・\(model.hm(model.time.ms(start) - EpochMs(travel) * MINUTE))発")
+                                .foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
+                    Picker(selection: $repeatFreq) {
+                        Text("しない").tag("none")
+                        Text("毎日").tag("daily")
+                        Text("毎週（\(DomainTime.weekdayJa[model.time.weekday(model.time.ms(start))])曜日）").tag("weekly")
+                        Text("毎月（\(Calendar.current.component(.day, from: start))日）").tag("monthly")
+                    } label: { Label("繰り返し", systemImage: "repeat").foregroundStyle(.primary) }
+                    if !allDay {
+                        DatePicker("開始", selection: startKeepingLength)
+                        DatePicker("終了", selection: $end, in: start...)
+                    }
+                } else {
+                    Toggle(isOn: $hasDeadline.animation()) { Label("締切", systemImage: "flag.checkered") }.disabled(spec == nil)
+                    if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
+                    if !isCheck {
+                        Toggle(isOn: $hasEstimate.animation()) { Label("見積もり", systemImage: "hourglass") }
+                        if hasEstimate {
+                            Stepper("\(estimate)分", value: $estimate, in: 5...600, step: 5)
+                        }
+                    }
+                    Toggle(isOn: $flagged) { Label("フラグ", systemImage: "flag") }
+                    if hasTime && !isCheck {
+                        DatePicker("開始", selection: startKeepingLength)
+                        DatePicker("終了", selection: $end, in: start...)
+                    }
+                    iconPicker
+                }
+                if let spec { SpecFieldsSection(spec: spec, details: $details) }
+                TextField("メモ", text: $notes, axis: .vertical).lineLimit(2...8)
+            } label: {
+                HStack {
+                    Text("詳細")
+                    Spacer()
+                    Text(detailsSummary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+        } footer: {
+            if kind == .task && spec == nil && showDetails { Text("締切は「種類」を選ぶと設定できます（Web 版と同じ保存形式）。") }
+        }
+    }
+
+    /// 詳細をたたんでいるときに、入っている値を短く見せる
+    private var detailsSummary: String {
+        var parts: [String] = []
+        if let d = spec.flatMap({ SPEC_BY_ID[$0] }) { parts.append(d.name) }
+        if kind == .event {
+            parts.append(model.calendar(calendarId)?.name ?? "")
+            if !place.isEmpty { parts.append(place) }
+            if repeatFreq != "none" { parts.append("繰り返し") }
+        } else {
+            if hasDeadline { parts.append("締切") }
+            if flagged { parts.append("フラグ") }
+            if hasEstimate { parts.append("\(estimate)分") }
+        }
+        if !notes.isEmpty { parts.append("メモ") }
+        return parts.filter { !$0.isEmpty }.joined(separator: "・")
+    }
+
+    // MARK: 予定
+
+    @ViewBuilder
+    private var eventFields: some View {
+        Section {
+            Toggle("終日", isOn: $allDay.animation())
+            if allDay {
+                DatePicker("開始", selection: startKeepingLength, displayedComponents: .date)
+                DatePicker("終了", selection: $end, in: start..., displayedComponents: .date)
+            } else {
+                timeRows
+            }
+        } footer: {
+            if let c = conflict { Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+            else if !allDay { Text("バーをなぞると時間を、日付を左右になぞると日を変えられます。") }
+        }
+    }
+
+    // MARK: タスク
+
+    @ViewBuilder
+    private var taskFields: some View {
+        Section {
+            Picker("タスクの種類", selection: $isCheck.animation()) {
+                Text("実行する").tag(false)
+                Text("確認する").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if isCheck {
+                DatePicker("確認する時刻", selection: $start)
+            } else {
+                Toggle("時間を決める", isOn: $hasTime.animation())
+                if hasTime { timeRows }
+            }
+        } footer: {
+            if !isCheck && !hasTime { Text("時間を決めないタスクは「未割当」に入ります。") }
+        }
+    }
+
+    private var iconPicker: some View {
+        DisclosureGroup(isExpanded: $showIcons) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
+                ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
+                    Button { icon = key } label: {
+                        Image(systemName: IconMap.symbols[key]!)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(icon == key ? Color.accentColor.opacity(0.2) : Color.clear))
+                            .foregroundStyle(icon == key ? Color.accentColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(key)
+                    .accessibilityAddTraits(icon == key ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 4)
+        } label: {
+            HStack {
+                Label("アイコン", systemImage: "face.smiling")
+                Spacer()
+                Image(systemName: IconMap.symbol(icon)).foregroundStyle(Color.accentColor)
+            }
+        }
     }
 
     // MARK: 種類（S01〜S25）
@@ -138,110 +313,6 @@ struct EditorView: View {
         }
     }
 
-    // MARK: 予定
-
-    @ViewBuilder
-    private var eventFields: some View {
-        Section {
-            Toggle("終日", isOn: $allDay.animation())
-            if !allDay { startChips }
-            DatePicker("開始", selection: $start, displayedComponents: allDay ? .date : [.date, .hourAndMinute])
-            DatePicker("終了", selection: $end, in: start..., displayedComponents: allDay ? .date : [.date, .hourAndMinute])
-            if !allDay { lengthChips }
-            Picker("繰り返し", selection: $repeatFreq) {
-                Text("しない").tag("none")
-                Text("毎日").tag("daily")
-                Text("毎週（\(DomainTime.weekdayJa[model.time.weekday(model.time.ms(start))])曜日）").tag("weekly")
-                Text("毎月（\(Calendar.current.component(.day, from: start))日）").tag("monthly")
-            }
-        } footer: {
-            if let c = conflict { Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
-        }
-        Section("カレンダー") {
-            calendarChips
-        }
-        Section {
-            HStack {
-                Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary).frame(width: 22)
-                TextField("場所", text: $place)
-            }
-            Stepper(value: $travel, in: 0...240, step: 5) {
-                HStack {
-                    Image(systemName: "tram.fill").foregroundStyle(.secondary).frame(width: 22)
-                    Text("移動")
-                    Spacer()
-                    Text(travel == 0 ? "なし" : "\(travel)分（\(model.hm(model.time.ms(start) - EpochMs(travel) * MINUTE))に出発）")
-                        .foregroundStyle(.secondary).monospacedDigit()
-                }
-            }
-        } footer: {
-            if travel > 0 { Text("出発の時刻を「今やること」と通知でお知らせします。") }
-        }
-    }
-
-    // MARK: タスク
-
-    @ViewBuilder
-    private var taskFields: some View {
-        Section {
-            Picker("タスクの種類", selection: $isCheck) {
-                Label("実行する", systemImage: "play.circle").tag(false)
-                Label("確認する", systemImage: "checkmark.circle").tag(true)
-            }
-            if isCheck {
-                DatePicker("確認する時刻", selection: $start)
-            } else {
-                Toggle("時間を決める", isOn: $hasTime.animation())
-                if hasTime {
-                    startChips
-                    DatePicker("開始", selection: $start)
-                    DatePicker("終了", selection: $end, in: start...)
-                    lengthChips
-                }
-            }
-        } footer: {
-            if !isCheck && !hasTime { Text("時間を決めないタスクは「未割当」に入ります。") }
-        }
-        Section {
-            Toggle("締切", isOn: $hasDeadline.animation()).disabled(spec == nil)
-            if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
-            if !isCheck {
-                Toggle("見積もり", isOn: $hasEstimate.animation())
-                if hasEstimate {
-                    Stepper("\(estimate)分", value: $estimate, in: 5...600, step: 5)
-                    chipRow([15, 30, 60, 90, 120].map { m in (m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60).5時間", estimate == m, { estimate = m }) })
-                }
-            }
-            Toggle("フラグ", isOn: $flagged)
-        } footer: {
-            if spec == nil { Text("締切は「種類」を選ぶと設定できます（Web 版と同じ保存形式）。") }
-        }
-        Section {
-            DisclosureGroup(isExpanded: $showIcons) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
-                ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
-                    Button { icon = key } label: {
-                        Image(systemName: IconMap.symbols[key]!)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(icon == key ? Color.accentColor.opacity(0.2) : Color.clear))
-                            .foregroundStyle(icon == key ? Color.accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(key)
-                    .accessibilityAddTraits(icon == key ? .isSelected : [])
-                }
-            }
-            .padding(.vertical, 4)
-            } label: {
-                HStack {
-                    Text("アイコン")
-                    Spacer()
-                    Image(systemName: IconMap.symbol(icon)).foregroundStyle(Color.accentColor)
-                }
-            }
-        }
-    }
-
     // MARK: 入力を助ける部品
 
     /// 横に並ぶ小さなボタン（選んでいるものは色つき）
@@ -262,37 +333,6 @@ struct EditorView: View {
             .padding(.vertical, 2)
         }
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
-    }
-
-    /// 開始のよく使う時刻（今すぐ・次の正時・今夜・明日の朝）。長さは保つ
-    private var startChips: some View {
-        let now = model.now
-        let d0 = model.time.startOfDay(now)
-        let soon = ((now / (5 * MINUTE)) + 1) * 5 * MINUTE
-        let nextHour = ((now / HOUR) + 1) * HOUR
-        let tonight = d0 + 19 * HOUR
-        let tomorrow = model.time.addDays(d0, 1) + 9 * HOUR
-        var items: [(String, EpochMs)] = [("今すぐ", soon), ("\(model.hm(nextHour))から", nextHour)]
-        if tonight > nextHour { items.append(("今夜19時", tonight)) }
-        items.append(("明日9時", tomorrow))
-        let cur = model.time.ms(start)
-        return chipRow(items.map { label, t in (label, cur == t, { setStart(t) }) })
-    }
-
-    private func setStart(_ t: EpochMs) {
-        withAnimation { start = model.time.date(t) }
-    }
-
-    /// 長さ（15分〜2時間）。今の長さを下に表示
-    private var lengthChips: some View {
-        let len = Int(end.timeIntervalSince(start) / 60)
-        return VStack(alignment: .leading, spacing: 2) {
-            chipRow([15, 30, 45, 60, 90, 120].map { m in
-                (m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分", len == m, { withAnimation { end = start.addingTimeInterval(TimeInterval(m * 60)) } })
-            })
-            Text("長さ：\(len < 60 ? "\(len)分" : len % 60 == 0 ? "\(len / 60)時間" : "\(len / 60)時間\(len % 60)分")")
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-        }
     }
 
     /// カレンダーを色の丸で選ぶ（純正カレンダーの色分けと同じ考え方）
@@ -382,7 +422,10 @@ struct EditorView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
-        defer { lastStart = start }
+        defer {
+            // 入っている値があれば詳細を最初から開く
+            showDetails = !isNew && (spec != nil || !notes.isEmpty || !place.isEmpty || repeatFreq != "none" || hasDeadline || flagged || hasEstimate)
+        }
         kind = seed.kind
         let now = model.now
         let base = seed.start ?? (((now / (15 * MINUTE)) + 1) * 15 * MINUTE)
