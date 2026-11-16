@@ -56,6 +56,10 @@ struct EditorView: View {
     @State private var error: String?
     @State private var keyboardUp = false
     @State private var alarm = false
+    /// シフトの勤務先と調整中（新しいシフトは最初から調整中）
+    @State private var employerId: String?
+    @State private var shiftPending = true
+    @State private var newEmployerPrompt = false
     /// Create Studio の種類と値（extra.studio = { typeId, version, values }）
     @State private var studioId: String?
     @State private var studioValues: [String: JSONValue] = [:]
@@ -96,6 +100,7 @@ struct EditorView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.snappy) { keyboardUp = false } }
             .onAppear(perform: load)
             .sensoryFeedback(.success, trigger: saved)
+
             .sensoryFeedback(.selection, trigger: page)
             .animation(.snappy, value: open)
         }
@@ -245,6 +250,25 @@ struct EditorView: View {
                     ForEach([10, 15, 20, 30, 45, 60, 90, 120, 180, 240], id: \.self) { Text(durationLabel($0)).tag($0) }
                 } label: { rowLabel("見積時間", "hourglass", .teal) }
             }
+            if isShiftKind {
+                Picker(selection: $employerId) {
+                    Text("未設定").tag(String?.none)
+                    ForEach(model.employers, id: \.id) { e in Text(e.name).tag(Optional(e.id)) }
+                } label: { rowLabel("勤務先", "briefcase.fill", .orange) }
+                Button { newEmployerPrompt = true } label: { Label("勤務先を追加", systemImage: "plus.circle") }
+                    .font(.subheadline)
+                    .modifier(NewEmployerAlert(isPresented: $newEmployerPrompt) { employerId = $0 })
+                Toggle(isOn: $shiftPending) {
+                    HStack(spacing: 12) {
+                        RowIcon(symbol: "hourglass", tint: .orange)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("調整中")
+                            Text(shiftPending ? "シフトがまだ決まっていない" : "決まったシフト").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .tint(.orange)
+            }
             PlaceTravelEditor(place: $place, travel: $travel, expanded: Binding(get: { open == .place }, set: { open = $0 ? .place : .none }), start: start, history: placeHistory)
             NavigationLink { NotifyPicker(selection: $notifies, base: kind == .event ? "予定の開始" : isCheck ? "確認の時刻" : "開始の時刻") } label: {
                 row("通知", "bell.fill", .pink, value: notifySummary)
@@ -266,6 +290,9 @@ struct EditorView: View {
             Section { iconGrid } header: { Text("アイコン") }
         }
     }
+
+    /// バイトのシフトか（種類が勤務シフト、またはアルバイトのカレンダー）
+    private var isShiftKind: Bool { kind == .event && (spec == .shift || calendarKind == .job) }
 
     private var showsTime: Bool { kind == .event || (!isCheck && hasTime) }
 
@@ -688,6 +715,8 @@ struct EditorView: View {
             title = e.title; notes = e.notes; spec = e.specType; calendarId = e.calendarId
             start = model.time.date(e.start); end = model.time.date(e.end); allDay = e.allDay
             rule = e.recurrence; hideAfterEnd = e.hideAfterEnd
+            employerId = e.employerId
+            shiftPending = isShiftPending(e)
             subjectName = e.classInfo?["subjectName"]?.stringValue ?? ""
             room = e.classInfo?["room"]?.stringValue ?? ""
             loadCommon(e.extra)
@@ -716,6 +745,7 @@ struct EditorView: View {
         } else if old?["studio"] != nil {
             extra["studio"] = nil
         }
+        if kind == .event { extra["shiftPending"] = isShiftKind && shiftPending ? .bool(true) : nil }
         extra["alarm"] = kind == .task && alarm && (isCheck || hasTime) ? .bool(true) : nil
         let items = bring.split(whereSeparator: { "、,，・".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         extra["bring"] = items.isEmpty ? nil : .array(items.map { .string($0) })
@@ -747,6 +777,7 @@ struct EditorView: View {
             }
             e.recurrence = rule
             e.hideAfterEnd = !allDay && rule == nil ? hideAfterEnd : false
+            if isShiftKind { e.employerId = employerId }
             if calendarKind == .class {
                 var ci = e.classInfo?.objectValue ?? [:]
                 ci["subjectName"] = .string(subjectName.trimmingCharacters(in: .whitespaces).isEmpty ? name : subjectName.trimmingCharacters(in: .whitespaces))
@@ -903,5 +934,25 @@ struct NotifyPicker: View {
         }
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// 新しい勤務先を入れるアラート（追加したら、その勤務先を選ぶ）
+struct NewEmployerAlert: ViewModifier {
+    @Binding var isPresented: Bool
+    var onAdded: (String) -> Void
+    @Environment(AppModel.self) private var model
+    @State private var name = ""
+    func body(content: Content) -> some View {
+        content.alert("新しい勤務先", isPresented: $isPresented) {
+            TextField("例：無印良品", text: $name)
+            Button("追加") {
+                var made: MTEmployer?
+                let ok = model.perform { made = try model.repo.saveEmployer(name: name) }
+                if ok, let id = made?.id { onAdded(id) }
+                name = ""
+            }
+            Button("キャンセル", role: .cancel) { name = "" }
+        }
     }
 }

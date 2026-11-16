@@ -94,6 +94,12 @@ struct RootView: View {
                 default: router.tab = .today
                 }
             }
+            // 開発用：起動引数 `-importFile <path>` で移行ファイルを読み込む（追加だけ）
+            if let i = args.firstIndex(of: "-importFile"), i + 1 < args.count,
+               let text = try? String(contentsOfFile: args[i + 1], encoding: .utf8),
+               let file = try? DeviceTransfer.read(text) {
+                model.perform { _ = try DeviceTransfer.importAddOnly(file, into: model.repo.store, now: model.now, newId: model.repo.newId) }
+            }
             if let i = args.firstIndex(of: "-route"), i + 1 < args.count {
                 try? await Task.sleep(for: .milliseconds(400))
                 router.sheet = ["quickAdd": .quickAdd, "planAssist": .planAssist, "settings": .settings, "inbox": .inbox][args[i + 1]]

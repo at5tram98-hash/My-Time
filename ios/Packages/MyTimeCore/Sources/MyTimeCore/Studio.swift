@@ -259,3 +259,20 @@ extension Repository {
         try saveStudioType(t, isNew: false)
     }
 }
+
+// MARK: 勤務先
+
+extension Repository {
+    /// 勤務先を保存する（Web 版と同じ employers 表）
+    public func saveEmployer(name: String, id: String? = nil) throws -> MTEmployer {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { throw RepositoryError("勤務先の名前を入力してください") }
+        let now = clock()
+        let e = MTEmployer(json: .object(["id": .string(id ?? newId()), "name": .string(n), "reminderHours": .number(24), "createdAt": now.json, "updatedAt": now.json]))
+        try store.transaction {
+            store.put(.employer, id: e.id, json: e.json)
+            record(.employer, e.id, op: "put", action: "create")
+        }
+        return e
+    }
+}
