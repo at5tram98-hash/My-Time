@@ -56,6 +56,9 @@ struct EditorView: View {
     @State private var error: String?
     @State private var keyboardUp = false
     @State private var alarm = false
+    /// Create Studio の種類と値（extra.studio = { typeId, version, values }）
+    @State private var studioId: String?
+    @State private var studioValues: [String: JSONValue] = [:]
     @State private var bring = ""
     @FocusState private var titleFocused: Bool
 
@@ -171,8 +174,19 @@ struct EditorView: View {
         .accessibilityLabel("編集の項目")
     }
 
-    private var hasSpecial: Bool { spec != nil || (kind == .event && calendarKind == .class) }
-    private var specialLabel: String { spec.flatMap { SPEC_BY_ID[$0]?.name } ?? (calendarKind == .class ? "授業" : "専用") }
+    private var hasSpecial: Bool { spec != nil || studioType != nil || (kind == .event && calendarKind == .class) }
+    private var specialLabel: String { studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? (calendarKind == .class ? "授業" : "専用") }
+    private var studioType: StudioType? { model.studioType(studioId) }
+
+    /// 自分で作った種類を選ぶ（予定かタスクかを合わせ、見本の種類は外す）
+    private func applyStudio(_ t: StudioType?) {
+        studioId = t?.id
+        guard let t else { return }
+        spec = nil
+        if isNew { kind = t.target == "calendar" ? .event : .task }
+        if color == nil { color = t.color }
+        if kind == .task { icon = t.icon }
+    }
     private var calendarKind: CalendarKind? { model.calendar(calendarId)?.kind }
     private var tint: Color { Color(hex: color ?? (kind == .event ? model.calendar(calendarId)?.color : nil) ?? "#0A84FF") }
 
@@ -181,8 +195,10 @@ struct EditorView: View {
     @ViewBuilder
     private var basicPage: some View {
         Section {
-            NavigationLink { SpecTypePicker(spec: $spec, onPick: apply) } label: {
-                row("種類", "square.stack.3d.up.fill", .gray, value: spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない")
+            NavigationLink {
+                SpecTypePicker(spec: $spec, onPick: apply, studioTypes: model.studioTypes.filter { $0.status == "active" }, studioId: studioId, onPickStudio: applyStudio)
+            } label: {
+                row("種類", "square.stack.3d.up.fill", .gray, value: studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない")
             }
         }
         if kind == .task {
@@ -319,8 +335,10 @@ struct EditorView: View {
     private func setAlarm(_ on: Bool) {
         alarm = on
         guard on else { return }
-        // 通知の許可がまだなら求める（アラームは通知で鳴らす）
-        Task { _ = await NotificationScheduler.requestAuthorization() }
+        // 時計アプリと同じアラーム（AlarmKit）の許可を求める。使えないときは通知で鳴らす
+        Task {
+            if await !TaskAlarms.requestAuthorization() { _ = await NotificationScheduler.requestAuthorization() }
+        }
     }
 
     private func toggle(_ o: Open) { withAnimation(.snappy) { open = open == o ? .none : o }; titleFocused = false }
@@ -464,6 +482,7 @@ struct EditorView: View {
                 }
             } header: { Text("授業") } footer: { Text("教室は「今日」の上のカードにも表示します。") }
         }
+        if let st = studioType { StudioFieldsForm(type: st, values: $studioValues) }
         if let spec { SpecFieldsSection(spec: spec, details: $details) }
         if !hasSpecial {
             Section { Text("「基本」の「種類」を選ぶと、その種類だけの項目をここで入力できます。").foregroundStyle(.secondary) }
@@ -640,6 +659,8 @@ struct EditorView: View {
         alarm = extra?["alarm"]?.boolValue ?? false
         bring = (extra?["bring"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "、")
         details = extra?["spec"]?["details"]?.objectValue ?? [:]
+        studioId = extra?["studio"]?["typeId"]?.stringValue
+        studioValues = extra?["studio"]?["values"]?.objectValue ?? [:]
     }
 
     private func load() {
@@ -690,6 +711,11 @@ struct EditorView: View {
         let ls = links.filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
         extra["urls"] = ls.isEmpty ? nil : .array(ls.map { .object(["id": .string($0.id), "title": .string($0.title), "url": .string($0.url.trimmingCharacters(in: .whitespaces))]) })
         extra["spec"] = specJSON(extra["spec"], dueAt: dueAt)
+        if let st = studioType {
+            extra["studio"] = .object(["typeId": .string(st.id), "version": .number(Double(st.version)), "values": .object(studioValues)])
+        } else if old?["studio"] != nil {
+            extra["studio"] = nil
+        }
         extra["alarm"] = kind == .task && alarm && (isCheck || hasTime) ? .bool(true) : nil
         let items = bring.split(whereSeparator: { "、,，・".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         extra["bring"] = items.isEmpty ? nil : .array(items.map { .string($0) })
@@ -703,6 +729,9 @@ struct EditorView: View {
         guard !name.isEmpty else { page = .basic; error = "タイトルを入力してください"; return }
         if showsTime && !(kind == .event && allDay) && end <= start { page = .basic; error = "終了は開始より後にしてください"; return }
         if !meetingUrl.isEmpty && !validURL(meetingUrl) { page = .option; error = "会議の URL は https:// から始めてください"; return }
+        if let st = studioType, let miss = st.visibleFields.first(where: { $0.required && studioValues[$0.id] == nil }) {
+            page = .special; error = "「\(miss.label)」を入力してください"; return
+        }
         let ok: Bool
         if kind == .event {
             var e = isNew ? MTEvent.make(title: name, calendarId: calendarId, start: 0, end: 0, now: now, id: model.repo.newId()) : event
@@ -783,26 +812,53 @@ struct EditorView: View {
 struct SpecTypePicker: View {
     @Binding var spec: SpecTypeId?
     var onPick: (SpecDef) -> Void
+    var studioTypes: [StudioType] = []
+    var studioId: String? = nil
+    var onPickStudio: (StudioType?) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
             Section {
-                Button { spec = nil; dismiss() } label: {
-                    HStack { Text("指定しない").foregroundStyle(.primary); Spacer(); if spec == nil { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) } }
+                Button { spec = nil; onPickStudio(nil); dismiss() } label: {
+                    HStack { Text("指定しない").foregroundStyle(.primary); Spacer(); if spec == nil && studioId == nil { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) } }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            // Create Studio で作った自分の種類
+            if !studioTypes.isEmpty {
+                Section("自分の種類") {
+                    ForEach(studioTypes) { t in
+                        Button { onPickStudio(t); dismiss() } label: {
+                            HStack(spacing: 12) {
+                                RowIcon(symbol: IconMap.symbol(t.icon), tint: Color(hex: t.color))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(t.name).foregroundStyle(.primary)
+                                    Text(t.target == "calendar" ? "予定" : "タスク").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if studioId == t.id { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             ForEach(SpecGroup.allCases, id: \.self) { g in
                 Section(g.label) {
                     ForEach(SPEC_DEFS.filter { $0.group == g }) { d in
-                        Button { onPick(d); dismiss() } label: {
+                        Button { onPick(d); onPickStudio(nil); dismiss() } label: {
                             HStack(spacing: 12) {
                                 SpecBadge(type: d.id, isEvent: d.isEvent, size: 28)
                                 Text(d.name).foregroundStyle(.primary)
                                 Spacer()
                                 if spec == d.id { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }

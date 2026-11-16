@@ -15,6 +15,8 @@ final class AppModel {
     private(set) var calendars: [MTCalendar] = []
     private(set) var subtasks: [MTSubtask] = []
     private(set) var employers: [MTEmployer] = []
+    /// Create Studio の種類（自分専用の種類）
+    private(set) var studioTypes: [StudioType] = []
     private(set) var settings = AppSettings(json: nil)
     private(set) var outboxPending = 0
 
@@ -45,6 +47,7 @@ final class AppModel {
         calendars = repo.calendars()
         subtasks = repo.subtasks()
         employers = repo.employers()
+        studioTypes = repo.studioTypes()
         settings = repo.settings()
         outboxPending = repo.store.outbox().filter { $0["synced"]?.intValue == 0 }.count
         scheduleNotifications()
@@ -108,6 +111,7 @@ final class AppModel {
     }
     func eventColor(_ e: MTEvent) -> String { e.colorOverride ?? calendar(e.calendarId)?.color ?? "#0A84FF" }
     func employer(_ id: String?) -> MTEmployer? { employers.first { $0.id == id } }
+    func studioType(_ id: String?) -> StudioType? { studioTypes.first { $0.id == id } }
 
     /// 未割当（時間を決めていない実行タスク）
     var inbox: [MTTask] { tasks.filter { $0.kind == .do && !$0.isDone && $0.plannedStart == nil }.sorted { ($0.deadline ?? .max) < ($1.deadline ?? .max) } }

@@ -297,7 +297,7 @@ struct NowCard: View {
                 } label: {
                     HStack(spacing: 10) {
                         if let task {
-                            ProgressRing(value: actualProgress(task, subtasks: model.subtasks(of: task.id)).value, ideal: idealProgress(task, now: now), symbol: IconMap.symbol(task.icon), size: 44, running: task.status == .running)
+                            ProgressRing(value: ringValue(task), ideal: idealProgress(task, now: now), symbol: IconMap.symbol(task.icon), tint: task.extra?["color"]?.stringValue.map { Color(hex: $0) } ?? .doTask, size: 44, running: task.status == .running)
                         } else {
                             Image(systemName: icon).font(.title3.weight(.semibold)).foregroundStyle(.white)
                                 .frame(width: 44, height: 44).background(tint.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -347,6 +347,14 @@ struct NowCard: View {
                 .accessibilityHidden(true)
             }
         }
+    }
+
+    /// 進み具合：自分の種類（Create Studio）で計るときはそれを使う
+    private func ringValue(_ task: MTTask) -> Double? {
+        if let st = model.studioType(task.extra?["studio"]?["typeId"]?.stringValue), st.progress.mode != .none {
+            return studioProgress(st, values: task.extra?["studio"]?["values"]?.objectValue ?? [:], workedMinutes: Double(workedMs(task, at: now) / MINUTE)).value
+        }
+        return actualProgress(task, subtasks: model.subtasks(of: task.id)).value
     }
 
     // MARK: 何もないとき：時計と明日の最初の予定

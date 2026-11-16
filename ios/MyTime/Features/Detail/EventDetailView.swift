@@ -35,6 +35,14 @@ struct EventDetailView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
                         details(ev, start: start, end: end)
+                        if let st = model.studioType(ev.extra?["studio"]?["typeId"]?.stringValue) {
+                            let rows = studioInfoRows(st, values: ev.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
+                            if !rows.isEmpty {
+                                Section {
+                                    ForEach(Array(rows.enumerated()), id: \.offset) { _, r in LabeledContent(r.0, value: r.1) }
+                                } header: { Label(st.name, systemImage: IconMap.symbol(st.icon)).foregroundStyle(Color(hex: st.color)) }
+                            }
+                        }
                         if !ev.notes.isEmpty {
                             Section("メモ") { Text(ev.notes).textSelection(.enabled) }
                         }

@@ -63,6 +63,7 @@ enum NotificationScheduler {
     /// これまでの予約を消して、予約し直す（My Time が作った予約だけ）
     static func reschedule(model: AppModel) async {
         let center = UNUserNotificationCenter.current()
+        await TaskAlarms.sync(tasks: model.tasks, now: model.now)
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
         let settings = await center.notificationSettings()
@@ -71,7 +72,9 @@ enum NotificationScheduler {
         let events = model.visibleEvents(from: now, to: model.time.addDays(now, 7))
         // 通知がオフでも、アラームを付けたタスクは鳴らす
         let all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time)
-        for p in all where model.notificationsEnabled || p.alarm {
+        // 本物のアラーム（AlarmKit）が使えるときは、アラームの通知は出さない（二重に鳴らさない）
+        let systemAlarms = TaskAlarms.systemAlarmsActive
+        for p in all where (model.notificationsEnabled && !p.alarm) || (p.alarm && !systemAlarms) {
             let content = UNMutableNotificationContent()
             content.title = p.title
             content.body = p.body

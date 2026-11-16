@@ -60,11 +60,16 @@ struct TaskDetailView: View {
         let ideal = idealProgress(task, now: now)
         let delay = delayInfo(task, now: now)
         let tint = taskTint(task)
+        // Create Studio の種類で進み具合を計るとき（読んだページ÷目標 など）
+        let st = model.studioType(task.extra?["studio"]?["typeId"]?.stringValue)
+        let sv = task.extra?["studio"]?["values"]?.objectValue ?? [:]
+        let sp = st.flatMap { $0.progress.mode == .none ? nil : studioProgress($0, values: sv, workedMinutes: Double(workedMs(task, at: now) / MINUTE)) }
+        let ringValue = task.isDone ? 1 : (sp?.value ?? progress.value)
         List {
             // 見出し：進み具合の輪・名前・状態
             Section {
                 VStack(spacing: 12) {
-                    ProgressRing(value: progress.value, ideal: ideal, symbol: IconMap.symbol(task.icon), tint: tint, size: 76, running: task.status == .running, done: task.isDone)
+                    ProgressRing(value: ringValue, ideal: ideal, symbol: IconMap.symbol(task.icon), tint: tint, size: 76, running: task.status == .running, done: task.isDone)
                     VStack(spacing: 4) {
                         Text(task.title).font(.title2.weight(.bold)).multilineTextAlignment(.center)
                         HStack(spacing: 6) {
@@ -124,7 +129,28 @@ struct TaskDetailView: View {
                 } footer: { Text("残りの長さはそのままに、開始と終了をずらします。") }
             }
 
-            if task.kind == .do && canScrubProgress(task, subtasks: subs) {
+            if let st {
+                Section {
+                    if let sp {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("進み具合").font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text(sp.label + (sp.over ? "・目標超え" : "")).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Color(hex: st.color))
+                            }
+                            ProgressView(value: sp.value ?? 0).tint(Color(hex: st.color))
+                        }
+                    }
+                    ForEach(Array(studioInfoRows(st, values: sv, time: model.time, hm: model.hm).enumerated()), id: \.offset) { _, r in
+                        LabeledContent(r.0, value: r.1)
+                    }
+                    Button { router.open(.editor(EditorSeed(kind: .task, taskId: task.id))) } label: { Label("値を入力する", systemImage: "square.and.pencil") }
+                } header: {
+                    Label(st.name, systemImage: IconMap.symbol(st.icon)).foregroundStyle(Color(hex: st.color))
+                }
+            }
+
+            if task.kind == .do && sp == nil && canScrubProgress(task, subtasks: subs) {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {

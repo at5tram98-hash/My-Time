@@ -54,6 +54,12 @@ struct MoreScreen: View {
                     NavigationLink { TomorrowPlanView() } label: { row("翌日の計画", "moon.stars.fill", .indigo, "明日の予定とタスクを先に入れる") }
                 }
 
+                Section("カスタマイズ") {
+                    NavigationLink { StudioListView() } label: {
+                        row("Create Studio", "sparkles", .purple, model.studioTypes.isEmpty ? "自分専用の種類を作る" : "自分の種類 \(model.studioTypes.filter { $0.status != "hidden" }.count)個")
+                    }
+                }
+
                 Section("使い方") {
                     NavigationLink { GestureGuideView() } label: { row("操作のしかた", "hand.draw.fill", .pink, "長押し・なぞる・スワイプでできること") }
                 }

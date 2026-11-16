@@ -109,7 +109,8 @@ struct RootView: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard ringing == nil else { continue }
+                // 本物のアラーム（AlarmKit）が鳴るときは、アプリ内の画面は出さない
+                guard ringing == nil, !TaskAlarms.systemAlarmsActive else { continue }
                 let now = model.now
                 if let t = model.tasks.first(where: { t in
                     guard let at = NotificationScheduler.alarmTime(t) else { return false }
