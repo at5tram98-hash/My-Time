@@ -135,32 +135,6 @@ struct RootView: View {
     }
 }
 
-/// その他タブ：振り返り・設定
-struct MoreScreen: View {
-    @Environment(Router.self) private var router
-
-    var body: some View {
-        @Bindable var router = router
-        NavigationStack(path: $router.morePath) {
-            List {
-                Section {
-                    NavigationLink(value: MoreRoute.review) { Label("振り返り", systemImage: "chart.bar.xaxis") }
-                }
-                Section {
-                    NavigationLink(value: MoreRoute.settings) { Label("設定", systemImage: "gearshape") }
-                }
-            }
-            .navigationTitle("その他")
-            .navigationDestination(for: MoreRoute.self) { r in
-                switch r {
-                case .review: ReviewScreen(embedded: true)
-                case .settings: SettingsView(embedded: true)
-                }
-            }
-        }
-    }
-}
-
 /// embedded のときは外側のナビゲーションを使い、そうでなければ自分で NavigationStack を持つ
 struct OptionalNavigationStack<Content: View>: View {
     var embedded: Bool

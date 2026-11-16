@@ -26,23 +26,39 @@ struct TaskDetailView: View {
                         Button("編集") { router.open(.editor(EditorSeed(kind: .task, taskId: task.id))) }
                     }
                 }
-                .confirmationDialog("「\(task.title)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
-                    Button("削除", role: .destructive) {
-                        let snapshot = task
-                        let subs = model.subtasks(of: task.id)
-                        if model.perform("削除しました", undo: {
-                            try model.repo.saveTask(snapshot, isNew: true)
-                            for s in subs { try model.repo.addSubtask(taskId: snapshot.id, title: s.title) }
-                        }, { try model.repo.deleteTask(task.id) }) { dismiss() }
-                    }
-                }
                 .sensoryFeedback(.success, trigger: feedback)
+                // 予定のカードと同じく、削除は一番下の赤いボタン
+                .safeAreaInset(edge: .bottom) {
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        Label(task.kind == .check ? "確認を削除" : "タスクを削除", systemImage: "trash")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .confirmationDialog("「\(task.title)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                        Button(task.kind == .check ? "確認を削除" : "タスクを削除", role: .destructive) {
+                            let snapshot = task
+                            let subs = model.subtasks(of: task.id)
+                            if model.perform("削除しました", undo: {
+                                try model.repo.saveTask(snapshot, isNew: true)
+                                for s in subs { try model.repo.addSubtask(taskId: snapshot.id, title: s.title) }
+                            }, { try model.repo.deleteTask(task.id) }) { dismiss() }
+                        }
+                    }
+                    .buttonBorderShape(.roundedRectangle(radius: 14))
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .background(.bar)
+                }
             } else {
                 ContentUnavailableView("タスクが見つかりません", systemImage: "questionmark.circle", description: Text("削除されたか、別の端末で変更された可能性があります。"))
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(28)
         .presentationDragIndicator(.visible)
     }
 
@@ -141,9 +157,6 @@ struct TaskDetailView: View {
             }
             if let loc = task.location, !loc.isEmpty {
                 Section("場所") { Label(loc, systemImage: "mappin.and.ellipse") }
-            }
-            Section {
-                Button("削除", systemImage: "trash", role: .destructive) { confirmDelete = true }
             }
         }
     }

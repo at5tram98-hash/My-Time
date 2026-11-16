@@ -5,6 +5,7 @@ import MyTimeCore
 struct EditorView: View {
     var seed: EditorSeed
     @Environment(AppModel.self) private var model
+    @Environment(Router.self) private var router
     @Environment(\.dismiss) private var dismiss
 
     @State private var kind: EditorSeed.Kind = .task
@@ -31,6 +32,9 @@ struct EditorView: View {
     @State private var calendarId = "cal-general"
     @State private var repeatFreq: String = "none"
     @State private var place = ""
+    /// 予定の前の移動時間（分。0 は移動なし。Web 版と同じ extra.travelMinutes）
+    @State private var travel = 0
+    @State private var showIcons = false
     @State private var flagged = false
     @State private var icon = "book"
     @State private var saved = 0
@@ -53,7 +57,18 @@ struct EditorView: View {
                         .font(.title3)
                         .focused($titleFocused)
                         .submitLabel(.done)
+                        .onSubmit { titleFocused = false }
+                    if isNew && !suggestions.isEmpty { suggestionRow }
                     specMenu
+                } footer: {
+                    if isNew {
+                        Button {
+                            router.open(.quickAdd)
+                        } label: {
+                            Label("「明日10時から1時間 歯医者」のように文章で追加", systemImage: "text.bubble")
+                                .font(.footnote)
+                        }
+                    }
                 }
                 if kind == .event { eventFields } else { taskFields }
                 if let spec { SpecFieldsSection(spec: spec, details: $details) }
@@ -128,23 +143,39 @@ struct EditorView: View {
     @ViewBuilder
     private var eventFields: some View {
         Section {
-            Toggle("終日", isOn: $allDay)
+            Toggle("終日", isOn: $allDay.animation())
+            if !allDay { startChips }
             DatePicker("開始", selection: $start, displayedComponents: allDay ? .date : [.date, .hourAndMinute])
             DatePicker("終了", selection: $end, in: start..., displayedComponents: allDay ? .date : [.date, .hourAndMinute])
+            if !allDay { lengthChips }
             Picker("繰り返し", selection: $repeatFreq) {
                 Text("しない").tag("none")
                 Text("毎日").tag("daily")
-                Text("毎週").tag("weekly")
-                Text("毎月").tag("monthly")
+                Text("毎週（\(DomainTime.weekdayJa[model.time.weekday(model.time.ms(start))])曜日）").tag("weekly")
+                Text("毎月（\(Calendar.current.component(.day, from: start))日）").tag("monthly")
             }
+        } footer: {
+            if let c = conflict { Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+        }
+        Section("カレンダー") {
+            calendarChips
         }
         Section {
-            Picker("カレンダー", selection: $calendarId) {
-                ForEach(model.calendars, id: \.id) { c in
-                    Label(c.name, systemImage: "circle.fill").foregroundStyle(Color(hex: c.color)).tag(c.id)
+            HStack {
+                Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary).frame(width: 22)
+                TextField("場所", text: $place)
+            }
+            Stepper(value: $travel, in: 0...240, step: 5) {
+                HStack {
+                    Image(systemName: "tram.fill").foregroundStyle(.secondary).frame(width: 22)
+                    Text("移動")
+                    Spacer()
+                    Text(travel == 0 ? "なし" : "\(travel)分（\(model.hm(model.time.ms(start) - EpochMs(travel) * MINUTE))に出発）")
+                        .foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-            TextField("場所", text: $place)
+        } footer: {
+            if travel > 0 { Text("出発の時刻を「今やること」と通知でお知らせします。") }
         }
     }
 
@@ -162,8 +193,10 @@ struct EditorView: View {
             } else {
                 Toggle("時間を決める", isOn: $hasTime.animation())
                 if hasTime {
+                    startChips
                     DatePicker("開始", selection: $start)
                     DatePicker("終了", selection: $end, in: start...)
+                    lengthChips
                 }
             }
         } footer: {
@@ -174,13 +207,17 @@ struct EditorView: View {
             if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
             if !isCheck {
                 Toggle("見積もり", isOn: $hasEstimate.animation())
-                if hasEstimate { Stepper("\(estimate)分", value: $estimate, in: 5...600, step: 5) }
+                if hasEstimate {
+                    Stepper("\(estimate)分", value: $estimate, in: 5...600, step: 5)
+                    chipRow([15, 30, 60, 90, 120].map { m in (m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60).5時間", estimate == m, { estimate = m }) })
+                }
             }
             Toggle("フラグ", isOn: $flagged)
         } footer: {
             if spec == nil { Text("締切は「種類」を選ぶと設定できます（Web 版と同じ保存形式）。") }
         }
-        Section("アイコン") {
+        Section {
+            DisclosureGroup(isExpanded: $showIcons) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
                 ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
                     Button { icon = key } label: {
@@ -195,6 +232,148 @@ struct EditorView: View {
                 }
             }
             .padding(.vertical, 4)
+            } label: {
+                HStack {
+                    Text("アイコン")
+                    Spacer()
+                    Image(systemName: IconMap.symbol(icon)).foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+    }
+
+    // MARK: 入力を助ける部品
+
+    /// 横に並ぶ小さなボタン（選んでいるものは色つき）
+    private func chipRow(_ items: [(String, Bool, () -> Void)]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, it in
+                    Button(action: it.2) {
+                        Text(it.0).font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(it.1 ? Color.accentColor : Color(.tertiarySystemFill)))
+                            .foregroundStyle(it.1 ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(it.1 ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
+    }
+
+    /// 開始のよく使う時刻（今すぐ・次の正時・今夜・明日の朝）。長さは保つ
+    private var startChips: some View {
+        let now = model.now
+        let d0 = model.time.startOfDay(now)
+        let soon = ((now / (5 * MINUTE)) + 1) * 5 * MINUTE
+        let nextHour = ((now / HOUR) + 1) * HOUR
+        let tonight = d0 + 19 * HOUR
+        let tomorrow = model.time.addDays(d0, 1) + 9 * HOUR
+        var items: [(String, EpochMs)] = [("今すぐ", soon), ("\(model.hm(nextHour))から", nextHour)]
+        if tonight > nextHour { items.append(("今夜19時", tonight)) }
+        items.append(("明日9時", tomorrow))
+        let cur = model.time.ms(start)
+        return chipRow(items.map { label, t in (label, cur == t, { setStart(t) }) })
+    }
+
+    private func setStart(_ t: EpochMs) {
+        withAnimation { start = model.time.date(t) }
+    }
+
+    /// 長さ（15分〜2時間）。今の長さを下に表示
+    private var lengthChips: some View {
+        let len = Int(end.timeIntervalSince(start) / 60)
+        return VStack(alignment: .leading, spacing: 2) {
+            chipRow([15, 30, 45, 60, 90, 120].map { m in
+                (m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分", len == m, { withAnimation { end = start.addingTimeInterval(TimeInterval(m * 60)) } })
+            })
+            Text("長さ：\(len < 60 ? "\(len)分" : len % 60 == 0 ? "\(len / 60)時間" : "\(len / 60)時間\(len % 60)分")")
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+    }
+
+    /// カレンダーを色の丸で選ぶ（純正カレンダーの色分けと同じ考え方）
+    private var calendarChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.calendars, id: \.id) { c in
+                    let on = c.id == calendarId
+                    Button { calendarId = c.id } label: {
+                        HStack(spacing: 6) {
+                            Circle().fill(Color(hex: c.color)).frame(width: 12, height: 12)
+                            Text(c.name).font(.subheadline.weight(on ? .semibold : .regular))
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Capsule().fill(on ? Color(hex: c.color).opacity(0.18) : Color(.tertiarySystemFill)))
+                        .overlay(Capsule().strokeBorder(on ? Color(hex: c.color) : .clear, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
+    }
+
+    /// 前に使った名前（入力中の文字で絞り込む）。選ぶと長さ・カレンダー・場所も前回と同じにする
+    private struct Suggestion: Identifiable { var id: String { title }; var title: String; var minutes: Int?; var calendarId: String?; var place: String?; var travel: Int? }
+
+    private var suggestions: [Suggestion] {
+        let q = title.trimmingCharacters(in: .whitespaces)
+        var seen = Set<String>(), out: [Suggestion] = []
+        if kind == .event {
+            for e in model.events.sorted(by: { $0.updatedAt > $1.updatedAt }) where !e.title.isEmpty && !seen.contains(e.title) {
+                if !q.isEmpty && (!e.title.localizedCaseInsensitiveContains(q) || e.title == q) { continue }
+                seen.insert(e.title)
+                out.append(Suggestion(title: e.title, minutes: e.allDay ? nil : Int((e.end - e.start) / MINUTE), calendarId: e.calendarId, place: e.placeName, travel: e.travelMinutes))
+                if out.count >= 6 { break }
+            }
+        } else {
+            for t in model.tasks.sorted(by: { $0.updatedAt > $1.updatedAt }) where !t.title.isEmpty && !seen.contains(t.title) {
+                if !q.isEmpty && (!t.title.localizedCaseInsensitiveContains(q) || t.title == q) { continue }
+                seen.insert(t.title)
+                out.append(Suggestion(title: t.title, minutes: t.plannedStart.flatMap { s in t.plannedEnd.map { Int(($0 - s) / MINUTE) } }, calendarId: nil, place: nil, travel: nil))
+                if out.count >= 6 { break }
+            }
+        }
+        return out
+    }
+
+    private var suggestionRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(suggestions) { sg in
+                    Button {
+                        title = sg.title
+                        if let m = sg.minutes, m > 0 { end = start.addingTimeInterval(TimeInterval(m * 60)) }
+                        if let c = sg.calendarId { calendarId = c }
+                        if let p = sg.place { place = p }
+                        if let t = sg.travel { travel = t }
+                    } label: {
+                        Label(sg.title, systemImage: "clock.arrow.circlepath")
+                            .font(.subheadline).lineLimit(1)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(Color(.tertiarySystemFill)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("前回と同じ長さ・カレンダー・場所で入力します")
+                }
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
+    }
+
+    /// 同じ時間にある別の予定（終日は除く）
+    private var conflict: EventOccurrence? {
+        guard kind == .event, !allDay else { return nil }
+        let s = model.time.ms(start), e = model.time.ms(end)
+        guard e > s else { return nil }
+        return model.visibleEvents(from: s - HOUR, to: e + HOUR).first { o in
+            !o.event.allDay && o.start < e && s < o.end && (isNew || o.masterId != event.id)
         }
     }
 
@@ -225,6 +404,7 @@ struct EditorView: View {
             details = e.extra?["spec"]?["details"]?.objectValue ?? [:]
             start = model.time.date(e.start); end = model.time.date(e.end); allDay = e.allDay
             repeatFreq = e.recurrence?.freq.rawValue ?? "none"; place = e.placeName ?? ""
+            travel = e.travelMinutes ?? 0
         } else {
             titleFocused = true
             calendarId = model.calendars.first?.id ?? "cal-general"
@@ -256,6 +436,7 @@ struct EditorView: View {
             extra["allDay"] = allDay ? .bool(true) : nil
             if place.isEmpty { extra["place"] = nil } else { extra["place"] = (extra["place"] ?? .object([:])).merging(.object(["name": .string(place)])) }
             extra["spec"] = specJSON(extra["spec"], dueAt: nil)
+            extra["travelMinutes"] = travel > 0 ? .number(Double(travel)) : nil
             e.extra = extra.isEmpty ? (e.extra == nil ? nil : .object([:])) : .object(extra)
             ok = model.perform(isNew ? "予定を追加しました" : "保存しました") { try model.repo.saveEvent(e, isNew: isNew) }
         } else {

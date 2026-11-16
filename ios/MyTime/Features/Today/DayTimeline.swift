@@ -419,6 +419,8 @@ struct TimelineBlock: View {
     @GestureState private var drag = DragInfo()
     @State private var pickedUp = 0
     @State private var snapped = 0
+    /// 長押しが始まった時刻（長押しのあとに離したときは、タップとして詳細を開かない）
+    @State private var lastPress = Date.distantPast
 
     private var stepMinutes: Int { Int((drag.dy / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded()) * Int(DayTimeline.snap) }
 
@@ -485,8 +487,11 @@ struct TimelineBlock: View {
         .zIndex(drag.active ? 10 : 0)
         .animation(reduceMotion ? nil : Motion.pop, value: drag.active)
         .contentShape(shape)
-        .onTapGesture(perform: onTap)
         .gesture(pressGesture(edge: nil))
+        // 長押しの操作と同時に受け取る。短く触れたときだけカードを開く
+        .simultaneousGesture(TapGesture().onEnded {
+            if Date().timeIntervalSince(lastPress) > 0.6 { onTap() }
+        })
         .sensoryFeedback(.impact(weight: .medium), trigger: pickedUp)
         .sensoryFeedback(.selection, trigger: snapped)
         .accessibilityElement(children: .combine)
@@ -537,6 +542,7 @@ struct TimelineBlock: View {
             }
             .onChanged { value in
                 if case .second(true, let d) = value {
+                    lastPress = Date()
                     if d == nil || (d!.translation == .zero && snapped == 0) { pickedUp += 1 }
                     if let d, block.movable {
                         let m = Int((d.translation.height / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded())
@@ -547,6 +553,7 @@ struct TimelineBlock: View {
             .onEnded { value in
                 defer { snapped = 0 }
                 guard case .second(true, let d) = value else { return }
+                lastPress = Date()
                 let dy = d?.translation.height ?? 0
                 let m = Int((dy / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded()) * Int(DayTimeline.snap)
                 // 動かさずに離した：メニュー

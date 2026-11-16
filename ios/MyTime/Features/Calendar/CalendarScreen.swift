@@ -159,11 +159,46 @@ struct AgendaList: View {
                     RoundedRectangle(cornerRadius: 2).fill(Color(hex: model.eventColor(o.event))).frame(width: 4, height: 34)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(o.title).foregroundStyle(.primary).lineLimit(1)
-                        Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        HStack(spacing: 6) {
+                            Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
+                            if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
+                            if o.event.recurrence != nil { Image(systemName: "repeat").accessibilityLabel("繰り返し") }
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
+            // 純正カレンダー・リマインダーと同じく、左へなぞると削除（取り消せる）
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) { deleteEvent(o) } label: {
+                    Label(o.isOccurrence ? "この回を削除" : "削除", systemImage: "trash")
+                }
+            }
         case .task(let t, let at):
+            taskButton(t, at: at)
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) { deleteTask(t) } label: { Label("削除", systemImage: "trash") }
+                }
+        case .due(let t, let at):
+            dueRow(t, at: at)
+        }
+    }
+
+    private func deleteEvent(_ o: EventOccurrence) {
+        let snapshot = o.event
+        if let os = o.originalStart, o.event.recurrence != nil {
+            model.perform("この回を削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }) { try model.repo.cancelOccurrence(masterId: o.masterId, originalStart: os) }
+        } else {
+            model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }) { try model.repo.deleteEvent(o.masterId) }
+        }
+    }
+
+    private func deleteTask(_ t: MTTask) {
+        let snapshot = t
+        model.perform("削除しました", undo: { try model.repo.saveTask(snapshot, isNew: true) }) { try model.repo.deleteTask(t.id) }
+    }
+
+    private func taskButton(_ t: MTTask, at: EpochMs) -> some View {
             Button { router.open(.task(t.id)) } label: {
                 HStack(spacing: 10) {
                     Image(systemName: t.isDone ? "checkmark.circle.fill" : t.kind == .check ? "circle" : "play.circle").foregroundStyle(t.isDone ? .green : .secondary).frame(width: 4 + 18)
@@ -173,7 +208,9 @@ struct AgendaList: View {
                     }
                 }
             }
-        case .due(let t, let at):
+    }
+
+    private func dueRow(_ t: MTTask, at: EpochMs) -> some View {
             Button { router.open(.task(t.id)) } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "flag.fill").foregroundStyle(.red).frame(width: 22)
@@ -182,6 +219,5 @@ struct AgendaList: View {
                     Text(model.hm(at)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-        }
     }
 }

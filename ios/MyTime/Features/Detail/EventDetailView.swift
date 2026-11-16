@@ -1,79 +1,268 @@
 import SwiftUI
 import MyTimeCore
 
-/// 予定の詳細。繰り返し予定は「この回のみ」「すべて」を選んで削除できる
+/// 予定のカード（純正「カレンダー」の予定の詳細にならう）。
+/// 上：色の帯・名前・日時と長さ・今の状態。続いて：よく使う操作（編集・複製・ずらす・共有）、詳細、メモ。
+/// 一番下に赤い「予定を削除」。繰り返し予定は「この回のみ」「すべて」を選べ、削除は取り消せる。
 struct EventDetailView: View {
     /// 単発は予定 ID、繰り返しの回は `masterId@start`
     var occurrenceId: String
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var confirmDelete = false
+    @State private var deleted = 0
 
     var body: some View {
         let parsed = parseOccurrenceId(occurrenceId)
         let masterId = parsed?.masterId ?? occurrenceId
         NavigationStack {
             if let ev = model.events.first(where: { $0.id == masterId }) {
-                let start = parsed.map { p in ev.exceptions.first { $0.originalStart == p.originalStart }?.start ?? p.originalStart } ?? ev.start
-                let end = start + (ev.end - ev.start)
-                List {
-                    Section {
-                        HStack(spacing: 14) {
-                            SpecBadge(type: ev.specType, isEvent: true, size: 44)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(ev.title).font(.title3.weight(.semibold))
-                                if let def = ev.specType.flatMap({ SPEC_BY_ID[$0] }) { Text(def.name).font(.caption).foregroundStyle(def.tint) }
-                                Text(ev.allDay ? "\(model.time.dayLabel(start)) 終日" : "\(model.time.dayLabel(start)) \(model.hm(start))〜\(model.hm(end))")
-                                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                let ex = parsed.flatMap { p in ev.exceptions.first { $0.originalStart == p.originalStart } }
+                let start = ex?.start ?? parsed?.originalStart ?? ev.start
+                let end = ex?.end ?? start + (ev.end - ev.start)
+                let tint = Color(hex: model.eventColor(ev))
+                TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                    let now = model.time.ms(ctx.date)
+                    List {
+                        Section { header(ev, start: start, end: end, now: now, tint: tint) }
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                        Section {
+                            actions(ev, parsed: parsed, start: start, end: end)
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                        details(ev, start: start, end: end)
+                        if !ev.notes.isEmpty {
+                            Section("メモ") { Text(ev.notes).textSelection(.enabled) }
+                        }
+                        Section {
+                            LabeledContent("作成", value: "\(model.time.dayLabel(ev.createdAt)) \(model.hm(ev.createdAt))")
+                            if ev.updatedAt != ev.createdAt {
+                                LabeledContent("最終更新", value: "\(model.time.dayLabel(ev.updatedAt)) \(model.hm(ev.updatedAt))")
                             }
                         }
-                        .accessibilityElement(children: .combine)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
-                    Section {
-                        if let cal = model.calendar(ev.calendarId) {
-                            LabeledContent("カレンダー") { Label(cal.name, systemImage: "circle.fill").foregroundStyle(Color(hex: cal.color)) }
-                        }
-                        if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
-                        if let place = ev.placeName { LabeledContent("場所", value: place) }
-                        if let m = ev.travelMinutes { LabeledContent("移動", value: "\(m)分前に出発") }
-                        if let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
-                        if ev.specType == .shift, let wage = ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue,
-                           let pay = shiftPay(start: start, end: end, hourlyWage: wage, breakMinutes: Int(ev.extra?["spec"]?["details"]?["breakMinutes"]?.intValue ?? 0)) {
-                            LabeledContent("見込みの給与", value: yen(pay.pay))
-                        }
-                    }
-                    if !ev.notes.isEmpty { Section("メモ") { Text(ev.notes) } }
-                    Section {
-                        Button("削除", systemImage: "trash", role: .destructive) { confirmDelete = true }
-                    }
+                    .contentMargins(.top, 0, for: .scrollContent)
                 }
-                .navigationTitle("予定")
+                .navigationTitle("予定の詳細")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("閉じる")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button("編集") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
                     }
                 }
-                .confirmationDialog(ev.recurrence == nil ? "「\(ev.title)」を削除しますか？" : "繰り返しの予定です", isPresented: $confirmDelete, titleVisibility: .visible) {
-                    if let p = parsed, ev.recurrence != nil {
-                        Button("この回のみ削除", role: .destructive) {
-                            if model.perform("この回を削除しました", { try model.repo.cancelOccurrence(masterId: p.masterId, originalStart: p.originalStart) }) { dismiss() }
+                // 純正カレンダーと同じく、削除は一番下の赤いボタン（いつでも親指が届く位置）
+                .safeAreaInset(edge: .bottom) {
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        Label("予定を削除", systemImage: "trash")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .confirmationDialog(ev.recurrence == nil ? "「\(ev.title)」を削除しますか？" : "繰り返しの予定です", isPresented: $confirmDelete, titleVisibility: .visible) {
+                        if let p = parsed, ev.recurrence != nil {
+                            Button("この回のみ削除", role: .destructive) {
+                                let snapshot = ev
+                                if model.perform("この回を削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }, { try model.repo.cancelOccurrence(masterId: p.masterId, originalStart: p.originalStart) }) { close() }
+                            }
                         }
+                        Button(ev.recurrence == nil ? "予定を削除" : "すべての回を削除", role: .destructive) {
+                            let snapshot = ev
+                            if model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }, { try model.repo.deleteEvent(ev.id) }) { close() }
+                        }
+                    } message: {
+                        Text("削除したあとも、下に出るお知らせの「取り消す」で元に戻せます。")
                     }
-                    Button(ev.recurrence == nil ? "削除" : "すべての回を削除", role: .destructive) {
-                        let snapshot = ev
-                        if model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }, { try model.repo.deleteEvent(ev.id) }) { dismiss() }
-                    }
+                    .buttonBorderShape(.roundedRectangle(radius: 14))
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .background(.bar)
                 }
+                .sensoryFeedback(.warning, trigger: deleted)
             } else {
-                ContentUnavailableView("予定が見つかりません", systemImage: "calendar.badge.exclamationmark")
+                ContentUnavailableView("予定が見つかりません", systemImage: "calendar.badge.exclamationmark", description: Text("削除されたか、別の端末で変更された可能性があります。"))
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .presentationCornerRadius(28)
+    }
+
+    private func close() { deleted += 1; dismiss() }
+
+    // MARK: 見出し
+
+    private func header(_ ev: MTEvent, start: EpochMs, end: EpochMs, now: EpochMs, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(tint).frame(width: 6)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28) }
+                    Text(ev.title).font(.title2.weight(.bold)).lineLimit(3)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dateText(start, end, allDay: ev.allDay)).font(.subheadline.weight(.medium))
+                    if !ev.allDay {
+                        Text("\(model.hm(start))〜\(model.hm(end))（\(durationText(end - start))）")
+                            .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+                if let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
+                    Label(s.text, systemImage: s.symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(s.color)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(s.color.opacity(0.14)))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func dateText(_ start: EpochMs, _ end: EpochMs, allDay: Bool) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ja_JP")
+        f.dateFormat = "M月d日（EEE）"
+        let s = f.string(from: model.time.date(start))
+        if allDay {
+            let last = end - 1
+            return model.time.isSameDay(start, last) ? "\(s) 終日" : "\(s)〜\(f.string(from: model.time.date(last))) 終日"
+        }
+        return model.time.isSameDay(start, end - 1) ? s : "\(s) 〜 \(f.string(from: model.time.date(end)))"
+    }
+
+    private func durationText(_ ms: EpochMs) -> String {
+        let m = Int(ms / MINUTE)
+        if m < 60 { return "\(m)分" }
+        return m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分"
+    }
+
+    private struct Status { var text: String; var symbol: String; var color: Color }
+
+    private func status(start: EpochMs, end: EpochMs, now: EpochMs, allDay: Bool) -> Status? {
+        if allDay { return nil }
+        if now >= end { return Status(text: "終了しました", symbol: "checkmark.circle", color: .secondary) }
+        if now >= start { return Status(text: "進行中・あと\(durationText(end - now))", symbol: "dot.radiowaves.left.and.right", color: .green) }
+        let diff = start - now
+        if diff < 24 * HOUR { return Status(text: "あと\(durationText(diff))で始まります", symbol: "clock", color: .blue) }
+        return nil
+    }
+
+    // MARK: よく使う操作
+
+    private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+        HStack(spacing: 10) {
+            roundButton("編集", "pencil") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
+            roundButton("複製", "plus.square.on.square") { duplicate(ev, start: start, end: end) }
+            Menu {
+                Button("15分後へ", systemImage: "goforward.15") { shift(ev, parsed: parsed, start: start, end: end, by: 15 * MINUTE) }
+                Button("1時間後へ", systemImage: "clock.arrow.circlepath") { shift(ev, parsed: parsed, start: start, end: end, by: HOUR) }
+                Button("明日へ", systemImage: "sunrise") { shift(ev, parsed: parsed, start: start, end: end, by: model.time.addDays(start, 1) - start) }
+                Button("来週へ", systemImage: "calendar.badge.plus") { shift(ev, parsed: parsed, start: start, end: end, by: model.time.addDays(start, 7) - start) }
+            } label: {
+                roundLabel("ずらす", "arrow.right.circle")
+            }
+            ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func roundButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { roundLabel(title, symbol) }.buttonStyle(.plain)
+    }
+
+    private func roundLabel(_ title: String, _ symbol: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol).font(.title3.weight(.medium))
+            Text(title).font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(Color.accentColor)
+        .frame(maxWidth: .infinity, minHeight: 58)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(Rectangle())
+    }
+
+    private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {
+        var copy = MTEvent.make(title: ev.title, calendarId: ev.calendarId, start: end, end: end + (end - start), now: model.now, id: model.repo.newId())
+        copy.notes = ev.notes
+        copy.extra = ev.extra
+        copy.employerId = ev.employerId
+        let id = copy.id
+        if model.perform("複製しました（\(model.hm(copy.start))〜）", undo: { try model.repo.deleteEvent(id) }, { try model.repo.saveEvent(copy, isNew: true) }) { dismiss() }
+    }
+
+    /// 繰り返しの回は「この回のみ」を動かす（ほかの回は変わらない）
+    private func shift(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs, by delta: EpochMs) {
+        let snapshot = ev
+        let ns = start + delta, ne = end + delta
+        let msg = model.time.isSameDay(start, ns) ? "\(model.hm(ns))に移動しました" : "\(model.time.dayLabel(ns)) \(model.hm(ns))に移動しました"
+        if let p = parsed, ev.recurrence != nil {
+            _ = model.perform(msg, undo: { try model.repo.saveEvent(snapshot, isNew: false) }) {
+                try model.repo.editOccurrence(masterId: p.masterId, originalStart: p.originalStart, start: ns, end: ne)
+            }
+        } else {
+            var e = ev
+            e.start = ns; e.end = ne
+            _ = model.perform(msg, undo: { try model.repo.saveEvent(snapshot, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
+        }
+        dismiss()
+    }
+
+    private func shareText(_ ev: MTEvent, start: EpochMs, end: EpochMs) -> String {
+        var s = "\(ev.title)\n\(dateText(start, end, allDay: ev.allDay))"
+        if !ev.allDay { s += " \(model.hm(start))〜\(model.hm(end))" }
+        if let p = ev.placeName, !p.isEmpty { s += "\n場所：\(p)" }
+        if !ev.notes.isEmpty { s += "\n\(ev.notes)" }
+        return s
+    }
+
+    // MARK: 詳細
+
+    @ViewBuilder
+    private func details(_ ev: MTEvent, start: EpochMs, end: EpochMs) -> some View {
+        Section {
+            if let cal = model.calendar(ev.calendarId) {
+                LabeledContent("カレンダー") {
+                    HStack(spacing: 6) {
+                        Circle().fill(Color(hex: cal.color)).frame(width: 10, height: 10)
+                        Text(cal.name)
+                    }
+                }
+            }
+            if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
+            if let place = ev.placeName, !place.isEmpty {
+                Button {
+                    let q = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    if let url = URL(string: "maps://?q=\(q)") { openURL(url) }
+                } label: {
+                    LabeledContent("場所") {
+                        Label(place, systemImage: "map").foregroundStyle(Color.accentColor)
+                    }
+                }
+                .accessibilityHint("マップで開きます")
+            }
+            if let m = ev.travelMinutes, m > 0 {
+                LabeledContent("移動", value: "\(m)分（\(model.hm(start - EpochMs(m) * MINUTE))に出発）")
+            }
+            if let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
+            if ev.specType == .shift, let wage = ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue,
+               let pay = shiftPay(start: start, end: end, hourlyWage: wage, breakMinutes: Int(ev.extra?["spec"]?["details"]?["breakMinutes"]?.intValue ?? 0)) {
+                LabeledContent("見込みの給与", value: yen(pay.pay))
+            }
+        }
     }
 
     private func recurrenceText(_ r: RecurrenceRule) -> String {
