@@ -74,7 +74,7 @@ struct TodayView: View {
         let mainFraction: CGFloat = focus == "main" ? 0.68 : focus == "detail" ? 0.34 : 0.52
 
         VStack(spacing: 8) {
-            if !collapsed {
+            if !collapsed && next.kind != .free {
                 NowCard(next: next, now: now)
                     .padding(.horizontal)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
@@ -144,7 +144,7 @@ struct TodayView: View {
         HStack(spacing: 6) {
             StatusChip(symbol: "tray", label: "未割当", value: "\(model.inbox.count)", tint: model.inbox.isEmpty ? .secondary : .indigo) { router.open(.inbox) }
             StatusChip(symbol: "checklist", label: taskLabel, value: taskValue) { router.open(.dayTasks(day)) }
-            StatusChip(symbol: "sun.max", label: "余白", value: "\(Int((free * 100).rounded()))%") { router.tab = .review }
+            StatusChip(symbol: "sun.max", label: "余白", value: "\(Int((free * 100).rounded()))%") { router.openMore(.review) }
             Spacer(minLength: 0)
             Button {
                 withAnimation(reduceMotion ? nil : Motion.sheet) { collapsed.toggle() }
@@ -205,8 +205,6 @@ struct NowCard: View {
                 } else if next.kind == .start {
                     circle("play.fill", "開始", .accentColor) { act(task.id, .start, "開始しました", undo: .undoStart) }
                 }
-            } else if next.kind == .free {
-                circle("plus", "追加", .accentColor) { router.open(.editor(EditorSeed(kind: .task))) }
             } else if next.kind == .plan {
                 circle("tray", "未割当を開く", .indigo) { router.open(.inbox) }
             }
@@ -224,7 +222,7 @@ struct NowCard: View {
         case .continue: return "実行中"
         case .start: return "次にやること"
         case .leave: return "出発"
-        case .event: return "予定の最中"
+        case .event: return next.detail.hasSuffix("まで") ? "予定の最中" : "次の予定"
         case .plan: return "時間を決める"
         case .free: return "この後"
         }

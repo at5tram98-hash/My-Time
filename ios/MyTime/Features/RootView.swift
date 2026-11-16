@@ -1,7 +1,10 @@
 import SwiftUI
 import MyTimeCore
 
-enum AppTab: Hashable { case today, calendar, tasks, review }
+enum AppTab: Hashable { case today, calendar, tasks, more }
+
+/// その他タブの中で開く画面
+enum MoreRoute: Hashable { case review, settings }
 
 /// 開くシート（下から出る画面）
 enum SheetRoute: Identifiable, Hashable {
@@ -44,10 +47,13 @@ struct EditorSeed: Hashable {
 final class Router {
     var tab: AppTab = .today
     var sheet: SheetRoute?
+    /// その他タブの表示中の画面（余白のチップから振り返りを直接開くため）
+    var morePath: [MoreRoute] = []
     func open(_ s: SheetRoute) { sheet = s }
+    func openMore(_ r: MoreRoute) { morePath = [r]; tab = .more }
 }
 
-/// 4つのタブ（今日・カレンダー・タスク・振り返り）。追加と設定は各画面の右上（iOS 標準の位置）。
+/// 4つのタブ（今日・カレンダー・タスク・その他）。追加は各画面の右上（iOS 標準の位置）。振り返りと設定は「その他」の中。
 /// iOS 26 以降の SDK でビルドすると、タブバーとツールバーは自動で Liquid Glass になる。
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -65,9 +71,9 @@ struct RootView: View {
             TasksScreen()
                 .tabItem { Label("タスク", systemImage: "checklist") }
                 .tag(AppTab.tasks)
-            ReviewScreen()
-                .tabItem { Label("振り返り", systemImage: "chart.bar.xaxis") }
-                .tag(AppTab.review)
+            MoreScreen()
+                .tabItem { Label("その他", systemImage: "ellipsis") }
+                .tag(AppTab.more)
         }
         .environment(router)
         #if DEBUG
@@ -75,7 +81,13 @@ struct RootView: View {
         .task {
             let args = ProcessInfo.processInfo.arguments
             if let i = args.firstIndex(of: "-tab"), i + 1 < args.count {
-                router.tab = ["calendar": .calendar, "tasks": .tasks, "review": .review][args[i + 1]] ?? .today
+                switch args[i + 1] {
+                case "calendar": router.tab = .calendar
+                case "tasks": router.tab = .tasks
+                case "more": router.tab = .more
+                case "review": router.openMore(.review)
+                default: router.tab = .today
+                }
             }
             if let i = args.firstIndex(of: "-route"), i + 1 < args.count {
                 try? await Task.sleep(for: .milliseconds(400))
@@ -123,15 +135,46 @@ struct RootView: View {
     }
 }
 
-/// 各画面の右上：追加と設定
+/// その他タブ：振り返り・設定
+struct MoreScreen: View {
+    @Environment(Router.self) private var router
+
+    var body: some View {
+        @Bindable var router = router
+        NavigationStack(path: $router.morePath) {
+            List {
+                Section {
+                    NavigationLink(value: MoreRoute.review) { Label("振り返り", systemImage: "chart.bar.xaxis") }
+                }
+                Section {
+                    NavigationLink(value: MoreRoute.settings) { Label("設定", systemImage: "gearshape") }
+                }
+            }
+            .navigationTitle("その他")
+            .navigationDestination(for: MoreRoute.self) { r in
+                switch r {
+                case .review: ReviewScreen(embedded: true)
+                case .settings: SettingsView(embedded: true)
+                }
+            }
+        }
+    }
+}
+
+/// embedded のときは外側のナビゲーションを使い、そうでなければ自分で NavigationStack を持つ
+struct OptionalNavigationStack<Content: View>: View {
+    var embedded: Bool
+    @ViewBuilder var content: Content
+    var body: some View {
+        if embedded { content } else { NavigationStack { content } }
+    }
+}
+
+/// 各画面の右上：追加（設定は「その他」タブ）
 struct MainToolbar: ToolbarContent {
     @Environment(Router.self) private var router
     var addKind: EditorSeed.Kind = .task
     var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button { router.open(.settings) } label: { Image(systemName: "gearshape") }
-                .accessibilityLabel("設定")
-        }
         ToolbarItem(placement: .topBarTrailing) {
             // タップで追加、長押しで「文章で追加」などを選べる（iOS 標準の primaryAction 付きメニュー）
             Menu {

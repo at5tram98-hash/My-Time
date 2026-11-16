@@ -14,8 +14,11 @@ struct ReviewScreen: View {
         var free: Double
     }
 
+    /// その他タブの中に入れるとき
+    var embedded = false
+
     var body: some View {
-        NavigationStack {
+        OptionalNavigationStack(embedded: embedded) {
             let stats = makeStats()
             let total = stats.reduce(0) { $0 + $1.workedMinutes }
             let done = stats.reduce(0) { $0 + $1.done }

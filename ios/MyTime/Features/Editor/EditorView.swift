@@ -19,6 +19,8 @@ struct EditorView: View {
     @State private var details: [String: JSONValue] = [:]
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
+    /// 開始の変更で終了をそろえるときの基準（load で設定）
+    @State private var lastStart: Date?
     @State private var hasTime = true
     @State private var allDay = false
     @State private var isCheck = false
@@ -69,10 +71,14 @@ struct EditorView: View {
                 }
             }
             .onAppear(perform: load)
-            .onChange(of: start) { old, new in
-                // 開始を動かしたら、長さを保って終了も動かす
-                let len = end.timeIntervalSince(old)
-                if len > 0 { end = new.addingTimeInterval(len) }
+            .onChange(of: start) { _, new in
+                // 開始を動かしたら、長さを保って終了も動かす。
+                // 長さは「前回そろえた開始」から測る（読み込み直後に初期値の現在時刻から測ると、終了がずれるため）
+                if let prev = lastStart {
+                    let len = end.timeIntervalSince(prev)
+                    if len > 0 { end = new.addingTimeInterval(len) }
+                }
+                lastStart = new
             }
             .sensoryFeedback(.success, trigger: saved)
         }
@@ -197,6 +203,7 @@ struct EditorView: View {
     private func load() {
         guard !loaded else { return }
         loaded = true
+        defer { lastStart = start }
         kind = seed.kind
         let now = model.now
         let base = seed.start ?? (((now / (15 * MINUTE)) + 1) * 15 * MINUTE)

@@ -24,8 +24,11 @@ struct SettingsView: View {
         }
     }
 
+    /// その他タブの中に入れるとき（ナビゲーションと「完了」は外側に任せる）
+    var embedded = false
+
     var body: some View {
-        NavigationStack {
+        OptionalNavigationStack(embedded: embedded) {
             Form {
                 Section("表示") {
                     Picker("外観", selection: Binding(get: { model.settings.theme }, set: { v in model.updateSettings { $0.theme = v } })) {
@@ -91,7 +94,9 @@ struct SettingsView: View {
             }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
+            .toolbar {
+                if !embedded { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 switch result {
                 case .success(let url): read(url)
