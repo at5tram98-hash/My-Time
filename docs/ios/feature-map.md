@@ -11,7 +11,14 @@
 | 今日：状況チップ（未割当・今日のタスク・余白） | features/home | `StatusChip` | ✅ |
 | 今日：左右レーン（予定／タスク）と幅の切り替え | features/home | `DayTimeline(mainFraction:)` | ✅ |
 | 赤い現在線・現在時刻へスクロール | timeline | `DayTimeline` | ✅ |
-| 長押し→上下で15分刻みの移動・取り消し | timeline | `TimelineBlock` | ✅（繰り返しの1回だけの移動は ⏳） |
+| 長押し→上下で15分刻みの移動・取り消し・重なりの赤枠 | timeline | `TimelineBlock` | ✅ |
+| 空白の長押し→なぞって範囲を選ぶ→作成画面（左＝予定・右＝タスク） | timeline | `DayTimeline.emptyArea` | ✅ |
+| 上端・下端の長押し→伸縮（15分刻み・最短15分） | timeline | `TimelineBlock.handle` | ✅（`resizeEvent` / `resizeTask` は 🧪） |
+| 動かさない長押し→操作メニュー（開く・編集・複製・削除） | timeline | `DayTimeline.menuButtons` | ✅ |
+| 繰り返し予定の「この回のみ」移動・伸縮 | timeline / recurrence | `editOccurrence` | ✅（🧪。「これ以降すべて」は ⏳） |
+| 作業枠（日時付きサブタスク）を右のレーンに表示 | timeline | `DayTimeline.makeBlocks` | ✅ |
+| ドラッグ中に上端・下端へ運ぶと自動でスクロール | timeline | — | ⏳ |
+| タスクの行を長押し→横にずらして実績を記録（100%で完了の確認） | home / tasks | `TaskRow.scrubGesture` | ✅ |
 | 横スワイプで日付変更・日付選択 | home | `TodayView` | ✅ |
 | ピンチで時間の間隔を拡大縮小 | timeline | `MagnifyGesture` | ✅ |
 | タスク詳細：開始・停止・再開・完了・取り消し | tasks | `TaskDetailView` | ✅（状態遷移は 🧪） |

@@ -109,6 +109,43 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(expandEvent(repo.event(e.id)!, from: now, to: tokyo.addDays(now, 21), time: tokyo).count, 2)
     }
 
+    func testMoveOnlyThisOccurrenceKeepsOthers() throws {
+        var e = MTEvent.make(title: "ゼミ", calendarId: "cal-class", start: now, end: now + HOUR, now: now)
+        e.recurrence = RecurrenceRule(freq: .weekly, interval: 1)
+        try repo.saveEvent(e, isNew: true)
+        let before = expandEvent(repo.event(e.id)!, from: now, to: tokyo.addDays(now, 21), time: tokyo)
+        let target = before[1]
+        try repo.editOccurrence(masterId: e.id, originalStart: target.originalStart!, start: target.start + 30 * MINUTE, end: target.end + 30 * MINUTE)
+        let after = expandEvent(repo.event(e.id)!, from: now, to: tokyo.addDays(now, 21), time: tokyo)
+        XCTAssertEqual(after.count, 3)
+        XCTAssertEqual(after[0].start, before[0].start)
+        XCTAssertEqual(after[1].start, target.start + 30 * MINUTE)
+        XCTAssertEqual(after[1].id, target.id, "回の ID（元の開始時刻）は変わらない")
+        XCTAssertEqual(after[2].start, before[2].start)
+        XCTAssertEqual(repo.event(e.id)?.start, now, "元の予定は変えない")
+        // 2回目の変更は同じ例外を更新する（増えない）
+        try repo.editOccurrence(masterId: e.id, originalStart: target.originalStart!, start: target.start + HOUR, end: target.end + HOUR)
+        XCTAssertEqual(repo.event(e.id)?.exceptions.count, 1)
+        XCTAssertEqual(repo.event(e.id)?.json["exceptions"]?.arrayValue?.first?["kind"]?.stringValue, "override")
+        XCTAssertEqual(store.logs().last?["action"]?.stringValue, "occurrence-edit")
+    }
+
+    func testResizeChangesOnlyTheGrabbedEdge() throws {
+        let e = MTEvent.make(title: "面談", calendarId: "cal-general", start: now, end: now + HOUR, now: now)
+        try repo.saveEvent(e, isNew: true)
+        try repo.resizeEvent(e.id, start: now, end: now + 105 * MINUTE)
+        XCTAssertEqual(repo.event(e.id)?.start, now)
+        XCTAssertEqual(repo.event(e.id)?.end, now + 105 * MINUTE)
+        XCTAssertThrowsError(try repo.resizeEvent(e.id, start: now + HOUR, end: now + HOUR))
+        XCTAssertEqual(repo.event(e.id)?.end, now + 105 * MINUTE, "失敗したら変えない")
+        var t = MTTask.make(title: "課題", now: now)
+        t.plannedStart = now; t.plannedEnd = now + HOUR
+        try repo.saveTask(t, isNew: true)
+        try repo.resizeTask(t.id, start: now - 15 * MINUTE, end: now + HOUR)
+        XCTAssertEqual(repo.task(t.id)?.plannedStart, now - 15 * MINUTE)
+        XCTAssertEqual(store.logs().last?["action"]?.stringValue, "resize")
+    }
+
     func testMoveKeepsLength() throws {
         let e = MTEvent.make(title: "面談", calendarId: "cal-general", start: now, end: now + 90 * MINUTE, now: now)
         try repo.saveEvent(e, isNew: true)

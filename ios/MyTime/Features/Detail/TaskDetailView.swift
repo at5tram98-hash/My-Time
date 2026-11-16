@@ -213,8 +213,18 @@ struct TaskRow: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @State private var feedback = 0
+    /// 長押し→横にずらして実績を記録している途中の値（Web 版と同じ。理想の進みから始める）
+    @State private var scrub: Double?
+    @State private var scrubBase: Double = 0
+    @State private var rowWidth: CGFloat = 300
+    @State private var step = 0
+    @State private var picked = 0
+    @State private var confirmComplete = false
+
+    private var canScrub: Bool { canScrubProgress(task, subtasks: model.subtasks(of: task.id)) }
 
     var body: some View {
+        let actual = actualProgress(task, subtasks: model.subtasks(of: task.id)).value
         HStack(spacing: 12) {
             if task.kind == .check {
                 Button {
@@ -226,7 +236,7 @@ struct TaskRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(task.checked ? "未確認に戻す" : "確認した")
             } else {
-                ProgressRing(value: actualProgress(task, subtasks: model.subtasks(of: task.id)).value, ideal: nil, symbol: IconMap.symbol(task.icon), size: 32, running: task.status == .running, done: task.isDone)
+                ProgressRing(value: scrub ?? actual, ideal: nil, symbol: IconMap.symbol(task.icon), size: 32, running: task.status == .running, done: task.isDone)
             }
             Button { router.open(.task(task.id)) } label: {
                 VStack(alignment: .leading, spacing: 2) {
@@ -234,7 +244,11 @@ struct TaskRow: View {
                         if task.flagged { Image(systemName: "flag.fill").foregroundStyle(.orange).imageScale(.small) }
                         Text(task.title).strikethrough(task.isDone).foregroundStyle(task.isDone ? .secondary : .primary).lineLimit(2)
                     }
-                    if let sub = subtitle { Text(sub).font(.caption).foregroundStyle(.secondary).monospacedDigit() }
+                    if let v = scrub {
+                        Text("実績 \(Int((v * 100).rounded()))%（離すと記録）").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor).monospacedDigit()
+                    } else if let sub = subtitle {
+                        Text(sub).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -242,8 +256,64 @@ struct TaskRow: View {
             .buttonStyle(.plain)
             if let spec = task.specType { SpecBadge(type: spec, isEvent: false, size: 22) }
         }
+        .background(alignment: .leading) {
+            GeometryReader { g in
+                Capsule().fill(Color.accentColor.opacity(0.14))
+                    .frame(width: max(0, g.size.width * CGFloat(scrub ?? 0)))
+                    .opacity(scrub == nil ? 0 : 1)
+                    .onAppear { rowWidth = max(120, g.size.width) }
+                    .onChange(of: g.size.width) { _, w in rowWidth = max(120, w) }
+            }
+        }
+        .highPriorityGesture(scrubGesture, including: canScrub ? .all : .subviews)
         .sensoryFeedback(.success, trigger: feedback)
+        .sensoryFeedback(.selection, trigger: step)
+        .sensoryFeedback(.impact(weight: .medium), trigger: picked)
+        .alert("完了にしますか？", isPresented: $confirmComplete) {
+            Button("完了にする") {
+                feedback += 1
+                model.perform("完了しました", undo: { try model.repo.taskAction(task.id, .undoFinish) }) {
+                    try model.repo.recordProgress(task.id, value: 1)
+                    try model.repo.completeFromProgress(task.id)
+                }
+                scrub = nil
+            }
+            Button("キャンセル", role: .cancel) { scrub = nil }
+        } message: {
+            Text("実績を100%にしました。")
+        }
         .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "実績を10%進める") { if canScrub { record(min(1, (actual ?? 0) + 0.1)) } }
+        .accessibilityAction(named: "実績を10%戻す") { if canScrub { record(max(0, (actual ?? 0) - 0.1)) } }
+    }
+
+    /// 長押し（0.35秒）→ 横にずらす。右で増え、左で減る。100%で離すと完了の確認
+    private var scrubGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                guard case .second(true, let d) = value else { return }
+                if scrub == nil {
+                    scrubBase = actualProgress(task, subtasks: model.subtasks(of: task.id)).value ?? idealProgress(task, now: model.now) ?? 0
+                    scrub = scrubBase
+                    picked += 1
+                }
+                let v = min(1, max(0, scrubBase + Double((d?.translation.width ?? 0) / rowWidth)))
+                let snapped = (v * 20).rounded() / 20
+                if Int(snapped * 20) != step { step = Int(snapped * 20) }
+                scrub = snapped
+            }
+            .onEnded { _ in
+                guard let v = scrub else { return }
+                if v >= 1 { confirmComplete = true; return }
+                if abs(v - scrubBase) < 0.001 { scrub = nil; return }
+                record(v)
+                scrub = nil
+            }
+    }
+
+    private func record(_ v: Double) {
+        model.perform("実績を\(Int((v * 100).rounded()))%にしました") { try model.repo.recordProgress(task.id, value: v) }
     }
 
     private var subtitle: String? {

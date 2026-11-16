@@ -210,6 +210,36 @@ public final class Repository {
         try store.transaction { store.put(.task, id: id, json: t.json); record(.task, id, op: "put", action: "move", detail: ["from": s.json, "to": newStart.json, "snapshot": prev]) }
     }
 
+    /// 上端・下端をつかんだ伸縮（呼び出し側で15分刻みにそろえる）
+    public func resizeEvent(_ id: String, start: EpochMs, end: EpochMs) throws {
+        guard var e = event(id) else { throw RepositoryError("予定が見つかりません") }
+        guard end > start else { throw RepositoryError("終了は開始より後にしてください") }
+        let prev = e.json
+        e.start = start; e.end = end; e.updatedAt = clock()
+        try store.transaction { store.put(.event, id: id, json: e.json); record(.event, id, op: "put", action: "resize", detail: ["from": .object(["start": prev["start"] ?? .null, "end": prev["end"] ?? .null]), "to": .object(["start": start.json, "end": end.json]), "snapshot": prev]) }
+    }
+
+    public func resizeTask(_ id: String, start: EpochMs, end: EpochMs) throws {
+        guard var t = task(id), t.plannedStart != nil else { throw RepositoryError("予定時刻がありません") }
+        guard end > start else { throw RepositoryError("終了は開始より後にしてください") }
+        let prev = t.json
+        t.plannedStart = start; t.plannedEnd = end; t.updatedAt = clock()
+        try store.transaction { store.put(.task, id: id, json: t.json); record(.task, id, op: "put", action: "resize", detail: ["from": .object(["start": prev["plannedStart"] ?? .null, "end": prev["plannedEnd"] ?? .null]), "to": .object(["start": start.json, "end": end.json]), "snapshot": prev]) }
+    }
+
+    /// 繰り返しの「この回のみ」の時刻変更（Web 版 editThisOccurrence と同じ：override の例外。ほかの回・元の予定は変えない）
+    public func editOccurrence(masterId: String, originalStart: EpochMs, start: EpochMs, end: EpochMs) throws {
+        guard var m = event(masterId), m.recurrence != nil else { throw RepositoryError("予定が見つかりません") }
+        guard end > start else { throw RepositoryError("終了は開始より後にしてください") }
+        let prevOverride = m.exceptions.first { $0.originalStart == originalStart && $0.kind == .override }
+        var x = prevOverride ?? RecurrenceException(originalStart: originalStart, kind: .override)
+        x.kind = .override; x.start = start; x.end = end
+        m.exceptions.removeAll { $0.originalStart == originalStart }
+        m.exceptions.append(x)
+        m.updatedAt = clock()
+        try store.transaction { store.put(.event, id: masterId, json: m.json); record(.event, masterId, op: "put", action: "occurrence-edit", detail: ["originalStart": originalStart.json]) }
+    }
+
     public func deleteEvent(_ id: String) throws {
         try store.transaction {
             let prev = store.get(.event, id: id)
