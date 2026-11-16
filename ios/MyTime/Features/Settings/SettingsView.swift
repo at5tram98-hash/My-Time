@@ -30,12 +30,13 @@ struct SettingsView: View {
     var body: some View {
         OptionalNavigationStack(embedded: embedded) {
             Form {
-                Section("表示") {
+                if !embedded { Section("表示") {
                     Picker("外観", selection: Binding(get: { model.settings.theme }, set: { v in model.updateSettings { $0.theme = v } })) {
                         Text("システムに合わせる").tag("system")
                         Text("ライト").tag("light")
                         Text("ダーク").tag("dark")
                     }
+                }
                 }
                 Section {
                     Button("移行ファイルを書き出す", systemImage: "square.and.arrow.up") {
@@ -122,7 +123,7 @@ struct SettingsView: View {
             guard let text = String(data: data, encoding: .utf8) else { throw DeviceTransfer.TransferError("文字コードが UTF-8 ではありません") }
             pending = try DeviceTransfer.read(text)
         } catch {
-            model.errorMessage = (error as? CustomStringConvertible)?.description ?? error.localizedDescription
+            model.errorMessage = String(describing: error)
         }
     }
 }
@@ -138,6 +139,8 @@ struct ImportConfirmView: View {
     var onClose: () -> Void
     @Environment(AppModel.self) private var model
     @State private var done = 0
+    /// 読み込んだ結果（件数）を知らせる
+    @State private var result: Int?
 
     var body: some View {
         NavigationStack {
@@ -157,8 +160,7 @@ struct ImportConfirmView: View {
                         let ok = model.perform { added = try DeviceTransfer.importAddOnly(f, into: model.repo.store, now: model.now, newId: model.repo.newId) }
                         if ok {
                             done += 1
-                            model.errorMessage = nil
-                            onClose()
+                            result = added
                         }
                     }
                 } footer: {
@@ -169,6 +171,11 @@ struct ImportConfirmView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル", action: onClose) } }
             .sensoryFeedback(.success, trigger: done)
+            .alert(result == 0 ? "すでに読み込み済みです" : "読み込みました", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil; onClose() } })) {
+                Button("OK") { result = nil; onClose() }
+            } message: {
+                Text(result == 0 ? "新しく追加するデータはありませんでした（変更なし）。" : "\(result ?? 0)件を追加しました。")
+            }
         }
     }
 }

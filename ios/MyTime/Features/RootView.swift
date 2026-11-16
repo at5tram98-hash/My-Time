@@ -68,7 +68,7 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $router.tab) {
             TodayView()
-                .tabItem { Label("今日", systemImage: "rectangle.split.2x1") }
+                .tabItem { Label("今日", systemImage: "house.fill") }
                 .tag(AppTab.today)
             CalendarScreen()
                 .tabItem { Label("カレンダー", systemImage: "calendar") }

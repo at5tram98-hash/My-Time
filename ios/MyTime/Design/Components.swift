@@ -122,3 +122,71 @@ struct ToastView: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// 右へスライドして決める操作（承認など、取り消しにくい操作の誤タップを防ぐ）。
+/// 端まで運ぶと実行。途中で離すと戻る。VoiceOver ではボタンとして実行できる
+struct SlideToConfirm: View {
+    var title: String
+    var symbol: String = "chevron.right.2"
+    var tint: Color = .green
+    var enabled = true
+    var action: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var done = false
+    @State private var tick = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let knob: CGFloat = 52
+
+    var body: some View {
+        GeometryReader { geo in
+            let maxX = max(0, geo.size.width - knob - 8)
+            let progress = maxX > 0 ? offset / maxX : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(enabled ? AnyShapeStyle(tint.opacity(0.18)) : AnyShapeStyle(Color.gray.opacity(0.18)))
+                // 進んだ分だけ色が満ちる
+                Capsule().fill(tint.gradient)
+                    .frame(width: knob + 8 + offset)
+                    .opacity(enabled ? 1 : 0)
+                Text(done ? "承認しました" : title)
+                    .font(.headline)
+                    .foregroundStyle(enabled ? tint : .secondary)
+                    .opacity(done ? 1 : 1 - Double(progress) * 1.4)
+                    .frame(maxWidth: .infinity)
+                    .padding(.leading, knob)
+                Circle().fill(.white)
+                    .frame(width: knob, height: knob)
+                    .overlay(Image(systemName: done ? "checkmark" : symbol).font(.title3.weight(.bold)).foregroundStyle(enabled ? tint : .gray))
+                    .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                    .offset(x: 4 + offset)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                guard enabled, !done else { return }
+                                let x = min(maxX, max(0, v.translation.width))
+                                if Int(x / 24) != Int(offset / 24) { tick += 1 }
+                                offset = x
+                            }
+                            .onEnded { _ in
+                                guard enabled, !done else { return }
+                                if offset > maxX * 0.88 {
+                                    withAnimation(reduceMotion ? nil : .snappy) { offset = maxX; done = true }
+                                    action()
+                                    Task { try? await Task.sleep(for: .seconds(1.2)); withAnimation { done = false; offset = 0 } }
+                                } else {
+                                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.7)) { offset = 0 }
+                                }
+                            }
+                    )
+            }
+        }
+        .frame(height: knob + 8)
+        .sensoryFeedback(.selection, trigger: tick)
+        .sensoryFeedback(.success, trigger: done)
+        .accessibilityElement()
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("右へスライドすると実行します")
+        .accessibilityAction { if enabled { action() } }
+    }
+}

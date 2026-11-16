@@ -8,7 +8,6 @@ struct DayPlanView: View {
     @Environment(AppModel.self) private var model
     @State private var day: EpochMs = 0
     @State private var editing: PlanItem?
-    @State private var confirmApprove = false
     @State private var approvedFeedback = 0
 
     var body: some View {
@@ -31,8 +30,17 @@ struct DayPlanView: View {
             .padding(.bottom, 8)
             Divider()
 
+            HStack(spacing: 0) {
+                Color.clear.frame(width: PlanBoard.gutter, height: 1)
+                Label("予定 \(plan.items.filter { $0.kind == .event }.count)", systemImage: "calendar").frame(maxWidth: .infinity, alignment: .leading)
+                Label("タスク \(plan.items.filter { $0.kind == .task }.count)", systemImage: "checklist").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            .frame(height: 22)
+            .padding(.vertical, 4).padding(.horizontal, 4)
+            Divider()
             PlanBoard(day: day, plan: plan, editable: !plan.isApproved,
-                      onCreate: { s, e in editing = PlanItem(id: model.repo.newId(), kind: .task, title: "", start: s, end: e) },
+                      onCreate: { kind, s, e in editing = PlanItem(id: model.repo.newId(), kind: kind, title: "", start: s, end: e, calendarId: kind == .event ? model.calendars.first?.id : nil) },
                       onTap: { editing = $0 },
                       onChange: { item in update(plan) { p in if let i = p.items.firstIndex(where: { $0.id == item.id }) { p.items[i] = item } } })
         }
@@ -56,14 +64,6 @@ struct DayPlanView: View {
             }
             .environment(model)
         }
-        .alert("この計画を承認しますか？", isPresented: $confirmApprove) {
-            Button("承認して予定にする") {
-                if model.approveDayPlan(day) > 0 { approvedFeedback += 1 }
-            }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("\(model.dayTitle(day))に、予定\(plan.items.filter { $0.kind == .event }.count)件・タスク\(plan.items.filter { $0.kind == .task }.count)件を入れます。計画はその日の今日の画面に灰色の「計画」として残ります。")
-        }
         .sensoryFeedback(.success, trigger: approvedFeedback)
     }
 
@@ -73,16 +73,11 @@ struct DayPlanView: View {
                 Label("承認済み。予定・タスクは今日の画面で動かせます", systemImage: "checkmark.seal.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.green)
             } else {
-                Button { confirmApprove = true } label: {
-                    Label(plan.items.isEmpty ? "計画を入れると承認できます" : "承認して予定にする（\(plan.items.count)件）", systemImage: "checkmark.seal")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .foregroundStyle(.white)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(plan.items.isEmpty ? AnyShapeStyle(Color.gray.opacity(0.4)) : AnyShapeStyle(Color.green.gradient)))
+                SlideToConfirm(title: plan.items.isEmpty ? "計画を入れると承認できます" : "スライドして承認（\(plan.items.count)件）",
+                               symbol: "checkmark.seal.fill", tint: .green, enabled: !plan.items.isEmpty) {
+                    if model.approveDayPlan(day) > 0 { approvedFeedback += 1 }
                 }
-                .buttonStyle(PressableStyle())
-                .disabled(plan.items.isEmpty)
-                Text("空いている所を長押ししてなぞると追加、計画を長押しして上下になぞると移動").font(.caption2).foregroundStyle(.secondary)
+                Text("左の予定・右のタスクの空いている所を長押ししてなぞると追加。承認すると本当の予定・タスクになります").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
         }
         .padding(.horizontal)
@@ -111,13 +106,13 @@ struct PlanBoard: View {
     var day: EpochMs
     var plan: DayPlan
     var editable: Bool
-    var onCreate: (EpochMs, EpochMs) -> Void
+    var onCreate: (PlanItem.Kind, EpochMs, EpochMs) -> Void
     var onTap: (PlanItem) -> Void
     var onChange: (PlanItem) -> Void
 
     @Environment(AppModel.self) private var model
     @State private var hourHeight: CGFloat = 56
-    @State private var creating: (lo: Int, hi: Int)?
+    @State private var creating: (lane: Int, lo: Int, hi: Int)?
     @State private var createTick = 0
     static let gutter: CGFloat = 46
     static let snap = 15
@@ -128,10 +123,12 @@ struct PlanBoard: View {
                 ZStack(alignment: .topLeading) {
                     grid
                     GeometryReader { geo in
-                        let w = geo.size.width - Self.gutter - 8
+                        let w = geo.size.width - Self.gutter - 4
+                        let lw = w / 2
                         ZStack(alignment: .topLeading) {
                             emptyArea(width: w)
-                            // その日にすでにある本当の予定（うすく。重ならないよう見ながら計画できる）
+                            Rectangle().fill(Color(.separator)).frame(width: 0.5, height: hourHeight * 24).offset(x: Self.gutter + lw).allowsHitTesting(false)
+                            // その日にすでにある本当の予定（左のレーンに点線で）
                             ForEach(existing, id: \.id) { o in
                                 let top = y(o.start), h = max(16, y(o.end) - y(o.start))
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -140,24 +137,28 @@ struct PlanBoard: View {
                                     .overlay(alignment: .topLeading) {
                                         Text(o.title).font(.caption2).foregroundStyle(.secondary).padding(4).lineLimit(1)
                                     }
-                                    .frame(width: w, height: h)
-                                    .offset(x: Self.gutter, y: top)
+                                    .frame(width: lw - 4, height: h)
+                                    .offset(x: Self.gutter + 2, y: top)
                                     .allowsHitTesting(false)
                             }
-                            ForEach(plan.items) { item in
-                                PlanBlock(item: item, hourHeight: hourHeight, editable: editable, onTap: { onTap(item) }, onChange: onChange)
-                                    .frame(width: w * 0.86, height: max(22, y(item.end) - y(item.start) - 2))
-                                    .offset(x: Self.gutter + w * 0.14, y: y(item.start) + 1)
+                            ForEach(placed) { p in
+                                PlanBlock(item: p.item, hourHeight: hourHeight, editable: editable, onTap: { onTap(p.item) }, onChange: onChange)
+                                    .frame(width: max(20, (lw - 4) / CGFloat(p.columns) - 2), height: max(22, y(p.item.end) - y(p.item.start) - 2))
+                                    .offset(x: Self.gutter + (p.item.kind == .event ? 0 : lw) + 2 + (lw - 4) / CGFloat(p.columns) * CGFloat(p.column), y: y(p.item.start) + 1)
                             }
                             if let c = creating {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(Color.accentColor.opacity(0.18))
                                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
                                     .overlay(alignment: .topLeading) {
-                                        Text("\(hm(c.lo))〜\(hm(c.hi))").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor).padding(6)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(c.lane == 0 ? "予定" : "タスク").font(.caption2.weight(.bold))
+                                            Text("\(hm(c.lo))〜\(hm(c.hi))").font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundStyle(Color.accentColor).padding(6)
                                     }
-                                    .frame(width: w * 0.86, height: CGFloat(c.hi - c.lo) / 60 * hourHeight)
-                                    .offset(x: Self.gutter + w * 0.14, y: CGFloat(c.lo) / 60 * hourHeight)
+                                    .frame(width: lw - 4, height: CGFloat(c.hi - c.lo) / 60 * hourHeight)
+                                    .offset(x: Self.gutter + CGFloat(c.lane) * lw + 2, y: CGFloat(c.lo) / 60 * hourHeight)
                                     .allowsHitTesting(false)
                             }
                         }
@@ -165,9 +166,27 @@ struct PlanBoard: View {
                 }
                 .frame(height: hourHeight * 24 + 8)
             }
-            .onAppear { proxy.scrollTo("h7", anchor: .top) }
+            // 計画の最初（なければ7時）へ。表示が整ってから動かす
+            .task(id: day) {
+                try? await Task.sleep(for: .milliseconds(150))
+                let first = plan.items.map(\.start).min().map { Int(($0 - day) / HOUR) } ?? 8
+                proxy.scrollTo("h\(max(0, min(23, first - 1)))", anchor: .top)
+            }
             .sensoryFeedback(.impact(weight: .medium), trigger: createTick)
         }
+    }
+
+    struct Placed: Identifiable { var id: String { item.id }; var item: PlanItem; var column: Int; var columns: Int }
+
+    /// レーンごとに、重なる計画を横に並べる
+    private var placed: [Placed] {
+        var out: [Placed] = []
+        for kind in [PlanItem.Kind.event, .task] {
+            let list = plan.items.filter { $0.kind == kind }
+            let lay = Dictionary(layoutDay(list.map { TimedItem(id: $0.id, start: $0.start, end: $0.end) }, day: day, time: model.time).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            for it in list { let p = lay[it.id]; out.append(Placed(item: it, column: p?.column ?? 0, columns: max(1, p?.columns ?? 1))) }
+        }
+        return out
     }
 
     private var existing: [EventOccurrence] {
@@ -202,25 +221,28 @@ struct PlanBoard: View {
                     .sequenced(before: DragGesture(minimumDistance: 0))
                     .onChanged { v in
                         guard editable, case .second(true, let d?) = v else { return }
+                        let lane = d.startLocation.x >= Self.gutter + width / 2 ? 1 : 0
                         let anchor = Int(d.startLocation.y / hourHeight * 60) / Self.snap * Self.snap
                         // すでに計画がある時刻では作らない（計画の移動と取り合わない）
                         let at = day + EpochMs(anchor) * MINUTE
-                        if creating == nil, plan.items.contains(where: { $0.start <= at && at < $0.end }) { return }
+                        let laneKind: PlanItem.Kind = lane == 0 ? .event : .task
+                        if creating == nil, plan.items.contains(where: { $0.kind == laneKind && $0.start <= at && at < $0.end }) { return }
                         let cur = Int((d.location.y / hourHeight * 60 / CGFloat(Self.snap)).rounded()) * Self.snap
                         let moved = abs(d.translation.height) > 6
                         let end = !moved ? anchor + 60 : max(cur, anchor + Self.snap)
                         if creating == nil { createTick += 1 }
-                        withAnimation(.interactiveSpring()) { creating = (max(0, min(anchor, end)), min(24 * 60, max(anchor, end))) }
+                        withAnimation(.interactiveSpring()) { creating = (creating?.lane ?? lane, max(0, min(anchor, end)), min(24 * 60, max(anchor, end))) }
                     }
                     .onEnded { _ in
                         guard let c = creating else { return }
                         creating = nil
-                        onCreate(day + EpochMs(c.lo) * MINUTE, day + EpochMs(c.hi) * MINUTE)
+                        onCreate(c.lane == 0 ? .event : .task, day + EpochMs(c.lo) * MINUTE, day + EpochMs(c.hi) * MINUTE)
                     }
             )
             .accessibilityElement()
             .accessibilityLabel("計画の時刻軸")
-            .accessibilityAction(named: "計画を追加") { if editable { onCreate(day + 9 * HOUR, day + 10 * HOUR) } }
+            .accessibilityAction(named: "タスクの計画を追加") { if editable { onCreate(.task, day + 9 * HOUR, day + 10 * HOUR) } }
+            .accessibilityAction(named: "予定の計画を追加") { if editable { onCreate(.event, day + 9 * HOUR, day + 10 * HOUR) } }
     }
 }
 

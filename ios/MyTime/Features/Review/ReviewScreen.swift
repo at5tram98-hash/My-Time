@@ -80,7 +80,7 @@ struct ReviewScreen: View {
                 }
             }
             .navigationTitle("振り返り")
-            .toolbar { MainToolbar() }
+            .toolbar { if !embedded { MainToolbar() } }
         }
     }
 
