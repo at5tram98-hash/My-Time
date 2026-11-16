@@ -21,8 +21,12 @@ struct DayTimeline: View {
     var events: [EventOccurrence]
     var tasks: [MTTask]
     var mainFraction: CGFloat?
-    /// 翌日計画のレーン（右端・灰色）の幅の割合。nil なら出さない
+    /// 計画のレーン（右端・灰色）の幅の割合。nil なら出さない
     var tomorrowFraction: CGFloat? = nil
+    /// 計画のレーンの空白を長押し→その時間で計画を作る
+    var onPlanCreate: ((EpochMs, EpochMs) -> Void)? = nil
+    /// 計画をタップ
+    var onPlanTap: ((String) -> Void)? = nil
 
     @State private var hourHeight: CGFloat = 56
     @State private var pinchBase: CGFloat?
@@ -230,9 +234,9 @@ struct DayTimeline: View {
                         let d0 = model.time.startOfDay(day)
                         let s = d0 + EpochMs(c.lo) * MINUTE, e = d0 + EpochMs(c.hi) * MINUTE
                         let kind: EditorSeed.Kind = (mainFraction != nil && c.lane == 1) || c.lane == 2 ? .task : .event
-                        // 翌日計画のレーンでは、明日の同じ時刻に入れる
-                        let shift = c.lane == 2 ? model.time.addDays(s, 1) - s : 0
-                        router.open(.editor(EditorSeed(kind: kind, start: s + shift, end: e + shift)))
+                        // 計画のレーンでは、この日の計画（下書き）に入れる
+                        if c.lane == 2 { onPlanCreate?(s, e); return }
+                        router.open(.editor(EditorSeed(kind: kind, start: s, end: e)))
                     }
             )
             .accessibilityElement()
@@ -250,7 +254,7 @@ struct DayTimeline: View {
         let isTask = (mainFraction != nil && c.lane == 1) || c.lane == 2
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return VStack(alignment: .leading, spacing: 1) {
-            Text(c.lane == 2 ? "明日のタスク" : isTask ? "新しいタスク" : "新しい予定").font(.caption.weight(.semibold))
+            Text(c.lane == 2 ? "計画に追加" : isTask ? "新しいタスク" : "新しい予定").font(.caption.weight(.semibold))
             Text("\(model.hm(d0 + EpochMs(c.lo) * MINUTE))〜\(model.hm(d0 + EpochMs(c.hi) * MINUTE))").font(.caption2).monospacedDigit()
         }
         .foregroundStyle(Color.accentColor)
@@ -304,25 +308,14 @@ struct DayTimeline: View {
                 Block(id: id, kind: .session, refId: parent.id, title: "\(parent.title)・\(s.title)", start: st, end: en, plannedEnd: en, color: .accentColor, symbol: "square.stack", lane: taskLane, placed: p, faded: s.done || parent.status == .done, running: false)
             })
         }
-        // 翌日計画：明日の予定とタスクを、今日の同じ時刻の位置に灰色で並べる
+        // 計画：前の日に立てたこの日の計画（承認済みなら承認した時点のまま）を灰色で並べる
         var tomorrowDrafts: [Draft] = []
-        if tomorrowFraction != nil {
-            let d2 = model.time.addDays(d1, 1)
-            let back = d1 - d0
-            for e in model.visibleEvents(from: d1, to: d2) where !e.event.allDay && e.start < d2 && e.end > d1 {
-                let s = max(e.start, d1) - back, en = min(e.end, d2) - back
-                let id = "tomorrow-event:\(e.id)"
+        if tomorrowFraction != nil, let plan = model.dayPlan(d0) {
+            for it in plan.items where it.start < d1 && it.end > d0 {
+                let id = "plan:\(it.id)"
+                let s = max(it.start, d0), en = min(it.end, d1)
                 tomorrowDrafts.append(Draft(item: TimedItem(id: id, start: s, end: en)) { p in
-                    Block(id: id, kind: .event, refId: e.id, title: e.title, start: s, end: en, plannedEnd: en, color: .gray, symbol: e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar", lane: 2, placed: p, faded: false, running: false, meta: self.eventMeta(e.event), tomorrow: true)
-                })
-            }
-            for t in tasks where !t.isDone {
-                let at = t.kind == .check ? t.checkAt : t.plannedStart
-                guard let a = at, a >= d1, a < d2 else { continue }
-                let en = t.kind == .check ? a + 15 * MINUTE : (t.plannedEnd ?? a + 30 * MINUTE)
-                let id = "tomorrow-task:\(t.id)"
-                tomorrowDrafts.append(Draft(item: TimedItem(id: id, start: a - back, end: min(en, d2) - back)) { p in
-                    Block(id: id, kind: t.kind == .check ? .check : .task, refId: t.id, title: t.title, start: a - back, end: min(en, d2) - back, plannedEnd: min(en, d2) - back, color: .gray, symbol: t.kind == .check ? "circle" : IconMap.symbol(t.icon), lane: 2, placed: p, faded: false, running: false, meta: self.taskMeta(t), tomorrow: true)
+                    Block(id: id, kind: it.kind == .event ? .event : .task, refId: it.id, title: it.title.isEmpty ? "（無題）" : it.title, start: s, end: en, plannedEnd: en, color: .gray, symbol: it.kind == .event ? "calendar" : "checklist", lane: 2, placed: p, faded: false, running: false, tomorrow: true)
                 })
             }
         }
@@ -375,6 +368,7 @@ struct DayTimeline: View {
     // MARK: 操作
 
     private func open(_ b: Block) {
+        if b.tomorrow { onPlanTap?(b.refId); return }
         switch b.kind {
         case .event: router.open(.event(b.refId))
         case .task, .check, .session: router.open(.task(b.refId))
@@ -612,7 +606,7 @@ struct TimelineBlock: View {
 
     /// 状態が一目で分かる印（実行中・遅れ・完了・確認）
     private var statusSymbol: String {
-        if block.tomorrow { return "moon.stars" }
+        if block.tomorrow { return "list.clipboard" }
         switch block.kind {
         case .event: return block.symbol
         case .check: return block.faded ? "checkmark.circle.fill" : "circle"
@@ -633,7 +627,7 @@ struct TimelineBlock: View {
         case .check: kind = "確認"
         case .session: kind = "作業枠"
         }
-        return (block.tomorrow ? "明日の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + block.meta.map { "、\($0.text)" }.joined()
+        return (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + block.meta.map { "、\($0.text)" }.joined()
     }
 
     /// 上端・下端のつかむ所（見た目は細い線、触れる範囲は高さ12）

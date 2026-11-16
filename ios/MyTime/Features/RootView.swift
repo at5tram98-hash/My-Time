@@ -5,7 +5,7 @@ import MyTimeCore
 enum AppTab: Hashable { case today, calendar, tasks, more }
 
 /// その他タブの中で開く画面
-enum MoreRoute: Hashable { case review, settings }
+enum MoreRoute: Hashable { case review, settings, dayPlan }
 
 /// 開くシート（下から出る画面）
 enum SheetRoute: Identifiable, Hashable {

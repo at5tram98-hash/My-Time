@@ -51,7 +51,9 @@ struct MoreScreen: View {
                 }
 
                 Section("計画") {
-                    NavigationLink { TomorrowPlanView() } label: { row("翌日の計画", "moon.stars.fill", .indigo, "明日の予定とタスクを先に入れる") }
+                    NavigationLink(value: MoreRoute.dayPlan) {
+                        row("翌日の計画", "list.clipboard.fill", .indigo, tomorrowPlanSummary)
+                    }
                 }
 
                 Section("カスタマイズ") {
@@ -96,6 +98,7 @@ struct MoreScreen: View {
                 switch r {
                 case .review: ReviewScreen(embedded: true)
                 case .settings: SettingsView(embedded: true)
+                case .dayPlan: DayPlanView()
                 }
             }
         }
@@ -193,6 +196,12 @@ struct MoreScreen: View {
                 model.errorMessage = "通知が許可されていません。iPhone の「設定 › 通知 › My Time」で許可してください。"
             }
         }
+    }
+
+    private var tomorrowPlanSummary: String {
+        let d1 = model.time.addDays(model.time.startOfDay(model.now), 1)
+        guard let p = model.dayPlan(d1) else { return "明日の計画を下書きして、承認で予定にする" }
+        return p.isApproved ? "明日の計画は承認済み（\(p.items.count)件）" : "下書き \(p.items.count)件・まだ承認していません"
     }
 
     private var initials: String {

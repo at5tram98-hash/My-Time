@@ -14,6 +14,8 @@ struct TodayView: View {
     @State private var direction: Edge = .trailing
     /// 翌日計画のレーン（右端・灰色）を出すか
     @AppStorage("today.showTomorrow") private var showTomorrow = true
+    @State private var editingPlan: PlanItem?
+    @State private var planNotice = false
 
     var body: some View {
         NavigationStack {
@@ -39,7 +41,7 @@ struct TodayView: View {
                         Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
                         Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
                         Divider()
-                        Toggle(isOn: $showTomorrow.animation(Motion.sheet)) { Label("翌日計画を表示", systemImage: "moon.stars") }
+                        Toggle(isOn: $showTomorrow.animation(Motion.sheet)) { Label("計画を表示", systemImage: "list.clipboard") }
                         Divider()
                         Picker("レーンの幅", selection: Binding(get: { model.settings.laneFocus }, set: { v in model.updateSettings { $0.laneFocus = v } })) {
                             Label("予定とタスクを同じ幅で", systemImage: "rectangle.split.2x1").tag("both")
@@ -51,6 +53,20 @@ struct TodayView: View {
                 }
                 MainToolbar()
             }
+            .sheet(item: $editingPlan) { item in
+                let plan = model.dayPlan(model.time.startOfDay(item.start)) ?? DayPlan()
+                PlanItemEditor(item: item, isNew: !plan.items.contains { $0.id == item.id }, locked: plan.isApproved) { result in
+                    var p = plan
+                    p.items.removeAll { $0.id == item.id }
+                    if let result { p.items.append(result) }
+                    p.items.sort { $0.start < $1.start }
+                    model.saveDayPlan(model.time.startOfDay(item.start), p.items.isEmpty && !p.isApproved ? nil : p)
+                }
+                .environment(model)
+            }
+            .alert("この日の計画は承認済みです", isPresented: $planNotice) {
+                Button("OK", role: .cancel) {}
+            } message: { Text("予定やタスクを足すときは、予定・タスクのレーンに入れてください。") }
             .sheet(isPresented: $showDatePicker) {
                 NavigationStack {
                     DatePicker("日付", selection: Binding(get: { model.time.date(day) }, set: { go(to: model.time.startOfDay(model.time.ms($0))); showDatePicker = false }), displayedComponents: .date)
@@ -82,9 +98,10 @@ struct TodayView: View {
         let dayEvents = occ.filter { $0.start < d1 && $0.end > day && !$0.event.allDay }
         let focus = model.settings.laneFocus
         let mainFraction: CGFloat = focus == "main" ? 0.68 : focus == "detail" ? 0.34 : 0.52
-        // 翌日計画は、今日（とそれより前）を見ているときだけ右端に出す
-        let tomorrowFraction: CGFloat? = showTomorrow && day <= model.time.startOfDay(now) ? 0.24 : nil
-        let tomorrowCount = tomorrowItemCount(after: day)
+        // 計画のレーン：その日の計画（前の日に立てたもの）。今日は承認した計画、先の日は下書きを入れられる
+        let tomorrowFraction: CGFloat? = showTomorrow ? 0.24 : nil
+        let plan = model.dayPlan(day)
+        let tomorrowCount = plan?.items.count ?? 0
 
         VStack(spacing: 8) {
             // 今日を見ているときだけ、状況に合わせたカード（何もなければ時計と明日の最初の予定）
@@ -107,7 +124,11 @@ struct TodayView: View {
                 }
             }
             laneHeader(mainFraction: mainFraction, tomorrowFraction: tomorrowFraction, events: dayEvents.count, tasks: dayTasks.count, tomorrow: tomorrowCount, focus: focus)
-            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: mainFraction, tomorrowFraction: tomorrowFraction)
+            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: mainFraction, tomorrowFraction: tomorrowFraction,
+                        onPlanCreate: { s, e in
+                            if plan?.isApproved == true { planNotice = true } else { editingPlan = PlanItem(id: model.repo.newId(), kind: .task, title: "", start: s, end: e) }
+                        },
+                        onPlanTap: { id in editingPlan = plan?.items.first { $0.id == id } })
                 .id(day)
                 .transition(reduceMotion ? .opacity : .push(from: direction))
                 .simultaneousGesture(
@@ -130,11 +151,11 @@ struct TodayView: View {
                 laneButton("予定", symbol: "calendar", count: events, on: focus == "main", width: w * mainFraction) { toggleFocus("main") }
                 laneButton("タスク", symbol: "checklist", count: tasks, on: focus == "detail", width: w * (1 - mainFraction)) { toggleFocus("detail") }
                 if let t = tomorrowFraction {
-                    // 翌日計画の見出し（タップで明日の画面へ）
-                    Button { go(to: model.time.addDays(model.time.startOfDay(model.now), 1)) } label: {
+                    // 計画の見出し（タップで翌日の計画を開く）
+                    Button { router.openMore(.dayPlan) } label: {
                         HStack(spacing: 3) {
-                            Image(systemName: "moon.stars").imageScale(.small)
-                            Text("明日").fontWeight(.semibold)
+                            Image(systemName: model.dayPlan(day)?.isApproved == true ? "checkmark.seal" : "list.clipboard").imageScale(.small)
+                            Text("計画").fontWeight(.semibold)
                             Text("\(tomorrow)").foregroundStyle(.tertiary).monospacedDigit()
                             Spacer(minLength: 0)
                         }
@@ -145,7 +166,7 @@ struct TodayView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("翌日計画 \(tomorrow)件。タップすると明日を表示します")
+                    .accessibilityLabel("計画 \(tomorrow)件。タップすると翌日の計画を開きます")
                 }
             }
         }
