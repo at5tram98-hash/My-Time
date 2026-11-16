@@ -175,6 +175,7 @@ struct AgendaList: View {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
                             if o.event.recurrence != nil { Image(systemName: "repeat").accessibilityLabel("繰り返し") }
+                            if isShiftPending(o.event) { PendingBadge() }
                         }
                         .font(.caption).foregroundStyle(.secondary)
                     }

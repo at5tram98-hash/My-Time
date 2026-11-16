@@ -121,6 +121,10 @@ struct EventDetailView: View {
                             .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
+                if isShiftPending(ev) {
+                    Label("調整中のシフト", systemImage: "hourglass").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.orange.opacity(0.14)))
+                }
                 if let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
                     Label(s.text, systemImage: s.symbol)
                         .font(.caption.weight(.semibold))
@@ -263,6 +267,12 @@ struct EventDetailView: View {
                 LabeledContent("通知", value: n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
             }
             if let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
+            if isShift(ev, model: model) {
+                Toggle(isOn: Binding(get: { isShiftPending(ev) }, set: { model.setShiftPending([ev.id], pending: $0) })) {
+                    Label("調整中", systemImage: "hourglass")
+                }
+                .tint(.orange)
+            }
             if ev.specType == .shift, let wage = ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue,
                let pay = shiftPay(start: start, end: end, hourlyWage: wage, breakMinutes: Int(ev.extra?["spec"]?["details"]?["breakMinutes"]?.intValue ?? 0)) {
                 LabeledContent("見込みの給与", value: yen(pay.pay))

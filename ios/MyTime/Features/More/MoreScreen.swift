@@ -56,6 +56,12 @@ struct MoreScreen: View {
                     }
                 }
 
+                Section("バイト") {
+                    NavigationLink { ShiftPendingView() } label: {
+                        row("シフトの調整中", "hourglass", .orange, pendingSummary)
+                    }
+                }
+
                 Section("カスタマイズ") {
                     NavigationLink { StudioListView() } label: {
                         row("Create Studio", "sparkles", .purple, model.studioTypes.isEmpty ? "自分専用の種類を作る" : "自分の種類 \(model.studioTypes.filter { $0.status != "hidden" }.count)個")
@@ -196,6 +202,11 @@ struct MoreScreen: View {
                 model.errorMessage = "通知が許可されていません。iPhone の「設定 › 通知 › My Time」で許可してください。"
             }
         }
+    }
+
+    private var pendingSummary: String {
+        let n = model.events.filter { isShiftPending($0) }.count
+        return n == 0 ? "カレンダーで日を選んでまとめて設定" : "調整中のシフト \(n)件"
     }
 
     private var tomorrowPlanSummary: String {

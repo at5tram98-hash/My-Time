@@ -79,8 +79,10 @@ struct DayTimeline: View {
         var tomorrow = false
         /// 遅れている（予定の終わりを過ぎても終わっていない）
         var late = false
+        /// シフトの調整中
+        var pending = false
         var movable: Bool { !tomorrow && (kind == .event || kind == .task) }
-        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late }
+        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late && a.pending == b.pending }
     }
 
     struct Meta: Equatable, Hashable {
@@ -282,7 +284,7 @@ struct DayTimeline: View {
             let symbol = e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar"
             let id = "event:\(e.id)"
             add(0, Draft(item: TimedItem(id: id, start: e.start, end: e.end)) { p in
-                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event))
+                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event), pending: isShiftPending(e.event))
             })
         }
         let byId = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -538,6 +540,7 @@ struct TimelineBlock: View {
                         .foregroundStyle(block.tomorrow ? Color.secondary : filled ? Color.white : block.running ? Color.green : block.late ? Color.red : block.color)
                     Text(block.title).lineLimit(h > 60 ? 2 : 1)
                         .strikethrough(block.faded && block.kind != .event)
+                    if block.pending { PendingBadge(compact: h < 40) }
                 }
                 .font(.caption.weight(.semibold))
                 if h > 30 || drag.active {
@@ -627,7 +630,7 @@ struct TimelineBlock: View {
         case .check: kind = "確認"
         case .session: kind = "作業枠"
         }
-        return (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + block.meta.map { "、\($0.text)" }.joined()
+        return (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + (block.pending ? "、調整中" : "") + block.meta.map { "、\($0.text)" }.joined()
     }
 
     /// 上端・下端のつかむ所（見た目は細い線、触れる範囲は高さ12）
