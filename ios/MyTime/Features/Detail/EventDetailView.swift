@@ -160,24 +160,26 @@ struct EventDetailView: View {
     // MARK: よく使う操作
 
     private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+        // ボタンはそれぞれ独立した形（同じ行の別のボタンが反応しないように）
         HStack(spacing: 10) {
             roundButton("編集", "pencil") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
             roundButton("複製", "plus.square.on.square") { duplicate(ev, start: start, end: end) }
-            Menu {
-                Button("15分後へ", systemImage: "goforward.15") { shift(ev, parsed: parsed, start: start, end: end, by: 15 * MINUTE) }
-                Button("1時間後へ", systemImage: "clock.arrow.circlepath") { shift(ev, parsed: parsed, start: start, end: end, by: HOUR) }
-                Button("明日へ", systemImage: "sunrise") { shift(ev, parsed: parsed, start: start, end: end, by: model.time.addDays(start, 1) - start) }
-                Button("来週へ", systemImage: "calendar.badge.plus") { shift(ev, parsed: parsed, start: start, end: end, by: model.time.addDays(start, 7) - start) }
-            } label: {
-                roundLabel("ずらす", "arrow.right.circle")
+            if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
+                roundButton("参加", "video.fill") { openURL(u) }
+            } else if let place = ev.placeName, !place.isEmpty {
+                roundButton("マップ", "map.fill") {
+                    let q = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    if let u = URL(string: "maps://?q=\(q)") { openURL(u) }
+                }
             }
             ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
+                .buttonStyle(PressableStyle())
         }
         .padding(.vertical, 2)
     }
 
     private func roundButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { roundLabel(title, symbol) }.buttonStyle(.plain)
+        Button(action: action) { roundLabel(title, symbol) }.buttonStyle(PressableStyle())
     }
 
     private func roundLabel(_ title: String, _ symbol: String) -> some View {
@@ -198,23 +200,6 @@ struct EventDetailView: View {
         copy.employerId = ev.employerId
         let id = copy.id
         if model.perform("複製しました（\(model.hm(copy.start))〜）", undo: { try model.repo.deleteEvent(id) }, { try model.repo.saveEvent(copy, isNew: true) }) { dismiss() }
-    }
-
-    /// 繰り返しの回は「この回のみ」を動かす（ほかの回は変わらない）
-    private func shift(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs, by delta: EpochMs) {
-        let snapshot = ev
-        let ns = start + delta, ne = end + delta
-        let msg = model.time.isSameDay(start, ns) ? "\(model.hm(ns))に移動しました" : "\(model.time.dayLabel(ns)) \(model.hm(ns))に移動しました"
-        if let p = parsed, ev.recurrence != nil {
-            _ = model.perform(msg, undo: { try model.repo.saveEvent(snapshot, isNew: false) }) {
-                try model.repo.editOccurrence(masterId: p.masterId, originalStart: p.originalStart, start: ns, end: ne)
-            }
-        } else {
-            var e = ev
-            e.start = ns; e.end = ne
-            _ = model.perform(msg, undo: { try model.repo.saveEvent(snapshot, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
-        }
-        dismiss()
     }
 
     private func shareText(_ ev: MTEvent, start: EpochMs, end: EpochMs) -> String {

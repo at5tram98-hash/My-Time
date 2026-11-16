@@ -1,7 +1,8 @@
 import SwiftUI
 import MyTimeCore
 
-/// タスクの詳細。開始・停止・完了、実績の記録、サブタスク、編集・削除
+/// タスクの詳細（純正リマインダー・時計にならい、上に状態、真ん中に大きな操作、下に詳しい情報）。
+/// 1つの行に複数のボタンを並べない（行全体が反応してしまうため）。ボタンはそれぞれ独立した形にする。
 struct TaskDetailView: View {
     var taskId: String
     @Environment(AppModel.self) private var model
@@ -15,19 +16,20 @@ struct TaskDetailView: View {
     var body: some View {
         NavigationStack {
             if let task = model.tasks.first(where: { $0.id == taskId }) {
-                TimelineView(.periodic(from: .now, by: 15)) { ctx in
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     form(task, now: model.time.ms(ctx.date))
                 }
                 .navigationTitle(task.kind == .check ? "確認" : "タスク")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("閉じる")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button("編集") { router.open(.editor(EditorSeed(kind: .task, taskId: task.id))) }
                     }
                 }
                 .sensoryFeedback(.success, trigger: feedback)
-                // 削除の確認は画面の中央に（吹き出しがずれたり重なったりしない）
                 .alert(task.kind == .check ? "この確認を削除しますか？" : "このタスクを削除しますか？", isPresented: $confirmDelete) {
                     Button("削除", role: .destructive) {
                         let snapshot = task
@@ -56,96 +58,157 @@ struct TaskDetailView: View {
         let subs = model.subtasks(of: task.id)
         let progress = actualProgress(task, subtasks: subs)
         let ideal = idealProgress(task, now: now)
+        let delay = delayInfo(task, now: now)
+        let tint = taskTint(task)
         List {
+            // 見出し：進み具合の輪・名前・状態
             Section {
-                HStack(spacing: 14) {
-                    ProgressRing(value: progress.value, ideal: ideal, symbol: IconMap.symbol(task.icon), tint: task.kind == .check ? .checkTask : .doTask, size: 56, running: task.status == .running, done: task.isDone)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(task.title).font(.title3.weight(.semibold))
-                        if let spec = task.specType, let def = SPEC_BY_ID[spec] {
-                            Label(def.name, systemImage: def.symbol).font(.caption).foregroundStyle(def.tint)
+                VStack(spacing: 12) {
+                    ProgressRing(value: progress.value, ideal: ideal, symbol: IconMap.symbol(task.icon), tint: tint, size: 76, running: task.status == .running, done: task.isDone)
+                    VStack(spacing: 4) {
+                        Text(task.title).font(.title2.weight(.bold)).multilineTextAlignment(.center)
+                        HStack(spacing: 6) {
+                            StatusPill(text: statusText(task, delay: delay), color: statusColor(task, delay: delay))
+                            if let spec = task.specType, let def = SPEC_BY_ID[spec] { StatusPill(text: def.name, color: def.tint, symbol: def.symbol) }
+                            if task.flagged { StatusPill(text: "フラグ", color: .orange, symbol: "flag.fill") }
                         }
-                        Text(when(task)).font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                        Text(when(task)).font(.subheadline).foregroundStyle(.secondary).monospacedDigit().multilineTextAlignment(.center)
+                    }
+                    if task.status == .running || task.status == .paused {
+                        // 経過時間を大きく（秒まで）
+                        Text(clock(workedMs(task, at: now)))
+                            .font(.system(size: 44, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(task.status == .running ? Color.green : .secondary)
+                            .contentTransition(.numericText())
+                            .accessibilityLabel("作業した時間 \(formatDuration(workedMs(task, at: now)))")
                     }
                 }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             }
+            .listRowBackground(Color.clear)
 
-            if task.kind == .check {
-                Section {
-                    Button {
+            // 大きな操作（1つずつ独立したボタン）
+            Section {
+                if task.kind == .check {
+                    BigActionButton(title: task.checked ? "未確認に戻す" : "確認した", symbol: task.checked ? "arrow.uturn.backward" : "checkmark", tint: task.checked ? .gray : .checkTask, prominent: !task.checked) {
                         feedback += 1
                         model.perform(task.checked ? "未確認に戻しました" : "確認しました", undo: { try model.repo.toggleCheck(task.id) }) { try model.repo.toggleCheck(task.id) }
+                    }
+                } else {
+                    actionButtons(task)
+                }
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+
+            // 遅れているときだけ「ずらす」
+            if delay.delayed && !task.isDone {
+                Section {
+                    Label("予定より\(delay.overMinutes)分遅れています", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.subheadline.weight(.semibold))
+                    Menu {
+                        Button("今から始める", systemImage: "play") { shift(task, toStart: ((now / (5 * MINUTE)) + 1) * 5 * MINUTE) }
+                        Button("30分後へ", systemImage: "goforward.30") { shift(task, by: 30 * MINUTE, now: now) }
+                        Button("1時間後へ", systemImage: "clock.arrow.circlepath") { shift(task, by: HOUR, now: now) }
+                        Button("明日の同じ時刻へ", systemImage: "sunrise") { if let s = task.plannedStart { shift(task, toStart: model.time.addDays(s, 1)) } }
+                        Button("時間を外して未割当へ", systemImage: "tray") { unplan(task) }
                     } label: {
-                        Label(task.checked ? "未確認に戻す" : "確認した", systemImage: task.checked ? "arrow.uturn.backward" : "checkmark.circle.fill")
-                    }
-                }
-            } else {
-                Section("実行") {
-                    actions(task)
-                    if task.status != .notStarted {
-                        LabeledContent("作業した時間", value: formatDuration(workedMs(task, at: now)))
-                    }
-                    if let ideal { LabeledContent("理想の進み", value: "\(Int((ideal * 100).rounded()))%") }
-                    let d = delayInfo(task, now: now)
-                    if d.delayed {
-                        Label("予定より\(d.overMinutes)分超過", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    }
-                    if task.status == .running {
-                        switch estimateEnd(task, subtasks: subs, now: now) {
-                        case .estimate(let at): LabeledContent("終わる見込み", value: model.hm(at))
-                        case .unavailable(let why): LabeledContent("終わる見込み", value: why)
+                        HStack(spacing: 12) {
+                            RowIcon(symbol: "arrow.right.circle.fill", tint: .orange)
+                            Text("ずらす").foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.tertiary)
                         }
                     }
-                }
-                if canScrubProgress(task, subtasks: subs) {
-                    Section {
-                        VStack(alignment: .leading) {
-                            HStack {
-                                Text("実績")
-                                Spacer()
-                                Text("\(Int(((scrub ?? progress.value ?? 0) * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary)
-                            }
-                            Slider(value: Binding(get: { scrub ?? progress.value ?? 0 }, set: { scrub = $0 }), in: 0...1, step: 0.05) { editing in
-                                if !editing, let v = scrub {
-                                    model.perform("実績を\(Int((v * 100).rounded()))%にしました") { try model.repo.recordProgress(task.id, value: v) }
-                                    scrub = nil
-                                }
-                            }
-                            .accessibilityLabel("実績")
-                        }
-                        if (progress.value ?? 0) >= 1 && task.status != .done {
-                            Button("完了にする", systemImage: "checkmark.seal.fill") { model.perform("完了しました") { try model.repo.completeFromProgress(task.id) } }
-                        }
-                    } footer: { Text("サブタスクがないときは、どこまで進んだかを手で記録します。") }
-                }
-                if canAddSubtask(task) {
-                    Section("サブタスク") {
-                        ForEach(subs, id: \.id) { s in
-                            Button {
-                                model.perform { try model.repo.toggleSubtask(s.id) }
-                            } label: {
-                                HStack {
-                                    Image(systemName: s.done ? "checkmark.circle.fill" : "circle").foregroundStyle(s.done ? Color.green : .secondary)
-                                    Text(s.title).strikethrough(s.done).foregroundStyle(s.done ? .secondary : .primary)
-                                }
-                            }
-                            .swipeActions { Button("削除", role: .destructive) { model.perform { try model.repo.deleteSubtask(s.id) } } }
-                        }
+                } footer: { Text("残りの長さはそのままに、開始と終了をずらします。") }
+            }
+
+            if task.kind == .do && canScrubProgress(task, subtasks: subs) {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            TextField("サブタスクを追加", text: $newSubtask).submitLabel(.done).onSubmit(addSubtask)
-                            if !newSubtask.isEmpty { Button("追加", action: addSubtask) }
+                            Text("実績").font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("\(Int(((scrub ?? progress.value ?? 0) * 100).rounded()))%").monospacedDigit().font(.subheadline.weight(.semibold)).foregroundStyle(tint)
+                        }
+                        Slider(value: Binding(get: { scrub ?? progress.value ?? 0 }, set: { scrub = $0 }), in: 0...1, step: 0.05) { editing in
+                            if !editing, let v = scrub {
+                                model.perform("実績を\(Int((v * 100).rounded()))%にしました") { try model.repo.recordProgress(task.id, value: v) }
+                                scrub = nil
+                            }
+                        }
+                        .tint(tint)
+                        .accessibilityLabel("実績")
+                        if let ideal {
+                            Text("理想の進み \(Int((ideal * 100).rounded()))%").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         }
                     }
+                    if (progress.value ?? 0) >= 1 && task.status != .done {
+                        Button { model.perform("完了しました") { try model.repo.completeFromProgress(task.id) } } label: {
+                            Label("完了にする", systemImage: "checkmark.seal.fill")
+                        }
+                    }
+                } header: { Text("進み具合") } footer: { Text("サブタスクがないときは、どこまで進んだかを手で記録します。") }
+            }
+
+            Section("詳しい情報") {
+                info("予定", "calendar", .red, when(task))
+                if task.status != .notStarted && task.kind == .do {
+                    info("作業した時間", "timer", .green, formatDuration(workedMs(task, at: now)))
+                }
+                if task.status == .running {
+                    switch estimateEnd(task, subtasks: subs, now: now) {
+                    case .estimate(let at): info("終わる見込み", "flag.checkered", .blue, model.hm(at))
+                    case .unavailable(let why): info("終わる見込み", "flag.checkered", .blue, why)
+                    }
+                }
+                if let m = task.estimateMinutes { info("見積時間", "hourglass", .teal, formatDuration(EpochMs(m) * MINUTE)) }
+                if let d = task.deadline { info("締切", "flag.fill", .orange, "\(model.time.dayLabel(d)) \(model.hm(d))") }
+                if let p = PlaceValue(task.extra?["place"])?.name ?? task.location, !p.isEmpty { info("場所", "mappin.and.ellipse", .red, p) }
+                if let c = task.category, !c.isEmpty { info("カテゴリー", "tray.fill", .brown, c) }
+                if task.extra?["alarm"]?.boolValue == true { info("アラーム", "alarm.fill", .orange, "開始の時刻に鳴らす") }
+                if let n = task.extra?["notifies"]?.arrayValue, !n.isEmpty {
+                    info("通知", "bell.fill", .pink, n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
+                }
+            }
+
+            if task.kind == .do && canAddSubtask(task) {
+                Section {
+                    ForEach(subs, id: \.id) { s in
+                        Button {
+                            model.perform { try model.repo.toggleSubtask(s.id) }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: s.done ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(s.done ? Color.green : .secondary)
+                                Text(s.title).strikethrough(s.done).foregroundStyle(s.done ? .secondary : .primary)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions { Button("削除", role: .destructive) { model.perform { try model.repo.deleteSubtask(s.id) } } }
+                    }
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(tint)
+                        TextField("サブタスクを追加", text: $newSubtask).submitLabel(.done).onSubmit(addSubtask)
+                    }
+                } header: {
+                    HStack { Text("サブタスク"); Spacer(); if !subs.isEmpty { Text("\(subs.filter(\.done).count)/\(subs.count)").monospacedDigit() } }
                 }
             }
 
             if !task.notes.isEmpty {
-                Section("メモ") { Text(task.notes) }
+                Section("メモ") { Text(task.notes).textSelection(.enabled) }
             }
-            if let loc = task.location, !loc.isEmpty {
-                Section("場所") { Label(loc, systemImage: "mappin.and.ellipse") }
+            if let urls = task.extra?["urls"]?.arrayValue, !urls.isEmpty {
+                Section("リンク") {
+                    ForEach(Array(urls.enumerated()), id: \.offset) { _, l in
+                        if let s = l["url"]?.stringValue, let u = URL(string: s) {
+                            Link(destination: u) { Label(l["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? (u.host() ?? s), systemImage: "link") }
+                        }
+                    }
+                }
             }
             // 純正リマインダー・カレンダーと同じく、一番下に赤い削除（中央ぞろえ）
             Section {
@@ -154,6 +217,101 @@ struct TaskDetailView: View {
                 }
             }
         }
+        .listSectionSpacing(.compact)
+    }
+
+    /// 実行の操作：主な操作を1つ大きく、ほかは控えめに（それぞれ独立したボタン）
+    @ViewBuilder
+    private func actionButtons(_ task: MTTask) -> some View {
+        let avail = availableActions(task)
+        VStack(spacing: 10) {
+            if avail.contains(.finish) && task.status == .running {
+                HStack(spacing: 10) {
+                    BigActionButton(title: "停止", symbol: "pause.fill", tint: .gray, prominent: false) { run(task, .pause) }
+                    BigActionButton(title: "完了", symbol: "checkmark", tint: .green, prominent: true) { run(task, .finish) }
+                }
+            } else if avail.contains(.resume) {
+                HStack(spacing: 10) {
+                    BigActionButton(title: "再開", symbol: "play.fill", tint: .accentColor, prominent: true) { run(task, .resume) }
+                    if avail.contains(.finish) { BigActionButton(title: "完了", symbol: "checkmark", tint: .green, prominent: false) { run(task, .finish) } }
+                }
+            } else if avail.contains(.start) {
+                BigActionButton(title: "開始", symbol: "play.fill", tint: .accentColor, prominent: true) { run(task, .start) }
+            } else if avail.contains(.undoFinish) {
+                BigActionButton(title: "完了を取り消す", symbol: "arrow.uturn.backward", tint: .gray, prominent: false) { run(task, .undoFinish) }
+            }
+            if avail.contains(.undoStart) && task.status == .running && workedMs(task, at: model.now) < 2 * MINUTE {
+                Button("開始を取り消す") { run(task, .undoStart) }.font(.footnote).buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func run(_ task: MTTask, _ a: TaskAction) {
+        if a == .finish { feedback += 1 }
+        let undo: TaskAction? = a == .start ? .undoStart : a == .finish ? .undoFinish : nil
+        model.perform(label(a) + "しました", undo: undo.map { u in { try model.repo.taskAction(task.id, u) } }) { try model.repo.taskAction(task.id, a) }
+    }
+
+    private func shift(_ task: MTTask, by delta: EpochMs, now: EpochMs) {
+        guard let s = task.plannedStart else { return }
+        shift(task, toStart: max(s + delta, now - (now % (5 * MINUTE)) + 5 * MINUTE))
+    }
+
+    private func shift(_ task: MTTask, toStart ns: EpochMs) {
+        guard let s = task.plannedStart, let e = task.plannedEnd else { return }
+        var c = task
+        c.plannedStart = ns
+        c.plannedEnd = ns + (e - s)
+        let snap = task
+        model.perform("\(model.hm(ns))に移しました", undo: { try model.repo.saveTask(snap, isNew: false) }) { try model.repo.saveTask(c, isNew: false) }
+    }
+
+    private func unplan(_ task: MTTask) {
+        var c = task
+        c.plannedStart = nil; c.plannedEnd = nil
+        let snap = task
+        model.perform("未割当へ移しました", undo: { try model.repo.saveTask(snap, isNew: false) }) { try model.repo.saveTask(c, isNew: false) }
+    }
+
+    private func info(_ title: String, _ symbol: String, _ tint: Color, _ value: String) -> some View {
+        HStack(spacing: 12) {
+            RowIcon(symbol: symbol, tint: tint)
+            Text(title)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing).monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func taskTint(_ t: MTTask) -> Color {
+        if let c = t.extra?["color"]?.stringValue { return Color(hex: c) }
+        return t.kind == .check ? .checkTask : .doTask
+    }
+
+    private func statusText(_ t: MTTask, delay: DelayInfo) -> String {
+        if t.kind == .check { return t.checked ? "確認済み" : "未確認" }
+        switch t.status {
+        case .done: return "完了"
+        case .running: return "実行中"
+        case .paused: return "一時停止"
+        default: return delay.delayed ? "遅れ" : "未着手"
+        }
+    }
+
+    private func statusColor(_ t: MTTask, delay: DelayInfo) -> Color {
+        if t.kind == .check { return t.checked ? .green : .secondary }
+        switch t.status {
+        case .done: return .green
+        case .running: return .green
+        case .paused: return .orange
+        default: return delay.delayed ? .red : .secondary
+        }
+    }
+
+    /// 0:12:05 のような経過表示
+    private func clock(_ ms: EpochMs) -> String {
+        let s = Int(ms / 1000)
+        return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
     }
 
     private func addSubtask() {
@@ -161,30 +319,6 @@ struct TaskDetailView: View {
         guard !t.isEmpty else { return }
         let ok = model.perform { try model.repo.addSubtask(taskId: taskId, title: t) }
         if ok { newSubtask = "" }
-    }
-
-    @ViewBuilder
-    private func actions(_ task: MTTask) -> some View {
-        let avail = availableActions(task)
-        HStack(spacing: 10) {
-            ForEach(avail.filter { $0 != .undoStart && $0 != .undoFinish }, id: \.self) { a in
-                Button {
-                    feedback += a == .finish ? 1 : 0
-                    let undo: TaskAction? = a == .start ? .undoStart : a == .finish ? .undoFinish : nil
-                    model.perform(label(a) + "しました", undo: undo.map { u in { try model.repo.taskAction(task.id, u) } }) { try model.repo.taskAction(task.id, a) }
-                } label: {
-                    Label(label(a), systemImage: symbol(a)).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(a == .finish ? .green : a == .pause ? .gray : .accentColor)
-                .controlSize(.large)
-            }
-            if avail.contains(.undoFinish) {
-                Button("完了を取り消す", systemImage: "arrow.uturn.backward") { model.perform("取り消しました") { try model.repo.taskAction(task.id, .undoFinish) } }
-                    .buttonStyle(.bordered).controlSize(.large)
-            }
-        }
-        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
     }
 
     private func label(_ a: TaskAction) -> String {
@@ -197,21 +331,49 @@ struct TaskDetailView: View {
         case .undoStart: return "開始を取り消"
         }
     }
-    private func symbol(_ a: TaskAction) -> String {
-        switch a {
-        case .start, .resume: return "play.fill"
-        case .pause: return "pause.fill"
-        case .finish: return "checkmark"
-        default: return "arrow.uturn.backward"
-        }
-    }
+
     private func when(_ t: MTTask) -> String {
         if t.kind == .check, let c = t.checkAt { return "\(model.time.dayLabel(c)) \(model.hm(c))" }
-        var parts: [String] = []
-        if let s = t.plannedStart, let e = t.plannedEnd { parts.append("\(model.time.dayLabel(s)) \(model.hm(s))〜\(model.hm(e))") } else if t.kind == .do { parts.append("時間は未定") }
-        if let d = t.deadline { parts.append("締切 \(model.time.dayLabel(d)) \(model.hm(d))") }
-        if let m = t.estimateMinutes { parts.append("見積 \(m)分") }
-        return parts.joined(separator: "・")
+        if let s = t.plannedStart, let e = t.plannedEnd { return "\(model.time.dayLabel(s)) \(model.hm(s))〜\(model.hm(e))" }
+        return "時間は未定"
+    }
+}
+
+/// 状態の小さな札（未着手・実行中・遅れなど）
+struct StatusPill: View {
+    var text: String
+    var color: Color
+    var symbol: String? = nil
+    var body: some View {
+        HStack(spacing: 3) {
+            if let symbol { Image(systemName: symbol).imageScale(.small) }
+            Text(text)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(color == .secondary ? Color.secondary : color)
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(Capsule().fill((color == .secondary ? Color.gray : color).opacity(0.14)))
+    }
+}
+
+/// 大きな操作ボタン（行の中で他のボタンと混ざらないよう、独自の形にする）
+struct BigActionButton: View {
+    var title: String
+    var symbol: String
+    var tint: Color
+    var prominent: Bool
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .foregroundStyle(prominent ? Color.white : tint == .gray ? Color.primary : tint)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(prominent ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color(.secondarySystemGroupedBackground))))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(prominent ? .clear : Color(.separator).opacity(0.5), lineWidth: 0.5))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(PressableStyle())
     }
 }
 

@@ -14,6 +14,14 @@ enum NotificationScheduler {
         var title: String
         var body: String
         var at: EpochMs
+        /// アラーム（時間に敏感な通知・集中モードでも届きやすい）
+        var alarm = false
+    }
+
+    /// アラームを付けたタスクの鳴らす時刻（実行は開始、確認は確認の時刻）
+    static func alarmTime(_ t: MTTask) -> EpochMs? {
+        guard !t.isDone, t.extra?["alarm"]?.boolValue == true else { return nil }
+        return t.kind == .check ? t.checkAt : t.plannedStart
     }
 
     /// 予約する内容（純粋な計算。テストしやすいよう分けている）
@@ -25,6 +33,13 @@ enum NotificationScheduler {
                 out.append(Plan(id: "leave:\(e.id)", title: "出発の時刻です", body: "\(e.title)（\(time.hm(e.start))から・移動\(tm)分）", at: leave - EpochMs(minutesBefore) * MINUTE))
             } else {
                 out.append(Plan(id: "event:\(e.id)", title: e.title, body: "\(time.hm(e.start))から" + (e.event.placeName.map { "・\($0)" } ?? ""), at: e.start - EpochMs(minutesBefore) * MINUTE))
+            }
+        }
+        // アラーム：開始の時刻に、1分おきに3回
+        for t in tasks {
+            guard let at = alarmTime(t) else { continue }
+            for i in 0..<3 {
+                out.append(Plan(id: "alarm\(i):\(t.id)", title: "⏰ \(t.title)", body: i == 0 ? "\(time.hm(at))になりました" : "まだ始めていません（\(time.hm(at))から）", at: at + EpochMs(i) * MINUTE, alarm: true))
             }
         }
         for t in tasks where !t.isDone {
@@ -50,16 +65,18 @@ enum NotificationScheduler {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
-        guard model.notificationsEnabled else { return }
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let now = model.now
         let events = model.visibleEvents(from: now, to: model.time.addDays(now, 7))
-        for p in plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time) {
+        // 通知がオフでも、アラームを付けたタスクは鳴らす
+        let all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time)
+        for p in all where model.notificationsEnabled || p.alarm {
             let content = UNMutableNotificationContent()
             content.title = p.title
             content.body = p.body
-            content.sound = .default
+            content.sound = p.alarm ? .defaultCritical : .default
+            if p.alarm { content.interruptionLevel = .timeSensitive }
             content.threadIdentifier = "mytime"
             let comps = model.time.calendar.dateComponents([.year, .month, .day, .hour, .minute], from: model.time.date(p.at))
             let req = UNNotificationRequest(identifier: prefix + p.id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false))

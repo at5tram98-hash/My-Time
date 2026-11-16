@@ -55,6 +55,8 @@ struct EditorView: View {
     @State private var saved = 0
     @State private var error: String?
     @State private var keyboardUp = false
+    @State private var alarm = false
+    @State private var bring = ""
     @FocusState private var titleFocused: Bool
 
     struct LinkItem: Identifiable, Equatable { var id = UUID().uuidString; var title = ""; var url = "" }
@@ -182,12 +184,17 @@ struct EditorView: View {
             NavigationLink { SpecTypePicker(spec: $spec, onPick: apply) } label: {
                 row("種類", "square.stack.3d.up.fill", .gray, value: spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない")
             }
-            if kind == .task {
-                Picker(selection: $isCheck.animation()) {
-                    Text("実行する").tag(false)
-                    Text("確認する").tag(true)
-                } label: { rowLabel("タスクの種類", "checklist", .blue) }
-            }
+        }
+        if kind == .task {
+            // タスクの種類：大きな押しボタン（実行する／確認する）
+            Section {
+                HStack(spacing: 10) {
+                    kindButton("実行する", "play.circle.fill", "時間をかけて進める", selected: !isCheck, tint: .doTask) { isCheck = false }
+                    kindButton("確認する", "checkmark.circle.fill", "その時刻に確かめる", selected: isCheck, tint: .checkTask) { isCheck = true }
+                }
+            } header: { Text("タスクの種類") }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
         }
 
         Section {
@@ -226,6 +233,21 @@ struct EditorView: View {
             NavigationLink { NotifyPicker(selection: $notifies, base: kind == .event ? "予定の開始" : isCheck ? "確認の時刻" : "開始の時刻") } label: {
                 row("通知", "bell.fill", .pink, value: notifySummary)
             }
+            if kind == .task && (isCheck || hasTime) {
+                Toggle(isOn: Binding(get: { alarm }, set: setAlarm)) {
+                    HStack(spacing: 12) {
+                        RowIcon(symbol: "alarm.fill", tint: .orange)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("アラーム")
+                            Text(alarm ? "\(hm(start))に鳴らす（止めるまで）" : "\(isCheck ? "確認" : "開始")の時刻に鳴らす").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        Section("色") { colorStrip }
+        if kind == .task {
+            Section { iconGrid } header: { Text("アイコン") }
         }
     }
 
@@ -274,19 +296,31 @@ struct EditorView: View {
         if open == .time {
             DatePicker(selection: startKeepingLength, displayedComponents: [.date, .hourAndMinute]) { Text("開始") }
             DatePicker(selection: $end, in: start..., displayedComponents: [.date, .hourAndMinute]) { Text("終了") }
-            HStack(spacing: 6) {
-                ForEach([15, 30, 60, 90, 120], id: \.self) { m in
-                    let on = Int(end.timeIntervalSince(start) / 60) == m
-                    Button { withAnimation(.snappy) { end = start.addingTimeInterval(TimeInterval(m * 60)) } } label: {
-                        Text(durationLabel(m)).font(.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                            .background(Capsule().fill(on ? Color.accentColor : Color(.tertiarySystemFill)))
-                            .foregroundStyle(on ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
         }
+    }
+
+    private func kindButton(_ title: String, _ symbol: String, _ sub: String, selected: Bool, tint: Color, action: @escaping () -> Void) -> some View {
+        Button { withAnimation(.snappy) { action() } } label: {
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.title2)
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(sub).font(.caption2).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 84)
+            .foregroundStyle(selected ? Color.white : tint)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color(.secondarySystemGroupedBackground))))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(selected ? .clear : Color(.separator).opacity(0.5), lineWidth: 0.5))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func setAlarm(_ on: Bool) {
+        alarm = on
+        guard on else { return }
+        // 通知の許可がまだなら求める（アラームは通知で鳴らす）
+        Task { _ = await NotificationScheduler.requestAuthorization() }
     }
 
     private func toggle(_ o: Open) { withAnimation(.snappy) { open = open == o ? .none : o }; titleFocused = false }
@@ -307,9 +341,7 @@ struct EditorView: View {
                 Toggle(isOn: $flagged) { rowLabel("フラグ", "flag.fill", .orange) }
             }
         }
-        Section("色") { colorStrip }
         if kind == .task {
-            Section { iconGrid } header: { Text("アイコン") }
             Section {
                 Toggle(isOn: $hasDeadline.animation()) { rowLabel("締切", "flag.checkered", .red) }.disabled(spec == nil)
                 if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
@@ -338,6 +370,12 @@ struct EditorView: View {
             .onDelete { links.remove(atOffsets: $0) }
             Button { withAnimation { links.append(LinkItem()) } } label: { Label("リンクを追加", systemImage: "link.badge.plus") }
         } header: { Text("リンク") }
+        Section {
+            HStack(spacing: 12) {
+                RowIcon(symbol: "bag.fill", tint: .mint)
+                TextField("持ち物（読点・カンマで区切る）", text: $bring)
+            }
+        } header: { Text("持ち物") } footer: { Text("今日の時刻軸にも表示します。") }
         Section("メモ") {
             TextField("メモ", text: $notes, axis: .vertical).lineLimit(3...10)
         }
@@ -599,6 +637,8 @@ struct EditorView: View {
             return LinkItem(id: v["id"]?.stringValue ?? UUID().uuidString, title: v["title"]?.stringValue ?? "", url: u)
         } ?? []
         color = extra?["color"]?.stringValue
+        alarm = extra?["alarm"]?.boolValue ?? false
+        bring = (extra?["bring"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "、")
         details = extra?["spec"]?["details"]?.objectValue ?? [:]
     }
 
@@ -650,6 +690,9 @@ struct EditorView: View {
         let ls = links.filter { !$0.url.trimmingCharacters(in: .whitespaces).isEmpty }
         extra["urls"] = ls.isEmpty ? nil : .array(ls.map { .object(["id": .string($0.id), "title": .string($0.title), "url": .string($0.url.trimmingCharacters(in: .whitespaces))]) })
         extra["spec"] = specJSON(extra["spec"], dueAt: dueAt)
+        extra["alarm"] = kind == .task && alarm && (isCheck || hasTime) ? .bool(true) : nil
+        let items = bring.split(whereSeparator: { "、,，・".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        extra["bring"] = items.isEmpty ? nil : .array(items.map { .string($0) })
         return extra.isEmpty ? (old == nil ? nil : .object([:])) : .object(extra)
     }
 

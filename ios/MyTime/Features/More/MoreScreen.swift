@@ -50,6 +50,10 @@ struct MoreScreen: View {
                     NavigationLink { HistoryView() } label: { row("操作履歴", "clock.arrow.circlepath", .gray, "いつ何を変えたか") }
                 }
 
+                Section("計画") {
+                    NavigationLink { TomorrowPlanView() } label: { row("翌日の計画", "moon.stars.fill", .indigo, "明日の予定とタスクを先に入れる") }
+                }
+
                 Section("使い方") {
                     NavigationLink { GestureGuideView() } label: { row("操作のしかた", "hand.draw.fill", .pink, "長押し・なぞる・スワイプでできること") }
                 }

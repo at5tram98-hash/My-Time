@@ -12,6 +12,8 @@ struct TodayView: View {
     @State private var collapsed = false
     @State private var showDatePicker = false
     @State private var direction: Edge = .trailing
+    /// 翌日計画のレーン（右端・灰色）を出すか
+    @AppStorage("today.showTomorrow") private var showTomorrow = true
 
     var body: some View {
         NavigationStack {
@@ -22,6 +24,12 @@ struct TodayView: View {
             .navigationTitle(model.dayTitle(day))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // 日付と今の時刻を5秒ごとに入れ替える
+                ToolbarItem(placement: .principal) {
+                    DateClockTitle(title: model.dayTitle(day), isToday: model.time.isSameDay(day, model.now)) { showDatePicker = true }
+                }
+            }
+            .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button("今日へ移動", systemImage: "calendar.badge.clock") { go(to: model.time.startOfDay(model.now)) }
@@ -30,6 +38,8 @@ struct TodayView: View {
                         Divider()
                         Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
                         Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
+                        Divider()
+                        Toggle(isOn: $showTomorrow.animation(Motion.sheet)) { Label("翌日計画を表示", systemImage: "moon.stars") }
                         Divider()
                         Picker("レーンの幅", selection: Binding(get: { model.settings.laneFocus }, set: { v in model.updateSettings { $0.laneFocus = v } })) {
                             Label("予定とタスクを同じ幅で", systemImage: "rectangle.split.2x1").tag("both")
@@ -72,6 +82,9 @@ struct TodayView: View {
         let dayEvents = occ.filter { $0.start < d1 && $0.end > day && !$0.event.allDay }
         let focus = model.settings.laneFocus
         let mainFraction: CGFloat = focus == "main" ? 0.68 : focus == "detail" ? 0.34 : 0.52
+        // 翌日計画は、今日（とそれより前）を見ているときだけ右端に出す
+        let tomorrowFraction: CGFloat? = showTomorrow && day <= model.time.startOfDay(now) ? 0.24 : nil
+        let tomorrowCount = tomorrowItemCount(after: day)
 
         VStack(spacing: 8) {
             // 今日を見ているときだけ、状況に合わせたカード（何もなければ時計と明日の最初の予定）
@@ -93,8 +106,8 @@ struct TodayView: View {
                         .padding(.horizontal)
                 }
             }
-            laneHeader(mainFraction: mainFraction, events: dayEvents.count, tasks: dayTasks.count, focus: focus)
-            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: mainFraction)
+            laneHeader(mainFraction: mainFraction, tomorrowFraction: tomorrowFraction, events: dayEvents.count, tasks: dayTasks.count, tomorrow: tomorrowCount, focus: focus)
+            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: mainFraction, tomorrowFraction: tomorrowFraction)
                 .id(day)
                 .transition(reduceMotion ? .opacity : .push(from: direction))
                 .simultaneousGesture(
@@ -108,13 +121,32 @@ struct TodayView: View {
         .background(Color(.systemBackground))
     }
 
-    private func laneHeader(mainFraction: CGFloat, events: Int, tasks: Int, focus: String) -> some View {
+    private func laneHeader(mainFraction: CGFloat, tomorrowFraction: CGFloat?, events: Int, tasks: Int, tomorrow: Int, focus: String) -> some View {
         GeometryReader { geo in
-            let w = geo.size.width - DayTimeline.gutter
+            let full = geo.size.width - DayTimeline.gutter
+            let w = full * (1 - (tomorrowFraction ?? 0))
             HStack(spacing: 0) {
                 Color.clear.frame(width: DayTimeline.gutter)
                 laneButton("予定", symbol: "calendar", count: events, on: focus == "main", width: w * mainFraction) { toggleFocus("main") }
                 laneButton("タスク", symbol: "checklist", count: tasks, on: focus == "detail", width: w * (1 - mainFraction)) { toggleFocus("detail") }
+                if let t = tomorrowFraction {
+                    // 翌日計画の見出し（タップで明日の画面へ）
+                    Button { go(to: model.time.addDays(model.time.startOfDay(model.now), 1)) } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "moon.stars").imageScale(.small)
+                            Text("明日").fontWeight(.semibold)
+                            Text("\(tomorrow)").foregroundStyle(.tertiary).monospacedDigit()
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .frame(width: full * t, height: 28, alignment: .leading)
+                        .background(Color(.secondarySystemFill).opacity(0.5))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("翌日計画 \(tomorrow)件。タップすると明日を表示します")
+                }
             }
         }
         .frame(height: 28)
@@ -170,6 +202,13 @@ struct TodayView: View {
             .accessibilityLabel(collapsed ? "要約を広げる" : "要約をたたむ")
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func tomorrowItemCount(after day: EpochMs) -> Int {
+        let d1 = model.time.addDays(model.time.startOfDay(model.now), 1), d2 = model.time.addDays(d1, 1)
+        let ev = model.visibleEvents(from: d1, to: d2).filter { !$0.event.allDay && $0.start >= d1 && $0.start < d2 }.count
+        let tk = model.tasks.filter { t in !t.isDone && ((t.kind == .check ? t.checkAt : t.plannedStart).map { $0 >= d1 && $0 < d2 } ?? false) }.count
+        return ev + tk
     }
 
     private func freeLabel(_ m: Int) -> String {
@@ -470,5 +509,46 @@ struct NowCard: View {
 struct CompactLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 4) { configuration.icon.imageScale(.small); configuration.title }
+    }
+}
+
+/// 上の見出し：日付と「18:30:20」を5秒ごとに入れ替える（数字はなめらかに入れ替わる）
+struct DateClockTitle: View {
+    var title: String
+    var isToday: Bool
+    var onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let sec = Calendar.current.component(.second, from: ctx.date)
+            // 今日を見ているときだけ時計を出す（5秒ごとに日付⇄時刻）
+            let showClock = isToday && (sec / 5) % 2 == 1
+            Button(action: onTap) {
+                ZStack {
+                    if showClock {
+                        Text(ctx.date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+                            .font(.headline.monospacedDigit())
+                            .contentTransition(.numericText(countsDown: false))
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.8)),
+                                                                              removal: .move(edge: .top).combined(with: .opacity)))
+                            .id("clock")
+                    } else {
+                        Text(title)
+                            .font(.headline)
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.8)),
+                                                                              removal: .move(edge: .top).combined(with: .opacity)))
+                            .id("date")
+                    }
+                }
+                .frame(minWidth: 160)
+                .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: showClock)
+                .animation(reduceMotion ? nil : .snappy, value: ctx.date)
+                .clipped()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityHint("日付を選びます")
+        }
     }
 }

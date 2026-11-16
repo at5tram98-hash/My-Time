@@ -1,4 +1,5 @@
 import SwiftUI
+import AudioToolbox
 import MyTimeCore
 
 enum AppTab: Hashable { case today, calendar, tasks, more }
@@ -60,6 +61,9 @@ struct RootView: View {
     @State private var router = Router()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showUndo = false
+    /// 鳴っているアラーム（アプリを開いているとき）
+    @State private var ringing: MTTask?
+    @State private var fired = Set<String>()
 
     var body: some View {
         TabView(selection: $router.tab) {
@@ -100,6 +104,25 @@ struct RootView: View {
             sheet(for: route)
                 .environment(model)
                 .environment(router)
+        }
+        // アラーム：開いているときは画面いっぱいに出して鳴らし続ける
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard ringing == nil else { continue }
+                let now = model.now
+                if let t = model.tasks.first(where: { t in
+                    guard let at = NotificationScheduler.alarmTime(t) else { return false }
+                    return at <= now && now - at < 60 * 1000 && !fired.contains("\(t.id)@\(at)")
+                }) {
+                    if let at = NotificationScheduler.alarmTime(t) { fired.insert("\(t.id)@\(at)") }
+                    ringing = t
+                }
+            }
+        }
+        .fullScreenCover(item: $ringing) { t in
+            AlarmView(task: t) { ringing = nil }
+                .environment(model)
         }
         // 操作のあとに画面下へ知らせは出さない。取り消しは iPhone を振る（純正アプリと同じ「シェイクで取り消す」）
         .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
@@ -178,5 +201,66 @@ extension UIWindow {
     open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake { NotificationCenter.default.post(name: .deviceDidShake, object: nil) }
         super.motionEnded(motion, with: event)
+    }
+}
+
+// MARK: アラーム
+
+
+/// アラームの画面（時計アプリのアラームにならう）。止めるまで鳴らし、振動させる
+struct AlarmView: View {
+    var task: MTTask
+    var onClose: () -> Void
+    @Environment(AppModel.self) private var model
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+            VStack(spacing: 24) {
+                Spacer()
+                Image(systemName: "alarm.fill")
+                    .font(.system(size: 72, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .scaleEffect(pulse ? 1.12 : 0.92)
+                    .rotationEffect(.degrees(pulse ? 8 : -8))
+                    .animation(.easeInOut(duration: 0.25).repeatForever(autoreverses: true), value: pulse)
+                Text(Date(), format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+                    .font(.system(size: 64, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(.white)
+                Text(task.title).font(.title2.weight(.semibold)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal)
+                Spacer()
+                if task.kind == .do && task.status == .notStarted {
+                    Button {
+                        model.perform("開始しました", undo: { try model.repo.taskAction(task.id, .undoStart) }) { try model.repo.taskAction(task.id, .start) }
+                        onClose()
+                    } label: {
+                        Label("開始する", systemImage: "play.fill").font(.title3.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                            .background(.white, in: Capsule()).foregroundStyle(.red)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .padding(.horizontal, 32)
+                }
+                Button(action: onClose) {
+                    Text("止める").font(.title3.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                        .background(.white.opacity(0.25), in: Capsule()).foregroundStyle(.white)
+                }
+                .buttonStyle(PressableStyle())
+                .padding(.horizontal, 32)
+                .padding(.bottom, 40)
+            }
+        }
+        .onAppear { pulse = true }
+        // 止めるまで2秒ごとに音と振動
+        .task {
+            while !Task.isCancelled {
+                AudioServicesPlayAlertSound(SystemSoundID(1005))
+                AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("アラーム \(task.title)")
     }
 }

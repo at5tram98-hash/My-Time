@@ -21,6 +21,8 @@ struct DayTimeline: View {
     var events: [EventOccurrence]
     var tasks: [MTTask]
     var mainFraction: CGFloat?
+    /// 翌日計画のレーン（右端・灰色）の幅の割合。nil なら出さない
+    var tomorrowFraction: CGFloat? = nil
 
     @State private var hourHeight: CGFloat = 56
     @State private var pinchBase: CGFloat?
@@ -67,8 +69,19 @@ struct DayTimeline: View {
         var placed: PlacedItem
         var faded: Bool
         var running: Bool
-        var movable: Bool { kind == .event || kind == .task }
-        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title }
+        /// 場所・持ち物・メモなど（余裕があればアイコン付きで表示）
+        var meta: [Meta] = []
+        /// 翌日計画（灰色。この画面では動かさない）
+        var tomorrow = false
+        /// 遅れている（予定の終わりを過ぎても終わっていない）
+        var late = false
+        var movable: Bool { !tomorrow && (kind == .event || kind == .task) }
+        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late }
+    }
+
+    struct Meta: Equatable, Hashable {
+        var symbol: String
+        var text: String
     }
 
     var body: some View {
@@ -81,8 +94,15 @@ struct DayTimeline: View {
                         let width = geo.size.width - Self.gutter
                         ZStack(alignment: .topLeading) {
                             emptyArea(width: width)
-                            if let f = mainFraction {
-                                Rectangle().fill(Color(.separator)).frame(width: 0.5, height: hourHeight * 24).offset(x: Self.gutter + width * f).allowsHitTesting(false)
+                            if mainFraction != nil {
+                                Rectangle().fill(Color(.separator)).frame(width: 0.5, height: hourHeight * 24).offset(x: Self.gutter + laneX(1, width)).allowsHitTesting(false)
+                            }
+                            if tomorrowFraction != nil {
+                                // 翌日計画のレーン：薄い灰色の帯
+                                Rectangle().fill(Color(.secondarySystemFill).opacity(0.5))
+                                    .frame(width: laneWidth(2, width), height: hourHeight * 24)
+                                    .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+                                    .offset(x: Self.gutter + laneX(2, width)).allowsHitTesting(false)
                             }
                             ForEach(blocks) { b in
                                 TimelineBlock(
@@ -164,13 +184,17 @@ struct DayTimeline: View {
         .accessibilityLabel("現在 \(model.hm(now))")
     }
 
+    /// 予定とタスクに使える幅（翌日計画のレーンを除く）
+    private func mainWidth(_ width: CGFloat) -> CGFloat { width * (1 - (tomorrowFraction ?? 0)) }
     private func laneX(_ lane: Int, _ width: CGFloat) -> CGFloat {
+        if lane == 2 { return mainWidth(width) }
         guard let f = mainFraction else { return 0 }
-        return lane == 0 ? 0 : width * f
+        return lane == 0 ? 0 : mainWidth(width) * f
     }
     private func laneWidth(_ lane: Int, _ width: CGFloat) -> CGFloat {
-        guard let f = mainFraction else { return width }
-        return lane == 0 ? width * f : width * (1 - f)
+        if lane == 2 { return width * (tomorrowFraction ?? 0) }
+        guard let f = mainFraction else { return mainWidth(width) }
+        return lane == 0 ? mainWidth(width) * f : mainWidth(width) * (1 - f)
     }
 
     // MARK: 空白の長押しで作成
@@ -190,7 +214,7 @@ struct DayTimeline: View {
                     .onChanged { value in
                         guard case .second(true, let d?) = value else { return }
                         let x = d.startLocation.x - Self.gutter
-                        let lane = mainFraction.map { x >= width * $0 ? 1 : 0 } ?? 0
+                        let lane = tomorrowFraction != nil && x >= laneX(2, width) ? 2 : (mainFraction.map { _ in x >= laneX(1, width) ? 1 : 0 } ?? 0)
                         let anchor = minute(atY: d.startLocation.y) / Int(Self.snap) * Int(Self.snap)
                         let m = Int((Double(minute(atY: d.location.y)) / Double(Self.snap)).rounded()) * Int(Self.snap)
                         let moved = abs(d.translation.height) > 6
@@ -205,8 +229,10 @@ struct DayTimeline: View {
                         creating = nil
                         let d0 = model.time.startOfDay(day)
                         let s = d0 + EpochMs(c.lo) * MINUTE, e = d0 + EpochMs(c.hi) * MINUTE
-                        let kind: EditorSeed.Kind = mainFraction != nil && c.lane == 1 ? .task : .event
-                        router.open(.editor(EditorSeed(kind: kind, start: s, end: e)))
+                        let kind: EditorSeed.Kind = (mainFraction != nil && c.lane == 1) || c.lane == 2 ? .task : .event
+                        // 翌日計画のレーンでは、明日の同じ時刻に入れる
+                        let shift = c.lane == 2 ? model.time.addDays(s, 1) - s : 0
+                        router.open(.editor(EditorSeed(kind: kind, start: s + shift, end: e + shift)))
                     }
             )
             .accessibilityElement()
@@ -221,10 +247,10 @@ struct DayTimeline: View {
 
     private func creatingGhost(_ c: Creating, width: CGFloat) -> some View {
         let d0 = model.time.startOfDay(day)
-        let isTask = mainFraction != nil && c.lane == 1
+        let isTask = (mainFraction != nil && c.lane == 1) || c.lane == 2
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return VStack(alignment: .leading, spacing: 1) {
-            Text(isTask ? "新しいタスク" : "新しい予定").font(.caption.weight(.semibold))
+            Text(c.lane == 2 ? "明日のタスク" : isTask ? "新しいタスク" : "新しい予定").font(.caption.weight(.semibold))
             Text("\(model.hm(d0 + EpochMs(c.lo) * MINUTE))〜\(model.hm(d0 + EpochMs(c.hi) * MINUTE))").font(.caption2).monospacedDigit()
         }
         .foregroundStyle(Color.accentColor)
@@ -252,7 +278,7 @@ struct DayTimeline: View {
             let symbol = e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar"
             let id = "event:\(e.id)"
             add(0, Draft(item: TimedItem(id: id, start: e.start, end: e.end)) { p in
-                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: false, running: false)
+                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event))
             })
         }
         let byId = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -261,12 +287,12 @@ struct DayTimeline: View {
                 let end = delayInfo(t, now: now).delayed ? max(e, now) : e
                 let id = "task:\(t.id)"
                 add(taskLane, Draft(item: TimedItem(id: id, start: s, end: end)) { p in
-                    Block(id: id, kind: .task, refId: t.id, title: t.title, start: s, end: end, plannedEnd: e, color: .accentColor, symbol: IconMap.symbol(t.icon), lane: taskLane, placed: p, faded: t.status == .done, running: t.status == .running)
+                    Block(id: id, kind: .task, refId: t.id, title: t.title, start: s, end: end, plannedEnd: e, color: taskColor(t), symbol: IconMap.symbol(t.icon), lane: taskLane, placed: p, faded: t.status == .done, running: t.status == .running, meta: taskMeta(t), late: delayInfo(t, now: now).delayed)
                 })
             } else if t.kind == .check, let c = t.checkAt, c >= d0, c < d1 {
                 let id = "check:\(t.id)"
                 add(taskLane, Draft(item: TimedItem(id: id, start: c, end: c + 15 * MINUTE)) { p in
-                    Block(id: id, kind: .check, refId: t.id, title: t.title, start: c, end: c + 15 * MINUTE, plannedEnd: c + 15 * MINUTE, color: .checkTask, symbol: "checkmark.circle", lane: taskLane, placed: p, faded: t.checked, running: false)
+                    Block(id: id, kind: .check, refId: t.id, title: t.title, start: c, end: c + 15 * MINUTE, plannedEnd: c + 15 * MINUTE, color: .checkTask, symbol: t.checked ? "checkmark.circle.fill" : "circle", lane: taskLane, placed: p, faded: t.checked, running: false)
                 })
             }
         }
@@ -278,11 +304,72 @@ struct DayTimeline: View {
                 Block(id: id, kind: .session, refId: parent.id, title: "\(parent.title)・\(s.title)", start: st, end: en, plannedEnd: en, color: .accentColor, symbol: "square.stack", lane: taskLane, placed: p, faded: s.done || parent.status == .done, running: false)
             })
         }
+        // 翌日計画：明日の予定とタスクを、今日の同じ時刻の位置に灰色で並べる
+        var tomorrowDrafts: [Draft] = []
+        if tomorrowFraction != nil {
+            let d2 = model.time.addDays(d1, 1)
+            let back = d1 - d0
+            for e in model.visibleEvents(from: d1, to: d2) where !e.event.allDay && e.start < d2 && e.end > d1 {
+                let s = max(e.start, d1) - back, en = min(e.end, d2) - back
+                let id = "tomorrow-event:\(e.id)"
+                tomorrowDrafts.append(Draft(item: TimedItem(id: id, start: s, end: en)) { p in
+                    Block(id: id, kind: .event, refId: e.id, title: e.title, start: s, end: en, plannedEnd: en, color: .gray, symbol: e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar", lane: 2, placed: p, faded: false, running: false, meta: self.eventMeta(e.event), tomorrow: true)
+                })
+            }
+            for t in tasks where !t.isDone {
+                let at = t.kind == .check ? t.checkAt : t.plannedStart
+                guard let a = at, a >= d1, a < d2 else { continue }
+                let en = t.kind == .check ? a + 15 * MINUTE : (t.plannedEnd ?? a + 30 * MINUTE)
+                let id = "tomorrow-task:\(t.id)"
+                tomorrowDrafts.append(Draft(item: TimedItem(id: id, start: a - back, end: min(en, d2) - back)) { p in
+                    Block(id: id, kind: t.kind == .check ? .check : .task, refId: t.id, title: t.title, start: a - back, end: min(en, d2) - back, plannedEnd: min(en, d2) - back, color: .gray, symbol: t.kind == .check ? "circle" : IconMap.symbol(t.icon), lane: 2, placed: p, faded: false, running: false, meta: self.taskMeta(t), tomorrow: true)
+                })
+            }
+        }
         func place(_ list: [Draft]) -> [Block] {
             let placed = Dictionary(layoutDay(list.map(\.item), day: d0, time: model.time).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             return list.compactMap { d in placed[d.item.id].map(d.make) }
         }
-        return place(mains) + place(details)
+        return place(mains) + place(details) + place(tomorrowDrafts)
+    }
+
+    private func taskColor(_ t: MTTask) -> Color {
+        if let c = t.extra?["color"]?.stringValue { return Color(hex: c) }
+        return t.specType.flatMap { SPEC_BY_ID[$0]?.tint } ?? .accentColor
+    }
+
+    /// 持ち物（種類の項目 bring・packing、または extra.bring）
+    private func bringList(_ extra: JSONValue?) -> [String] {
+        let d = extra?["spec"]?["details"]
+        let raw = (d?["bring"]?.arrayValue ?? []) + (d?["packing"]?.arrayValue ?? []) + (extra?["bring"]?.arrayValue ?? [])
+        return raw.compactMap { $0.stringValue ?? $0["title"]?.stringValue ?? $0["text"]?.stringValue }.filter { !$0.isEmpty }
+    }
+
+    private func firstLine(_ s: String) -> String? {
+        let l = s.split(whereSeparator: \.isNewline).first.map(String.init)?.trimmingCharacters(in: .whitespaces)
+        return l?.isEmpty == false ? l : nil
+    }
+
+    private func eventMeta(_ e: MTEvent) -> [Meta] {
+        var m: [Meta] = []
+        if let r = e.classInfo?["room"]?.stringValue, !r.isEmpty { m.append(Meta(symbol: "door.left.hand.open", text: "\(r)教室")) }
+        if let p = e.placeName, !p.isEmpty { m.append(Meta(symbol: "mappin", text: p)) }
+        else if e.extra?["meetingUrl"]?.stringValue != nil { m.append(Meta(symbol: "video", text: "オンライン")) }
+        let b = bringList(e.extra)
+        if !b.isEmpty { m.append(Meta(symbol: "bag", text: b.joined(separator: "・"))) }
+        if let n = firstLine(e.notes) { m.append(Meta(symbol: "note.text", text: n)) }
+        return m
+    }
+
+    private func taskMeta(_ t: MTTask) -> [Meta] {
+        var m: [Meta] = []
+        if let p = PlaceValue(t.extra?["place"])?.name ?? t.location, !p.isEmpty { m.append(Meta(symbol: "mappin", text: p)) }
+        let b = bringList(t.extra)
+        if !b.isEmpty { m.append(Meta(symbol: "bag", text: b.joined(separator: "・"))) }
+        if let n = firstLine(t.notes) { m.append(Meta(symbol: "note.text", text: n)) }
+        let subs = model.subtasks(of: t.id)
+        if !subs.isEmpty { m.append(Meta(symbol: "checklist", text: "\(subs.filter(\.done).count)/\(subs.count)")) }
+        return m
     }
 
     // MARK: 操作
@@ -434,47 +521,72 @@ struct TimelineBlock: View {
     }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: block.kind == .check ? 9 : 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: block.kind == .check ? 10 : 7, style: .continuous)
         let g = ghost
         let changed = drag.active && (g.start != block.start || g.end != block.plannedEnd)
         let clash = changed && conflicts(g.start, g.end)
         let px: (EpochMs) -> CGFloat = { CGFloat($0) / CGFloat(MINUTE) / 60 * hourHeight }
         let topShift = drag.active ? px(g.start - block.start) : 0
         let bottomShift = drag.active ? px(g.end - block.plannedEnd) : 0
+        let h = CGFloat(block.placed.height) / 60 * hourHeight
+        // 予定＝色で塗った札、タスク＝白い札に色の帯、確認＝丸い札、翌日計画＝灰色
+        let filled = block.kind == .event && !block.tomorrow
+        let fg: Color = block.tomorrow ? .secondary : filled ? .white : .primary
+        let sub: Color = block.tomorrow ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
+        let metaRows = max(0, Int((h - 36) / 15))
         HStack(alignment: .top, spacing: 0) {
-            if block.kind != .check { Rectangle().fill(block.color).frame(width: 3) }
+            if !filled && block.kind != .check {
+                Rectangle().fill(block.tomorrow ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Image(systemName: block.symbol).imageScale(.small)
-                    Text(block.title).lineLimit(1)
+                    Image(systemName: statusSymbol).imageScale(.small)
+                        .foregroundStyle(block.tomorrow ? Color.secondary : filled ? Color.white : block.running ? Color.green : block.late ? Color.red : block.color)
+                    Text(block.title).lineLimit(h > 60 ? 2 : 1)
+                        .strikethrough(block.faded && block.kind != .event)
                 }
                 .font(.caption.weight(.semibold))
-                if CGFloat(block.placed.height) / 60 * hourHeight > 34 || drag.active {
-                    Text("\(model.hm(drag.active ? g.start : block.start))〜\(model.hm(drag.active ? g.end : block.end))")
-                        .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                if h > 30 || drag.active {
+                    Text("\(model.hm(drag.active ? g.start : block.start))〜\(model.hm(drag.active ? g.end : block.end))" + (block.late ? "・遅れ" : ""))
+                        .font(.caption2).monospacedDigit().foregroundStyle(block.late ? Color.red : sub)
+                }
+                // 場所・持ち物・メモ（入る分だけ）
+                ForEach(Array(block.meta.prefix(metaRows).enumerated()), id: \.offset) { _, m in
+                    Label(m.text, systemImage: m.symbol)
+                        .labelStyle(CompactLabel())
+                        .font(.caption2).foregroundStyle(sub).lineLimit(1)
                 }
                 if clash {
-                    Label("重なり", systemImage: "exclamationmark.triangle.fill").font(.caption2.weight(.bold)).foregroundStyle(.red)
+                    Label("重なり", systemImage: "exclamationmark.triangle.fill").font(.caption2.weight(.bold)).foregroundStyle(filled ? .white : .red)
                 }
             }
-            .padding(.horizontal, 5).padding(.vertical, 2)
+            .padding(.horizontal, 6).padding(.vertical, 3)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(block.kind == .event ? block.color : Color.primary)
-        .background(shape.fill(block.color.opacity(block.kind == .event ? 0.2 : 0.12)))
-        .background(shape.fill(Color(.systemBackground)).opacity(drag.active ? 1 : 0))
+        .foregroundStyle(fg)
+        .background {
+            if block.tomorrow {
+                shape.fill(Color(.tertiarySystemFill))
+            } else if filled {
+                shape.fill(block.color.gradient.opacity(block.faded ? 0.45 : 0.92))
+            } else {
+                shape.fill(Color(.secondarySystemGroupedBackground))
+                    .shadow(color: .black.opacity(drag.active ? 0.2 : 0.08), radius: drag.active ? 8 : 2, y: 1)
+            }
+        }
         .overlay {
             if clash { shape.strokeBorder(Color.red, lineWidth: 2) }
-            else if block.running { shape.strokeBorder(Color.green, lineWidth: 1.5) }
-            else if block.kind == .task || block.kind == .session { shape.strokeBorder(block.color.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: block.kind == .session ? [3, 2] : [])) }
+            else if block.running { shape.strokeBorder(Color.green, lineWidth: 2) }
+            else if block.tomorrow { shape.strokeBorder(Color.gray.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+            else if !filled { shape.strokeBorder(Color(.separator).opacity(0.6), style: StrokeStyle(lineWidth: 0.5, dash: block.kind == .session ? [3, 2] : [])) }
         }
+        .opacity(block.faded && !filled ? 0.55 : 1)
         .clipShape(shape)
         // 伸縮中は、つかんだ端だけを伸ばして見せる（移動中は全体をずらす）
         .padding(.top, drag.edge == .top ? -topShift : 0)
         .padding(.bottom, drag.edge == .bottom ? -bottomShift : 0)
         .overlay(alignment: .top) { if block.movable { handle(.top) } }
         .overlay(alignment: .bottom) { if block.movable { handle(.bottom) } }
-        .opacity(block.faded ? 0.5 : 1)
         .scaleEffect(drag.active && drag.edge == nil && !reduceMotion ? 1.03 : 1)
         .shadow(color: .black.opacity(drag.active ? 0.18 : 0), radius: 8, y: 4)
         .offset(y: drag.active && drag.edge == nil ? topShift : 0)
@@ -498,6 +610,21 @@ struct TimelineBlock: View {
         .accessibilityAction(named: "終了を15分縮める") { if block.movable && block.plannedEnd - block.start > 15 * MINUTE { onResize(block.start, block.plannedEnd - 15 * MINUTE) } }
     }
 
+    /// 状態が一目で分かる印（実行中・遅れ・完了・確認）
+    private var statusSymbol: String {
+        if block.tomorrow { return "moon.stars" }
+        switch block.kind {
+        case .event: return block.symbol
+        case .check: return block.faded ? "checkmark.circle.fill" : "circle"
+        case .session: return "square.stack"
+        case .task:
+            if block.faded { return "checkmark.circle.fill" }
+            if block.running { return "play.circle.fill" }
+            if block.late { return "exclamationmark.circle.fill" }
+            return block.symbol
+        }
+    }
+
     private var accessibilityText: String {
         let kind: String
         switch block.kind {
@@ -506,7 +633,7 @@ struct TimelineBlock: View {
         case .check: kind = "確認"
         case .session: kind = "作業枠"
         }
-        return "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))"
+        return (block.tomorrow ? "明日の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + block.meta.map { "、\($0.text)" }.joined()
     }
 
     /// 上端・下端のつかむ所（見た目は細い線、触れる範囲は高さ12）
