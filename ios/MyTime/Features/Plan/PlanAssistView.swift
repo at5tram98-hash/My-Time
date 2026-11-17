@@ -48,11 +48,7 @@ struct PlanAssistView: View {
     }
 
     private func open(_ route: SheetRoute) {
-        dismiss()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            router.open(route)
-        }
+        router.replace(route)
     }
 }
 

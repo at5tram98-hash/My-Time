@@ -157,11 +157,7 @@ struct QuickAddView: View {
     }
 
     private func open(_ h: SearchHit) {
-        dismiss()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            router.open(h.entity == .event ? .event(h.id) : .task(h.id))
-        }
+        router.replace(h.entity == .event ? .event(h.id) : .task(h.id))
     }
 }
 

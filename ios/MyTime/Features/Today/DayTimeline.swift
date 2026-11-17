@@ -131,7 +131,9 @@ struct DayTimeline: View {
                             if let c = creating { creatingGhost(c, width: width) }
                             // チェックポイント：予定のレーンにオレンジの固定の線
                             ForEach(model.checkpoints(on: day)) { c in
-                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width)), gutter: Self.gutter) { router.open(.checkpoint(c)) }
+                                // 現在時刻の札と重なるときは、札を時刻の列の右へよける
+                                let nearNow = model.time.isSameDay(day, now) && abs(CGFloat(c.at - now) / CGFloat(HOUR) * hourHeight) < 20
+                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width)), gutter: Self.gutter, nearNow: nearNow) { router.open(.checkpoint(c)) }
                                     .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
                             }
                             if model.time.isSameDay(day, now) { nowLine(width: geo.size.width) }
@@ -681,7 +683,8 @@ struct TimelineBlock: View {
     private func pressRecognizer(edge: Edge?) -> some View {
         PressDragRecognizer(
             minimumDuration: edge == nil ? 0.4 : 0.3,
-            onTap: edge == nil ? { if Date().timeIntervalSince(lastPress) > 0.6 { onTap() } } : nil,
+            // 上下の端（伸縮のつかみ）を軽くたたいたときも、札と同じく詳細を開く
+            onTap: { if Date().timeIntervalSince(lastPress) > 0.6 { onTap() } },
             onBegan: { _ in
                 lastPress = Date()
                 pickedUp += 1

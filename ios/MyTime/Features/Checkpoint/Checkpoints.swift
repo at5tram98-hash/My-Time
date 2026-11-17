@@ -84,6 +84,8 @@ struct CheckpointLine: View {
     var checkpoint: Checkpoint
     var width: CGFloat
     var gutter: CGFloat = 0
+    /// 現在時刻の札と重なるとき（時刻の列ではなく、その右に出す）
+    var nearNow = false
     var onTap: () -> Void
     @Environment(AppModel.self) private var model
 
@@ -106,7 +108,7 @@ struct CheckpointLine: View {
             .background(Capsule().fill(Color.orange))
             .fixedSize()
             // 時刻の部分が目盛りの列の右端にそろうように置く
-            .offset(x: gutter > 0 ? max(0, gutter - 40) : 1)
+            .offset(x: gutter > 0 ? (nearNow ? gutter + 2 : max(0, gutter - 40)) : 1)
         }
         .frame(width: width + gutter, height: 18, alignment: .leading)
         .contentShape(Rectangle())

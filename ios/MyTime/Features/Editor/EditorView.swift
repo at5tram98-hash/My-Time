@@ -118,7 +118,7 @@ struct EditorView: View {
             Picker("作成する種類", selection: Binding(get: { kind == .task ? 0 : 1 }, set: { v in
                 if v == 2 {
                     let at = model.time.ms(start)
-                    router.open(.checkpoint(Checkpoint(id: model.repo.newId(), title: title, at: at)))
+                    router.replace(.checkpoint(Checkpoint(id: model.repo.newId(), title: title, at: at)))
                 } else {
                     withAnimation(.snappy) { kind = v == 0 ? .task : .event }
                 }
@@ -145,7 +145,7 @@ struct EditorView: View {
                     // 改行で、そのまま追加（純正リマインダーと同じ速さで入れられる）
                     .onSubmit { if canSave { save() } else { titleFocused = false } }
                 if isNew && title.isEmpty {
-                    Button { router.open(.quickAdd) } label: {
+                    Button { router.replace(.quickAdd) } label: {
                         Image(systemName: "text.bubble").font(.title3).foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)

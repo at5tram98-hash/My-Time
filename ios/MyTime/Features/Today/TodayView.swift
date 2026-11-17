@@ -568,7 +568,8 @@ struct DateClockTitle: View {
                             .id("date")
                     }
                 }
-                .frame(minWidth: 160)
+                // 幅を固定して、毎秒の書き換えでナビゲーションバーの配置が動かないようにする（＋などのボタンが押しにくくなるのを防ぐ）
+                .frame(width: 190, height: 28)
                 .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: showClock)
                 .animation(reduceMotion ? nil : .snappy, value: ctx.date)
                 .clipped()

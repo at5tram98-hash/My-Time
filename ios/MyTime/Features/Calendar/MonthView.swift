@@ -45,13 +45,8 @@ struct MonthView: View {
                     }
                     .padding(.bottom, 80)
                 }
-                .onAppear {
-                    let sel = cal.dateComponents([.month], from: monthStart(0), to: model.time.date(model.time.ms(selected))).month ?? 0
-                    proxy.scrollTo(max(range.lowerBound, min(range.upperBound, sel)), anchor: .top)
-                }
-                .onChange(of: todayTick) { _, _ in
-                    withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(0, anchor: .top) }
-                }
+                .onAppear { scrollToWeek(model.time.ms(selected), proxy: proxy, animated: false) }
+                .onChange(of: todayTick) { _, _ in scrollToWeek(model.now, proxy: proxy, animated: true) }
             }
             // ピンチ：指の動きに合わせて行が縦に伸び縮みする（離すと段階にそろえる）
             .simultaneousGesture(
@@ -93,6 +88,20 @@ struct MonthView: View {
         .padding(.vertical, 6)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// その日のある週へ（行が高いときも、選んだ日が画面に入るように）
+    private func scrollToWeek(_ day: EpochMs, proxy: ScrollViewProxy, animated: Bool) {
+        let m = max(range.lowerBound, min(range.upperBound, cal.dateComponents([.month], from: monthStart(0), to: model.time.date(day)).month ?? 0))
+        let first = model.time.ms(monthStart(m))
+        let w = (model.time.weekday(first) + cal.component(.day, from: model.time.date(day)) - 1) / 7
+        // 遅延表示なので、まず月へ。描かれてから週へ寄せる
+        if animated { withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(m, anchor: .top) } } else { proxy.scrollTo(m, anchor: .top) }
+        guard rowHeight >= 120, w > 0 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(animated ? 350 : 60))
+            withAnimation(reduceMotion || !animated ? nil : .snappy) { proxy.scrollTo("w\(m)-\(w)", anchor: .top) }
+        }
     }
 
     // MARK: 1か月
@@ -137,6 +146,7 @@ struct MonthView: View {
                 }
                 .frame(height: rowHeight)
                 .overlay(alignment: .top) { Rectangle().fill(Color(.separator).opacity(0.6)).frame(height: 0.5) }
+                .id("w\(offset)-\(w)")
             }
         }
     }

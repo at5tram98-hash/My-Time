@@ -16,7 +16,8 @@ struct TaskDetailView: View {
     var body: some View {
         NavigationStack {
             if let task = model.tasks.first(where: { $0.id == taskId }) {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                // 秒を出すのは作業中だけ（それ以外は画面全体を毎秒書き換えない。ボタンや日付の選択が途切れないように）
+                TimelineView(.periodic(from: .now, by: task.status == .running ? 1 : 30)) { ctx in
                     form(task, now: model.time.ms(ctx.date))
                 }
                 .navigationTitle(task.kind == .check ? "確認" : "タスク")
@@ -110,7 +111,7 @@ struct TaskDetailView: View {
             // 遅れているときだけ「ずらす」
             if delay.delayed && !task.isDone {
                 Section {
-                    Label("予定より\(delay.overMinutes)分遅れています", systemImage: "exclamationmark.triangle.fill")
+                    Label("予定より\(lateText(delay.overMinutes))遅れています", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange).font(.subheadline.weight(.semibold))
                     Menu {
                         Button("今から始める", systemImage: "play") { shift(task, toStart: ((now / (5 * MINUTE)) + 1) * 5 * MINUTE) }
@@ -445,7 +446,7 @@ struct TaskRow: View {
             } else {
                 ProgressRing(value: scrub ?? actual, ideal: nil, symbol: IconMap.symbol(task.icon), size: 32, running: task.status == .running, done: task.isDone)
             }
-            Button { router.open(.task(task.id)) } label: {
+            Group {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         if task.flagged { Image(systemName: "flag.fill").foregroundStyle(.orange).imageScale(.small) }
@@ -475,7 +476,19 @@ struct TaskRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // タップで開く・長押し→横になぞって実績（UIKit のジェスチャー：一回目のタップが確実に届き、上下のスクロールも妨げない）
+            .overlay {
+                PressDragRecognizer(
+                    minimumDuration: 0.35,
+                    onTap: { router.open(.task(task.id)) },
+                    onBegan: canScrub ? { _ in beginScrub() } : nil,
+                    onChanged: canScrub ? { _, t in moveScrub(t.width) } : nil,
+                    onEnded: canScrub ? { _, _ in endScrub() } : nil,
+                    onCancelled: { scrub = nil }
+                )
+            }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { router.open(.task(task.id)) }
             if let spec = task.specType { SpecBadge(type: spec, isEvent: false, size: 22) }
         }
         .background(alignment: .leading) {
@@ -487,7 +500,6 @@ struct TaskRow: View {
                     .onChange(of: g.size.width) { _, w in rowWidth = max(120, w) }
             }
         }
-        .highPriorityGesture(scrubGesture, including: canScrub ? .all : .subviews)
         .sensoryFeedback(.success, trigger: feedback)
         .sensoryFeedback(.selection, trigger: step)
         .sensoryFeedback(.impact(weight: .medium), trigger: picked)
@@ -510,28 +522,25 @@ struct TaskRow: View {
     }
 
     /// 長押し（0.35秒）→ 横にずらす。右で増え、左で減る。100%で離すと完了の確認
-    private var scrubGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                guard case .second(true, let d) = value else { return }
-                if scrub == nil {
-                    scrubBase = actualProgress(task, subtasks: model.subtasks(of: task.id)).value ?? idealProgress(task, now: model.now) ?? 0
-                    scrub = scrubBase
-                    picked += 1
-                }
-                let v = min(1, max(0, scrubBase + Double((d?.translation.width ?? 0) / rowWidth)))
-                let snapped = (v * 20).rounded() / 20
-                if Int(snapped * 20) != step { step = Int(snapped * 20) }
-                scrub = snapped
-            }
-            .onEnded { _ in
-                guard let v = scrub else { return }
-                if v >= 1 { confirmComplete = true; return }
-                if abs(v - scrubBase) < 0.001 { scrub = nil; return }
-                record(v)
-                scrub = nil
-            }
+    private func beginScrub() {
+        scrubBase = actualProgress(task, subtasks: model.subtasks(of: task.id)).value ?? idealProgress(task, now: model.now) ?? 0
+        scrub = scrubBase
+        picked += 1
+    }
+
+    private func moveScrub(_ dx: CGFloat) {
+        let v = min(1, max(0, scrubBase + Double(dx / rowWidth)))
+        let snapped = (v * 20).rounded() / 20
+        if Int(snapped * 20) != step { step = Int(snapped * 20) }
+        scrub = snapped
+    }
+
+    private func endScrub() {
+        guard let v = scrub else { return }
+        if v >= 1 { confirmComplete = true; return }
+        if abs(v - scrubBase) < 0.001 { scrub = nil; return }
+        record(v)
+        scrub = nil
     }
 
     private func record(_ v: Double) {
@@ -633,4 +642,11 @@ struct DayTasksView: View {
         }
         .presentationDetents([.medium, .large])
     }
+}
+
+/// 遅れの長さ（分・時間・日）
+func lateText(_ m: Int) -> String {
+    if m < 60 { return "\(m)分" }
+    if m < 24 * 60 { return m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分" }
+    return "\(m / (24 * 60))日"
 }

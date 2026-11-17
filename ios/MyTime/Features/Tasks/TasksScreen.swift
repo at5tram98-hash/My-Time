@@ -112,7 +112,10 @@ struct TasksScreen: View {
             sum + t.intervals.reduce(0) { $0 + max(0, min($1.end ?? model.now, model.now) - max($1.start, d0)) }
         }
         let running = model.tasks.first { $0.status == .running }
-        let next = running ?? today.filter { !$0.isDone && $0.kind == .do }.min { (taskAnchor($0) ?? .max) < (taskAnchor($1) ?? .max) }
+        // 次にやること：今日の画面と同じく、今日これから（今日の中で時刻の早い順）。前の日の遅れは「期限切れ」で見る
+        let cands = today.filter { !$0.isDone && $0.kind == .do && ($0.plannedStart ?? d0) >= d0 }
+        let upcoming = cands.filter { ($0.plannedEnd ?? .max) > model.now }
+        let next = running ?? (upcoming.isEmpty ? cands : upcoming).min { (taskAnchor($0) ?? .max) < (taskAnchor($1) ?? .max) }
         let ratio = today.isEmpty ? 0 : Double(done) / Double(today.count)
         return HStack(spacing: 14) {
             ZStack {
@@ -130,7 +133,10 @@ struct TasksScreen: View {
                 if let t = next {
                     Text(t.status == .running ? "実行中" : "次にやること").font(.caption2.weight(.bold)).foregroundStyle(t.status == .running ? .green : .accentColor)
                     Text(t.title).font(.headline).lineLimit(1)
-                    if let s = t.plannedStart { Text("\(model.hm(s))〜\(t.plannedEnd.map(model.hm) ?? "")").font(.caption).foregroundStyle(.secondary).monospacedDigit() }
+                    if let s = t.plannedStart {
+                        Text((model.time.isSameDay(s, model.now) ? "" : model.time.dayLabel(s) + " ") + "\(model.hm(s))〜\(t.plannedEnd.map(model.hm) ?? "")")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
                 } else {
                     Text(today.isEmpty ? "今日のタスクはありません" : "今日のタスクはすべて完了").font(.headline)
                 }

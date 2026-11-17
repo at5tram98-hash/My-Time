@@ -35,6 +35,72 @@ enum SheetRoute: Identifiable, Hashable {
     }
 }
 
+struct SheetLevel: Identifiable { var id: Int }
+
+/// i 段目のシートの中身。上にさらにシートを重ねられる
+struct SheetHost: View {
+    var level: Int
+    @Environment(AppModel.self) private var model
+    @Environment(Router.self) private var router
+
+    /// 閉じる途中も中身を出し続けるため、最後に出していた画面を覚えておく
+    @State private var shown: SheetRoute?
+
+    var body: some View {
+        let route = level < router.stack.count ? router.stack[level] : shown
+        Group {
+            if let route {
+                content(route)
+                    .id(route.id)
+            }
+        }
+        // 半分の高さのシートでも後ろの色がにじまないように（読みやすさ優先）
+        .presentationBackground(Color(.systemGroupedBackground))
+        .sheet(item: router.level(level + 1)) { _ in
+            SheetHost(level: level + 1)
+                .environment(model)
+                .environment(router)
+        }
+        .onAppear { if level < router.stack.count { shown = router.stack[level] } }
+        .onChange(of: level < router.stack.count ? router.stack[level] : nil) { _, r in if let r { shown = r } }
+    }
+
+    @ViewBuilder
+    private func content(_ route: SheetRoute) -> some View {
+        switch route {
+        case .task(let id): TaskDetailView(taskId: id)
+        case .event(let id): EventDetailView(occurrenceId: id)
+        case .editor(let seed): EditorView(seed: seed)
+        case .settings: SettingsView()
+        case .inbox: InboxView()
+        case .dayTasks(let day): DayTasksView(day: day)
+        case .quickAdd: QuickAddView()
+        case .planAssist: PlanAssistView()
+        case .checkpoint(let c): CheckpointRouteView(initial: c)
+        }
+    }
+}
+
+/// チェックポイントのシート。新しいかどうかは開いたときに一度だけ決める
+/// （保存した瞬間に「新しい」でなくなり、閉じる途中で小さな表示に変わってしまうのを防ぐ）
+private struct CheckpointRouteView: View {
+    var initial: Checkpoint?
+    @Environment(AppModel.self) private var model
+    @State private var start: (Checkpoint, Bool)?
+
+    var body: some View {
+        ZStack {
+            if let start { CheckpointSheet(checkpoint: start.0, isNew: start.1) } else { Color.clear }
+        }
+        .onAppear {
+            guard start == nil else { return }
+            let next = ((model.now / (15 * MINUTE)) + 1) * 15 * MINUTE
+            let c = initial ?? Checkpoint(id: model.repo.newId(), title: "", at: next)
+            start = (c, !model.checkpoints.contains { $0.id == c.id })
+        }
+    }
+}
+
 /// 新規作成・編集の初期値
 struct EditorSeed: Hashable {
     enum Kind: Hashable { case task, event }
@@ -50,10 +116,34 @@ struct EditorSeed: Hashable {
 @Observable
 final class Router {
     var tab: AppTab = .today
-    var sheet: SheetRoute?
+    /// 開いているシート（下から順）。詳細の上に編集を重ね、閉じると詳細に戻る（純正のカレンダーと同じ）
+    var stack: [SheetRoute] = []
+    var sheet: SheetRoute? {
+        get { stack.first }
+        set { stack = newValue.map { [$0] } ?? [] }
+    }
     /// その他タブの表示中の画面（余白のチップから振り返りを直接開くため）
     var morePath: [MoreRoute] = []
-    func open(_ s: SheetRoute) { sheet = s }
+    /// 今の画面の上に重ねて開く（何も開いていなければ最初のシート）
+    func open(_ s: SheetRoute) {
+        guard stack.last != s else { return }
+        // 同じものが下にあれば、そこまで戻る（詳細→編集→同じ詳細 のような重なりを作らない）
+        if let i = stack.firstIndex(of: s) { stack = Array(stack.prefix(i + 1)); return }
+        stack.append(s)
+    }
+    /// いちばん上のシートの中身を入れ替える（シートは閉じずにそのまま）
+    func replace(_ s: SheetRoute) {
+        withAnimation(.snappy) {
+            if stack.isEmpty { stack = [s] } else { stack[stack.count - 1] = s }
+        }
+    }
+    /// すべてのシートを閉じる
+    func closeAll() { stack = [] }
+    /// i 段目のシートの表示（SwiftUI の sheet(item:) 用。中身を入れ替えてもシートは閉じない）
+    func level(_ i: Int) -> Binding<SheetLevel?> {
+        Binding(get: { self.stack.count > i ? SheetLevel(id: i) : nil },
+                set: { if $0 == nil, self.stack.count > i { self.stack = Array(self.stack.prefix(i)) } })
+    }
     func openMore(_ r: MoreRoute) { morePath = [r]; tab = .more }
 }
 
@@ -109,8 +199,8 @@ struct RootView: View {
             }
         }
         #endif
-        .sheet(item: $router.sheet) { route in
-            sheet(for: route)
+        .sheet(item: router.level(0)) { _ in
+            SheetHost(level: 0)
                 .environment(model)
                 .environment(router)
         }
@@ -150,25 +240,6 @@ struct RootView: View {
             Text(model.errorMessage ?? "")
         }
         .preferredColorScheme(model.settings.theme == "dark" ? .dark : model.settings.theme == "light" ? .light : nil)
-    }
-
-    @ViewBuilder
-    private func sheet(for route: SheetRoute) -> some View {
-        switch route {
-        case .task(let id): TaskDetailView(taskId: id)
-        case .event(let id): EventDetailView(occurrenceId: id)
-        case .editor(let seed): EditorView(seed: seed)
-        case .settings: SettingsView()
-        case .inbox: InboxView()
-        case .dayTasks(let day): DayTasksView(day: day)
-        case .quickAdd: QuickAddView()
-        case .planAssist: PlanAssistView()
-        case .checkpoint(let c):
-            // 保存済みでなければ新しいもの（エディタや月の長押しから時刻つきで渡されることもある）
-            let isNew = c.map { x in !model.checkpoints.contains { $0.id == x.id } } ?? true
-            let next = ((model.now / (15 * MINUTE)) + 1) * 15 * MINUTE
-            CheckpointSheet(checkpoint: c ?? Checkpoint(id: model.repo.newId(), title: "", at: next), isNew: isNew)
-        }
     }
 }
 
