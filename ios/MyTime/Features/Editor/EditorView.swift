@@ -114,9 +114,18 @@ struct EditorView: View {
     @ViewBuilder
     private var header: some View {
         if isNew {
-            Picker("作成する種類", selection: $kind.animation(.snappy)) {
-                Text("タスク").tag(EditorSeed.Kind.task)
-                Text("予定").tag(EditorSeed.Kind.event)
+            // タスク・予定・チェックポイント（チェックポイントを選ぶと、その画面へ切り替える）
+            Picker("作成する種類", selection: Binding(get: { kind == .task ? 0 : 1 }, set: { v in
+                if v == 2 {
+                    let at = model.time.ms(start)
+                    router.open(.checkpoint(Checkpoint(id: model.repo.newId(), title: title, at: at)))
+                } else {
+                    withAnimation(.snappy) { kind = v == 0 ? .task : .event }
+                }
+            })) {
+                Text("タスク").tag(0)
+                Text("予定").tag(1)
+                Text("チェックポイント").tag(2)
             }
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
@@ -720,6 +729,11 @@ struct EditorView: View {
             subjectName = e.classInfo?["subjectName"]?.stringValue ?? ""
             room = e.classInfo?["room"]?.stringValue ?? ""
             loadCommon(e.extra)
+            // 取り込んだ授業（種類なし）は「大学授業」として小テストなどを入れられるように
+            if spec == nil && e.classInfo != nil {
+                spec = .class
+                if details["room"] == nil, !room.isEmpty { details["room"] = .string(room) }
+            }
         } else {
             titleFocused = true
             calendarId = model.calendars.first?.id ?? "cal-general"
@@ -839,7 +853,7 @@ struct EditorView: View {
     }
 }
 
-/// 種類を選ぶ画面（グループごと）
+/// 種類を選ぶ画面（グループごと）。下にガラスの検索欄
 struct SpecTypePicker: View {
     @Binding var spec: SpecTypeId?
     var onPick: (SpecDef) -> Void
@@ -847,55 +861,82 @@ struct SpecTypePicker: View {
     var studioId: String? = nil
     var onPickStudio: (StudioType?) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @FocusState private var searching: Bool
+
+    private func hit(_ name: String, _ blurb: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty || name.localizedCaseInsensitiveContains(q) || blurb.localizedCaseInsensitiveContains(q)
+    }
 
     var body: some View {
+        let mine = studioTypes.filter { hit($0.name, "") }
         List {
-            Section {
-                Button { spec = nil; onPickStudio(nil); dismiss() } label: {
-                    HStack { Text("指定しない").foregroundStyle(.primary); Spacer(); if spec == nil && studioId == nil { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) } }
-                        .contentShape(Rectangle())
+            if query.isEmpty {
+                Section {
+                    row(title: "指定しない", sub: nil, badge: AnyView(Image(systemName: "circle.dashed").font(.title3).foregroundStyle(.secondary).frame(width: 28)), selected: spec == nil && studioId == nil) {
+                        spec = nil; onPickStudio(nil); dismiss()
+                    }
                 }
-                .buttonStyle(.plain)
             }
-            // Create Studio で作った自分の種類
-            if !studioTypes.isEmpty {
+            if !mine.isEmpty {
                 Section("自分の種類") {
-                    ForEach(studioTypes) { t in
-                        Button { onPickStudio(t); dismiss() } label: {
-                            HStack(spacing: 12) {
-                                RowIcon(symbol: IconMap.symbol(t.icon), tint: Color(hex: t.color))
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(t.name).foregroundStyle(.primary)
-                                    Text(t.target == "calendar" ? "予定" : "タスク").font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if studioId == t.id { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
-                            }
-                            .contentShape(Rectangle())
+                    ForEach(mine) { t in
+                        row(title: t.name, sub: t.target == "calendar" ? "予定" : "タスク", badge: AnyView(RowIcon(symbol: IconMap.symbol(t.icon), tint: Color(hex: t.color))), selected: studioId == t.id) {
+                            onPickStudio(t); dismiss()
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
             ForEach(SpecGroup.allCases, id: \.self) { g in
-                Section(g.label) {
-                    ForEach(SPEC_DEFS.filter { $0.group == g }) { d in
-                        Button { onPick(d); onPickStudio(nil); dismiss() } label: {
-                            HStack(spacing: 12) {
-                                SpecBadge(type: d.id, isEvent: d.isEvent, size: 28)
-                                Text(d.name).foregroundStyle(.primary)
-                                Spacer()
-                                if spec == d.id { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
+                let defs = SPEC_PICKABLE.filter { $0.group == g && hit($0.name, $0.blurb) }
+                if !defs.isEmpty {
+                    Section(g.label) {
+                        ForEach(defs) { d in
+                            row(title: d.name, sub: d.blurb, badge: AnyView(SpecBadge(type: d.id, isEvent: d.isEvent, size: 28)), selected: spec == d.id) {
+                                onPick(d); onPickStudio(nil); dismiss()
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+            }
+            if !query.isEmpty && mine.isEmpty && !SPEC_PICKABLE.contains(where: { hit($0.name, $0.blurb) }) {
+                ContentUnavailableView.search(text: query).listRowBackground(Color.clear)
             }
         }
         .navigationTitle("種類")
         .navigationBarTitleDisplayMode(.inline)
+        // 下に浮かぶガラスの検索欄（親指で届く位置）
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("種類を探す（例：試験・バイト）", text: $query).focused($searching).submitLabel(.search)
+                if !query.isEmpty {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .glass(Capsule(), interactive: true)
+            .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+            .padding(.horizontal).padding(.bottom, 6)
+        }
+        .animation(.snappy, value: query)
+    }
+
+    private func row(title: String, sub: String?, badge: AnyView, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                badge
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).foregroundStyle(.primary)
+                    if let sub { Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer()
+                if selected { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

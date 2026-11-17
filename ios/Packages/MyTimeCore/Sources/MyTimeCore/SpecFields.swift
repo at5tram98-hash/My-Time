@@ -38,6 +38,8 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
         .init(key: "period", label: "時限", kind: .text, unit: nil, options: [], placeholder: "例：2限", hint: nil),
         .init(key: "room", label: "教室", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "termEnd", label: "開講の終わり", kind: .date, unit: nil, options: [], placeholder: nil, hint: nil),
+        .init(key: "quizAt", label: "小テストの日", kind: .datetime, unit: nil, options: [], placeholder: nil, hint: "次の小テストの日時"),
+        .init(key: "quizScope", label: "小テストの範囲", kind: .text, unit: nil, options: [], placeholder: "例：第5〜6回", hint: nil),
         .init(key: "bring", label: "持ち物", kind: .list, unit: nil, options: [], placeholder: nil, hint: nil)
     ],
     .assignment: [
@@ -50,7 +52,8 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
         .init(key: "course", label: "科目", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "scope", label: "範囲", kind: .multiline, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "goal", label: "目標", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
-        .init(key: "reviewCount", label: "復習の回数", kind: .number, unit: "回", options: [], placeholder: nil, hint: nil)
+        .init(key: "reviewCount", label: "復習の回数", kind: .number, unit: "回", options: [], placeholder: nil, hint: nil),
+        .init(key: "dailyMinutes", label: "1日の学習", kind: .minutes, unit: "分", options: [], placeholder: nil, hint: nil)
     ],
     .language: [
         .init(key: "targetScore", label: "目標点", kind: .number, unit: "点", options: [], placeholder: nil, hint: nil),
@@ -61,7 +64,8 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
     .certification: [
         .init(key: "examDate", label: "受験日", kind: .date, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "material", label: "教材", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
-        .init(key: "units", label: "単元", kind: .checklist, unit: nil, options: [], placeholder: nil, hint: nil)
+        .init(key: "units", label: "単元", kind: .checklist, unit: nil, options: [], placeholder: nil, hint: nil),
+        .init(key: "dailyMinutes", label: "1日の学習", kind: .minutes, unit: "分", options: [], placeholder: nil, hint: nil)
     ],
     .report: [
         .init(key: "dueAt", label: "締切", kind: .datetime, unit: nil, options: [], placeholder: nil, hint: nil),

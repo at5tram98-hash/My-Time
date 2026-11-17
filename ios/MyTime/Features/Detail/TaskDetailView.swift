@@ -178,6 +178,17 @@ struct TaskDetailView: View {
                 } header: { Text("進み具合") } footer: { Text("サブタスクがないときは、どこまで進んだかを手で記録します。") }
             }
 
+            if let spec = task.specType, SPEC_BY_ID[spec] != nil {
+                SpecPanel(spec: spec, details: task.extra?["spec"]?["details"]?.objectValue ?? [:], start: nil, end: nil, employerName: nil, task: task) { d in
+                    var t = task
+                    var d = d
+                    // 試験の日を変えたら締切もそろえる
+                    if spec.isExamLike, let at = d["examAt"] ?? d["mockDate"] ?? d["examDate"] { d["dueAt"] = at }
+                    t.extra = withSpecDetails(t.extra, d)
+                    _ = model.perform(nil, undo: { try model.repo.saveTask(task, isNew: false) }) { try model.repo.saveTask(t, isNew: false) }
+                }
+            }
+
             Section("詳しい情報") {
                 info("予定", "calendar", .red, when(task))
                 if task.status != .notStarted && task.kind == .do {

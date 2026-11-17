@@ -88,8 +88,6 @@ struct StudioListView: View {
 
     private var templates: [Template] {
         [
-            Template(name: "読書記録", desc: "読んだページと感想。ページ数で進み具合", icon: "books", color: "#FF9500", target: "task",
-                     fields: [(.text, "本のタイトル", nil), (.number, "読んだページ", "page"), (.multiline, "感想", nil)], progress: .number, progressField: 1, goal: 100),
             Template(name: "筋トレ", desc: "種目のチェックと回数", icon: "run", color: "#FF3B30", target: "task",
                      fields: [(.check, "腕立て", nil), (.check, "腹筋", nil), (.check, "スクワット", nil), (.number, "回数", "times")], progress: .checklist, progressField: nil, goal: nil),
             Template(name: "レッスン", desc: "先生・持ち物・内容（予定）", icon: "music", color: "#5E5CE6", target: "calendar",

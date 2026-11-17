@@ -164,7 +164,8 @@ struct RootView: View {
         case .quickAdd: QuickAddView()
         case .planAssist: PlanAssistView()
         case .checkpoint(let c):
-            let isNew = c == nil
+            // 保存済みでなければ新しいもの（エディタや月の長押しから時刻つきで渡されることもある）
+            let isNew = c.map { x in !model.checkpoints.contains { $0.id == x.id } } ?? true
             let next = ((model.now / (15 * MINUTE)) + 1) * 15 * MINUTE
             CheckpointSheet(checkpoint: c ?? Checkpoint(id: model.repo.newId(), title: "", at: next), isNew: isNew)
         }
@@ -188,20 +189,22 @@ struct MainToolbar: ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             // タップで追加、長押しで「文章で追加」などを選べる（iOS 標準の primaryAction 付きメニュー）
             Menu {
-                Button("新しいタスク", systemImage: "checklist") { router.open(.editor(EditorSeed(kind: .task))) }
-                Button("新しい予定", systemImage: "calendar") { router.open(.editor(EditorSeed(kind: .event))) }
-                Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
-                Divider()
-                Button("チェックポイント", systemImage: "flag.checkered") { router.open(.checkpoint(nil)) }
-                Divider()
-                Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
+                Section {
+                    Button("新しい予定", systemImage: "calendar") { router.open(.editor(EditorSeed(kind: .event))) }
+                    Button("新しいタスク", systemImage: "checklist") { router.open(.editor(EditorSeed(kind: .task))) }
+                    Button("新しいチェックポイント", systemImage: "flag.checkered") { router.open(.checkpoint(nil)) }
+                }
+                Section {
+                    Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
+                    Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
+                }
             } label: {
                 Image(systemName: "plus")
             } primaryAction: {
                 router.open(.editor(EditorSeed(kind: addKind)))
             }
             .accessibilityLabel("追加")
-            .accessibilityHint("長押しで文章で追加・計画の支援")
+            .accessibilityHint("長押しで予定・タスク・チェックポイントを選べます")
         }
     }
 }

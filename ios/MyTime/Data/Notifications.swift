@@ -34,6 +34,14 @@ enum NotificationScheduler {
             let kind = calendarKinds[ev.calendarId]
             let room = ev.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
             let place = ev.placeName.flatMap { $0.isEmpty ? nil : $0 }
+            // 小テストの前の日の夜（20時）に知らせる
+            if let q = ev.extra?["spec"]?["details"]?["quizAt"]?.intValue, time.isSameDay(q, e.start) {
+                let eve = time.addDays(time.startOfDay(e.start), -1) + 20 * HOUR
+                if eve > now {
+                    let scope = ev.extra?["spec"]?["details"]?["quizScope"]?.stringValue.flatMap { $0.isEmpty ? nil : "範囲：\($0)" }
+                    out.append(Plan(id: "quiz:\(e.id)", title: "明日は\(e.title)の小テスト", body: scope ?? "\(time.hm(e.start))〜の授業で実施", at: eve))
+                }
+            }
             if let tm = ev.travelMinutes, tm > 0 {
                 // 出発：「〇〇へ出発まであと10分」／本文：開始の時刻・場所
                 let leave = e.start - EpochMs(tm) * MINUTE
@@ -47,6 +55,10 @@ enum NotificationScheduler {
                 // 授業：「演習Ⅰまであと10分」／教室
                 if let room { lines.append("教室：\(room)") }
                 lines.append("\(time.hm(e.start))〜\(time.hm(e.end))")
+                if let q = ev.extra?["spec"]?["details"]?["quizAt"]?.intValue, time.isSameDay(q, e.start) {
+                    let scope = ev.extra?["spec"]?["details"]?["quizScope"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+                    lines.append("小テストがあります" + (scope.map { "（\($0)）" } ?? ""))
+                }
             } else if kind == .job || ev.specType == .shift {
                 // バイト：「GU の勤務まであと10分」／勤務先・時間
                 if let name = ev.employerId.flatMap({ employers[$0] }) { lines.append("勤務先：\(name)") }

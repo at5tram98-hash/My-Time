@@ -369,6 +369,11 @@ struct DayTimeline: View {
     private func eventMeta(_ e: MTEvent) -> [Meta] {
         var m: [Meta] = []
         if let r = e.classInfo?["room"]?.stringValue, !r.isEmpty { m.append(Meta(symbol: "door.left.hand.open", text: "\(r)教室")) }
+        // その日に小テストがあれば目立たせる
+        if let q = e.extra?["spec"]?["details"]?["quizAt"]?.intValue, model.time.isSameDay(q, day) {
+            let scope = e.extra?["spec"]?["details"]?["quizScope"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+            m.insert(Meta(symbol: "pencil.and.list.clipboard", text: "小テスト" + (scope.map { "・\($0)" } ?? "")), at: 0)
+        }
         if let p = e.placeName, !p.isEmpty { m.append(Meta(symbol: "mappin", text: p)) }
         else if e.extra?["meetingUrl"]?.stringValue != nil { m.append(Meta(symbol: "video", text: "オンライン")) }
         let b = bringList(e.extra)

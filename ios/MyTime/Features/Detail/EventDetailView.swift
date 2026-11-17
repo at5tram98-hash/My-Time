@@ -35,6 +35,14 @@ struct EventDetailView: View {
                         }
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
+                        if let spec = ev.specType ?? (ev.classInfo != nil ? .class : nil), SPEC_BY_ID[spec] != nil {
+                            SpecPanel(spec: spec, details: specDetails(ev), start: start, end: end,
+                                      employerName: model.employer(ev.employerId)?.name, task: nil) { d in
+                                var e = ev
+                                e.extra = withSpecDetails(e.extra, d, type: spec)
+                                _ = model.perform(nil, undo: { try model.repo.saveEvent(ev, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
+                            }
+                        }
                         details(ev, start: start, end: end)
                         if let st = model.studioType(ev.extra?["studio"]?["typeId"]?.stringValue) {
                             let rows = studioInfoRows(st, values: ev.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
@@ -102,6 +110,13 @@ struct EventDetailView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
+    }
+
+    /// 種類の項目（授業の取り込みで種類がないときは、教室を授業の情報から補う）
+    private func specDetails(_ ev: MTEvent) -> [String: JSONValue] {
+        var d = ev.extra?["spec"]?["details"]?.objectValue ?? [:]
+        if d["room"] == nil, let r = ev.classInfo?["room"] { d["room"] = r }
+        return d
     }
 
     private func close() { deleted += 1; dismiss() }
@@ -177,41 +192,48 @@ struct EventDetailView: View {
 
     // MARK: よく使う操作
 
+    /// よく使う操作（編集は右上）。ひとつ目は大きく（参加・マップ）、ほかは同じ形の丸いボタンを横に並べる
     private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
-        // ボタンはそれぞれ独立した形（同じ行の別のボタンが反応しないように）
         HStack(spacing: 10) {
-            roundButton("編集", "pencil") { router.open(.editor(EditorSeed(kind: .event, eventId: ev.id))) }
-            roundButton("複製", "plus.square.on.square") { duplicate(ev, start: start, end: end) }
-            roundButton("複数日", "doc.on.doc") {
-                copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
-            }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
-                roundButton("参加", "video.fill") { openURL(u) }
+                primaryButton("参加する", "video.fill") { openURL(u) }
             } else if let place = ev.placeName, !place.isEmpty {
-                roundButton("マップ", "map.fill") {
+                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", "car.fill") {
                     let q = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                    if let u = URL(string: "maps://?q=\(q)") { openURL(u) }
+                    if let u = URL(string: "maps://?daddr=\(q)") { openURL(u) }
                 }
             }
+            Menu {
+                Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
+                Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
+                    copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
+                }
+            } label: { roundLabel("複製", "plus.square.on.square") }
+            .buttonStyle(PressableStyle())
             ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
                 .buttonStyle(PressableStyle())
         }
         .padding(.vertical, 2)
     }
 
-    private func roundButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { roundLabel(title, symbol) }.buttonStyle(PressableStyle())
+    private func primaryButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(Color.accentColor.gradient, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle())
+        .layoutPriority(1)
     }
 
     private func roundLabel(_ title: String, _ symbol: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: symbol).font(.title3.weight(.medium))
-            Text(title).font(.caption2.weight(.semibold))
-        }
-        .foregroundStyle(Color.accentColor)
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .contentShape(Rectangle())
+        Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1)
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            .contentShape(Capsule())
     }
 
     private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {
@@ -259,7 +281,6 @@ struct EventDetailView: View {
             if let m = ev.travelMinutes, m > 0 {
                 LabeledContent("移動", value: "\(m)分・\(model.hm(start - EpochMs(m) * MINUTE))発")
             }
-            if let room = ev.classInfo?["room"]?.stringValue, !room.isEmpty { LabeledContent("教室", value: room) }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 Link(destination: u) { LabeledContent("会議") { Label("参加する", systemImage: "video.fill").foregroundStyle(Color.accentColor) } }
             }
@@ -275,16 +296,12 @@ struct EventDetailView: View {
             if let n = ev.extra?["notifies"]?.arrayValue, !n.isEmpty {
                 LabeledContent("通知", value: n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
             }
-            if let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
+            if ev.specType != .shift, let emp = model.employer(ev.employerId) { LabeledContent("勤務先", value: emp.name) }
             if isShift(ev, model: model) {
                 Toggle(isOn: Binding(get: { isShiftPending(ev) }, set: { model.setShiftPending([ev.id], pending: $0) })) {
                     Label("調整中", systemImage: "hourglass")
                 }
                 .tint(.orange)
-            }
-            if ev.specType == .shift, let wage = ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue,
-               let pay = shiftPay(start: start, end: end, hourlyWage: wage, breakMinutes: Int(ev.extra?["spec"]?["details"]?["breakMinutes"]?.intValue ?? 0)) {
-                LabeledContent("見込みの給与", value: yen(pay.pay))
             }
         }
     }
