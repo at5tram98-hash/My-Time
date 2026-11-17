@@ -17,6 +17,8 @@ enum SheetRoute: Identifiable, Hashable {
     case dayTasks(EpochMs)
     case quickAdd
     case planAssist
+    /// チェックポイント（nil：新しく作る）
+    case checkpoint(Checkpoint?)
 
     var id: String {
         switch self {
@@ -28,6 +30,7 @@ enum SheetRoute: Identifiable, Hashable {
         case .dayTasks(let d): return "day:\(d)"
         case .quickAdd: return "quickAdd"
         case .planAssist: return "planAssist"
+        case .checkpoint(let c): return "checkpoint:\(c?.id ?? "new")"
         }
     }
 }
@@ -160,6 +163,10 @@ struct RootView: View {
         case .dayTasks(let day): DayTasksView(day: day)
         case .quickAdd: QuickAddView()
         case .planAssist: PlanAssistView()
+        case .checkpoint(let c):
+            let isNew = c == nil
+            let next = ((model.now / (15 * MINUTE)) + 1) * 15 * MINUTE
+            CheckpointSheet(checkpoint: c ?? Checkpoint(id: model.repo.newId(), title: "", at: next), isNew: isNew)
         }
     }
 }
@@ -184,6 +191,8 @@ struct MainToolbar: ToolbarContent {
                 Button("新しいタスク", systemImage: "checklist") { router.open(.editor(EditorSeed(kind: .task))) }
                 Button("新しい予定", systemImage: "calendar") { router.open(.editor(EditorSeed(kind: .event))) }
                 Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
+                Divider()
+                Button("チェックポイント", systemImage: "mappin.and.ellipse") { router.open(.checkpoint(nil)) }
                 Divider()
                 Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
             } label: {

@@ -202,6 +202,9 @@ struct MonthView: View {
                 let s = d + 9 * HOUR
                 router.open(.editor(EditorSeed(kind: .task, start: s, end: s + HOUR)))
             }
+            Button("チェックポイント", systemImage: "mappin.and.ellipse") {
+                router.open(.checkpoint(Checkpoint(id: model.repo.newId(), title: "", at: d + 8 * HOUR)))
+            }
             if !events.isEmpty {
                 Divider()
                 Button("この日の予定を複数の日にコピー…", systemImage: "doc.on.doc") { copyDay = d }

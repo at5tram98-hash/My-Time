@@ -41,7 +41,7 @@ enum TaskAlarms {
     }
 
     /// これから7日分のアラームをそろえる（要らなくなったものは取り消し、足りないものを予約）
-    static func sync(tasks: [MTTask], now: EpochMs) async {
+    static func sync(tasks: [MTTask], checkpoints: [Checkpoint] = [], now: EpochMs) async {
         #if canImport(AlarmKit)
         guard #available(iOS 26.0, *), AlarmManager.shared.authorizationState == .authorized else { return }
         let manager = AlarmManager.shared
@@ -49,6 +49,11 @@ enum TaskAlarms {
         for t in tasks {
             guard let at = NotificationScheduler.alarmTime(t), at > now, at < now + 7 * DAY else { continue }
             wanted[alarmID(taskId: t.id, at: at)] = (t, at)
+        }
+        // チェックポイントのアラーム（題名だけのタスクとして同じ形で鳴らす）
+        for c in checkpoints where c.alarm && c.at > now && c.at < now + 7 * DAY {
+            let t = MTTask.make(title: c.title.isEmpty ? "チェックポイント" : "📍 \(c.title)", now: now, id: "cp-" + c.id)
+            wanted[alarmID(taskId: t.id, at: c.at)] = (t, c.at)
         }
         let existing = Set(((try? manager.alarms) ?? []).map(\.id))
         for id in existing where wanted[id] == nil { try? manager.cancel(id: id) }

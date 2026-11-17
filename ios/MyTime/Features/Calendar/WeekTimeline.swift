@@ -59,20 +59,6 @@ struct WeekTimeline: View {
             }
             .contentShape(Rectangle())
             .simultaneousGesture(
-                DragGesture(minimumDistance: 18)
-                    .onChanged { v in
-                        guard abs(v.translation.width) > abs(v.translation.height) * 1.2 else { return }
-                        dragX = v.translation.width
-                        lastSwipe = Date()
-                    }
-                    .onEnded { v in
-                        guard abs(v.translation.width) > abs(v.translation.height) * 1.2 else { withAnimation(.snappy) { dragX = 0 }; return }
-                        lastSwipe = Date()
-                        let moved = Int((-(v.translation.width + v.predictedEndTranslation.width) / 2 / colW).rounded())
-                        settle(first + moved)
-                    }
-            )
-            .simultaneousGesture(
                 MagnifyGesture().onEnded { v in
                     let next = v.magnification < 1 ? 7 : 3
                     guard next != visible else { return }
@@ -201,18 +187,23 @@ struct WeekTimeline: View {
         var done: Bool
         var pending: Bool
         var open: SheetRoute
+        var symbol: String = "calendar"
+        /// 教室・場所など（余裕があれば表示）
+        var sub: String? = nil
     }
 
     private func items(_ d: EpochMs) -> [Item] {
         let d1 = model.time.addDays(d, 1)
         var out: [Item] = model.visibleEvents(from: d, to: d1).filter { !$0.event.allDay && $0.start < d1 && $0.end > d }.map { o in
-            Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: Color(hex: model.eventColor(o.event)), isEvent: true, done: false, pending: isShiftPending(o.event), open: .event(o.id))
+            Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: Color(hex: model.eventColor(o.event)), isEvent: true, done: false, pending: isShiftPending(o.event), open: .event(o.id),
+                 symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
+                 sub: o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName)
         }
         for t in model.tasks {
             if t.kind == .do, let s = t.plannedStart, let e = t.plannedEnd, s < d1, e > d {
-                out.append(Item(id: "t:\(t.id)", title: t.title, start: max(s, d), end: min(e, d1), color: t.extra?["color"]?.stringValue.map { Color(hex: $0) } ?? .accentColor, isEvent: false, done: t.isDone, pending: false, open: .task(t.id)))
+                out.append(Item(id: "t:\(t.id)", title: t.title, start: max(s, d), end: min(e, d1), color: t.extra?["color"]?.stringValue.map { Color(hex: $0) } ?? .accentColor, isEvent: false, done: t.isDone, pending: false, open: .task(t.id), symbol: IconMap.symbol(t.icon), sub: PlaceValue(t.extra?["place"])?.name))
             } else if t.kind == .check, let c = t.checkAt, c >= d, c < d1 {
-                out.append(Item(id: "c:\(t.id)", title: t.title, start: c, end: c + 15 * MINUTE, color: .checkTask, isEvent: false, done: t.checked, pending: false, open: .task(t.id)))
+                out.append(Item(id: "c:\(t.id)", title: t.title, start: c, end: c + 15 * MINUTE, color: .checkTask, isEvent: false, done: t.checked, pending: false, open: .task(t.id), symbol: "checkmark.circle"))
             }
         }
         return out
@@ -226,12 +217,24 @@ struct WeekTimeline: View {
             // 空いている所：長押しでその時刻に新しい予定
             Rectangle().fill(today ? Color.accentColor.opacity(0.04) : Color.clear)
                 .contentShape(Rectangle())
-                .gesture(LongPressGesture(minimumDuration: 0.45).sequenced(before: DragGesture(minimumDistance: 0)).onEnded { v in
-                    guard case .second(true, let drag?) = v else { return }
-                    let m = Int(drag.location.y / hourHeight * 60) / 15 * 15
-                    let s = d + EpochMs(m) * MINUTE
-                    router.open(.editor(EditorSeed(kind: .event, start: s, end: s + HOUR)))
-                })
+                // 長押しで新しい予定・左右になぞって日を動かす（UIKit のジェスチャー：上下のスクロールを邪魔しない）
+                .overlay {
+                    PressDragRecognizer(
+                        minimumDuration: 0.45,
+                        onEnded: { p, t in
+                            guard abs(t.width) < 10 && abs(t.height) < 10 else { return }
+                            let m = Int(p.y / hourHeight * 60) / 15 * 15
+                            let s = d + EpochMs(m) * MINUTE
+                            router.open(.editor(EditorSeed(kind: .event, start: s, end: s + HOUR)))
+                        },
+                        onHorizontalPan: { dx in dragX = dx; lastSwipe = Date() },
+                        onHorizontalPanEnded: { dx, predicted in
+                            lastSwipe = Date()
+                            let moved = Int((-(dx + predicted) / 2 / width).rounded())
+                            settle(first + moved)
+                        }
+                    )
+                }
             Rectangle().fill(Color(.separator).opacity(0.5)).frame(width: 0.5).frame(maxHeight: .infinity).allowsHitTesting(false)
             ForEach(list) { it in
                 if let p = placed[it.id] {
@@ -239,6 +242,10 @@ struct WeekTimeline: View {
                     block(it, height: max(16, CGFloat(p.height) / 60 * hourHeight - 2), width: cw - 2)
                         .offset(x: 2 + cw * CGFloat(p.column), y: CGFloat(p.top) / 60 * hourHeight + 1)
                 }
+            }
+            ForEach(model.checkpoints(on: d)) { c in
+                CheckpointLine(checkpoint: c, width: width) { router.open(.checkpoint(c)) }
+                    .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
             }
             if today {
                 let y = CGFloat(model.time.minutesOfDay(now)) / 60 * hourHeight
@@ -257,12 +264,19 @@ struct WeekTimeline: View {
         VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 2) {
                     if it.pending { Image(systemName: "hourglass").font(.system(size: 8, weight: .bold)) }
-                    if !it.isEvent { Image(systemName: it.done ? "checkmark.circle.fill" : "circle").font(.system(size: 8, weight: .bold)) }
+                    Image(systemName: !it.isEvent && it.done ? "checkmark.circle.fill" : it.symbol).font(.system(size: visible == 7 ? 7 : 9, weight: .bold))
                     Text(it.title).lineLimit(height > 40 ? 2 : 1).strikethrough(it.done)
                 }
                 .font(.system(size: visible == 7 ? 9 : 11, weight: .semibold))
-                if height > 30 && visible == 3 {
-                    Text(model.hm(it.start)).font(.system(size: 9)).monospacedDigit().opacity(0.8)
+                if height > 30 {
+                    Text(visible == 3 ? "\(model.hm(it.start))〜\(model.hm(it.end))" : model.hm(it.start)).font(.system(size: visible == 7 ? 8 : 9)).monospacedDigit().opacity(0.85).lineLimit(1)
+                }
+                if height > 48, let sub = it.sub, !sub.isEmpty {
+                    HStack(spacing: 2) {
+                        Image(systemName: "mappin").font(.system(size: 7))
+                        Text(sub).lineLimit(1)
+                    }
+                    .font(.system(size: visible == 7 ? 8 : 9)).opacity(0.85)
                 }
             }
             .padding(.horizontal, 3).padding(.vertical, 2)

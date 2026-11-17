@@ -27,11 +27,15 @@ struct DayTimeline: View {
     var onPlanCreate: ((EpochMs, EpochMs) -> Void)? = nil
     /// 計画をタップ
     var onPlanTap: ((String) -> Void)? = nil
+    /// 左右になぞって日を変える（-1：次の日へ＝左へなぞった、1：前の日へ）
+    var onSwipeDay: ((Int) -> Void)? = nil
 
     @State private var hourHeight: CGFloat = 56
     @State private var pinchBase: CGFloat?
     /// 空白の長押しで作る新規の仮範囲（分）
     @State private var creating: Creating?
+    /// 予定・タスクを長押しで動かしている間（そのあいだは縦のスクロールを止める）
+    @State private var dragging = false
     @State private var createFeedback = 0
     @State private var createSnap = 0
     /// 動かさない長押しで開くメニュー
@@ -118,12 +122,18 @@ struct DayTimeline: View {
                                     onResize: { s, e in resize(b, start: s, end: e) },
                                     onTap: { open(b) },
                                     // 動かさずに長押し：カードを開く（編集・複製・ずらす・削除はカードから）
-                                    onMenu: { open(b) }
+                                    onMenu: { open(b) },
+                                    onDragging: { dragging = $0 }
                                 )
                                 .frame(width: max(8, laneWidth(b.lane, width) / CGFloat(b.placed.columns) - 3), height: max(18, CGFloat(b.placed.height) / 60 * hourHeight - 2))
                                 .offset(x: Self.gutter + laneX(b.lane, width) + laneWidth(b.lane, width) * CGFloat(b.placed.column) / CGFloat(b.placed.columns) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight + 1)
                             }
                             if let c = creating { creatingGhost(c, width: width) }
+                            // チェックポイント：予定のレーンにオレンジの固定の線
+                            ForEach(model.checkpoints(on: day)) { c in
+                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width))) { router.open(.checkpoint(c)) }
+                                    .offset(x: Self.gutter, y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
+                            }
                             if model.time.isSameDay(day, now) { nowLine(width: geo.size.width) }
                         }
                     }
@@ -131,6 +141,8 @@ struct DayTimeline: View {
                 .frame(height: hourHeight * 24 + 8)
             }
             .scrollIndicators(.hidden)
+            // 長押しで作る・動かす間だけスクロールを止める（ふだんは上下になぞってスクロールできる）
+            .scrollDisabled(creating != nil || dragging)
             .onAppear {
                 let h = model.time.isSameDay(day, now) ? model.time.minutesOfDay(now) / 60 : 8
                 proxy.scrollTo("h\(max(0, h - 1))", anchor: .top)
@@ -214,33 +226,19 @@ struct DayTimeline: View {
         Color.clear
             .contentShape(Rectangle())
             .frame(width: Self.gutter + width, height: hourHeight * 24)
-            .gesture(
-                LongPressGesture(minimumDuration: 0.45)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { value in
-                        guard case .second(true, let d?) = value else { return }
-                        let x = d.startLocation.x - Self.gutter
-                        let lane = tomorrowFraction != nil && x >= laneX(2, width) ? 2 : (mainFraction.map { _ in x >= laneX(1, width) ? 1 : 0 } ?? 0)
-                        let anchor = minute(atY: d.startLocation.y) / Int(Self.snap) * Int(Self.snap)
-                        let m = Int((Double(minute(atY: d.location.y)) / Double(Self.snap)).rounded()) * Int(Self.snap)
-                        let moved = abs(d.translation.height) > 6
-                        let cur = !moved ? anchor + 60 : (m <= anchor ? min(m, anchor - Int(Self.snap)) : max(m, anchor + Int(Self.snap)))
-                        let next = Creating(lane: lane, anchorMin: anchor, curMin: max(0, min(24 * 60, cur)))
-                        if creating == nil { createFeedback += 1 }
-                        if creating?.curMin != next.curMin { createSnap += 1 }
-                        if reduceMotion { creating = next } else { withAnimation(.interactiveSpring()) { creating = next } }
-                    }
-                    .onEnded { _ in
-                        guard let c = creating else { return }
-                        creating = nil
-                        let d0 = model.time.startOfDay(day)
-                        let s = d0 + EpochMs(c.lo) * MINUTE, e = d0 + EpochMs(c.hi) * MINUTE
-                        let kind: EditorSeed.Kind = (mainFraction != nil && c.lane == 1) || c.lane == 2 ? .task : .event
-                        // 計画のレーンでは、この日の計画（下書き）に入れる
-                        if c.lane == 2 { onPlanCreate?(s, e); return }
-                        router.open(.editor(EditorSeed(kind: kind, start: s, end: e)))
-                    }
-            )
+            // 長押し→上下になぞって範囲を決める（UIKit のジェスチャーなので、ふだんの上下スクロールを邪魔しない）
+            .overlay {
+                PressDragRecognizer(
+                    minimumDuration: 0.45,
+                    onBegan: { p in updateCreating(start: p, current: p, moved: false, width: width) },
+                    onChanged: { p, t in
+                        updateCreating(start: CGPoint(x: p.x - t.width, y: p.y - t.height), current: p, moved: abs(t.height) > 6, width: width)
+                    },
+                    onEnded: { _, _ in finishCreating() },
+                    onCancelled: { creating = nil },
+                    onSwipe: onSwipeDay.map { f in { n in f(n) } }
+                )
+            }
             .accessibilityElement()
             .accessibilityLabel("時間軸の空き")
             .accessibilityHint("長押しして上下になぞると、その時間で新しく追加できます")
@@ -249,6 +247,29 @@ struct DayTimeline: View {
                 let s = model.time.isSameDay(day, now) ? ((now / (15 * MINUTE)) + 1) * 15 * MINUTE : d0 + 9 * HOUR
                 router.open(.editor(EditorSeed(kind: .event, start: s, end: s + HOUR)))
             }
+    }
+
+    private func updateCreating(start: CGPoint, current: CGPoint, moved: Bool, width: CGFloat) {
+        let x = start.x - Self.gutter
+        let lane = tomorrowFraction != nil && x >= laneX(2, width) ? 2 : (mainFraction.map { _ in x >= laneX(1, width) ? 1 : 0 } ?? 0)
+        let anchor = minute(atY: start.y) / Int(Self.snap) * Int(Self.snap)
+        let m = Int((Double(minute(atY: current.y)) / Double(Self.snap)).rounded()) * Int(Self.snap)
+        let cur = !moved ? anchor + 60 : (m <= anchor ? min(m, anchor - Int(Self.snap)) : max(m, anchor + Int(Self.snap)))
+        let next = Creating(lane: creating?.lane ?? lane, anchorMin: anchor, curMin: max(0, min(24 * 60, cur)))
+        if creating == nil { createFeedback += 1 }
+        if creating?.curMin != next.curMin { createSnap += 1 }
+        if reduceMotion { creating = next } else { withAnimation(.interactiveSpring()) { creating = next } }
+    }
+
+    private func finishCreating() {
+        guard let c = creating else { return }
+        creating = nil
+        let d0 = model.time.startOfDay(day)
+        let s = d0 + EpochMs(c.lo) * MINUTE, e = d0 + EpochMs(c.hi) * MINUTE
+        let kind: EditorSeed.Kind = (mainFraction != nil && c.lane == 1) || c.lane == 2 ? .task : .event
+        // 計画のレーンでは、この日の計画（下書き）に入れる
+        if c.lane == 2 { onPlanCreate?(s, e); return }
+        router.open(.editor(EditorSeed(kind: kind, start: s, end: e)))
     }
 
     private func creatingGhost(_ c: Creating, width: CGFloat) -> some View {
@@ -488,12 +509,14 @@ struct TimelineBlock: View {
     var onResize: (EpochMs, EpochMs) -> Void
     var onTap: () -> Void
     var onMenu: () -> Void
+    /// 長押しで動かし始めた／終えた（親がスクロールを止める）
+    var onDragging: (Bool) -> Void = { _ in }
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum Edge { case top, bottom }
     struct DragInfo: Equatable { var active = false; var edge: Edge?; var dy: CGFloat = 0 }
-    @GestureState private var drag = DragInfo()
+    @State private var drag = DragInfo()
     @State private var pickedUp = 0
     @State private var snapped = 0
     /// 長押しが始まった時刻（長押しのあとに離したときは、タップとして詳細を開かない）
@@ -560,6 +583,8 @@ struct TimelineBlock: View {
             .padding(.horizontal, 6).padding(.vertical, 3)
             Spacer(minLength: 0)
         }
+        // 札は時間の長さいっぱいに広げる（中身の高さに縮まないように）
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(fg)
         .background {
             if block.tomorrow {
@@ -582,6 +607,8 @@ struct TimelineBlock: View {
         // 伸縮中は、つかんだ端だけを伸ばして見せる（移動中は全体をずらす）
         .padding(.top, drag.edge == .top ? -topShift : 0)
         .padding(.bottom, drag.edge == .bottom ? -bottomShift : 0)
+        // 本体：タップで開く、長押し→上下で移動、動かさずに離すとメニュー
+        .overlay { pressRecognizer(edge: nil) }
         .overlay(alignment: .top) { if block.movable { handle(.top) } }
         .overlay(alignment: .bottom) { if block.movable { handle(.bottom) } }
         .scaleEffect(drag.active && drag.edge == nil && !reduceMotion ? 1.03 : 1)
@@ -590,11 +617,7 @@ struct TimelineBlock: View {
         .zIndex(drag.active ? 10 : 0)
         .animation(reduceMotion ? nil : Motion.pop, value: drag.active)
         .contentShape(shape)
-        .gesture(pressGesture(edge: nil))
-        // 長押しの操作と同時に受け取る。短く触れたときだけカードを開く
-        .simultaneousGesture(TapGesture().onEnded {
-            if Date().timeIntervalSince(lastPress) > 0.6 { onTap() }
-        })
+        .onChange(of: drag.active) { _, a in onDragging(a) }
         .sensoryFeedback(.impact(weight: .medium), trigger: pickedUp)
         .sensoryFeedback(.selection, trigger: snapped)
         .accessibilityElement(children: .combine)
@@ -645,34 +668,31 @@ struct TimelineBlock: View {
                     Capsule().fill(block.color).frame(width: 28, height: 4).padding(edge == .top ? .top : .bottom, 1)
                 }
             }
-            .gesture(pressGesture(edge: edge))
+            .overlay { pressRecognizer(edge: edge) }
             .accessibilityHidden(true)
     }
 
     /// 長押し（0.4秒、端は0.3秒）→ 上下のドラッグ。動かさずに離せばメニュー
-    private func pressGesture(edge: Edge?) -> some Gesture {
-        LongPressGesture(minimumDuration: edge == nil ? 0.4 : 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .updating($drag) { value, state, _ in
-                if case .second(true, let d) = value {
-                    state = DragInfo(active: block.movable || edge == nil, edge: block.movable ? edge : nil, dy: block.movable ? (d?.translation.height ?? 0) : 0)
-                }
-            }
-            .onChanged { value in
-                if case .second(true, let d) = value {
-                    lastPress = Date()
-                    if d == nil || (d!.translation == .zero && snapped == 0) { pickedUp += 1 }
-                    if let d, block.movable {
-                        let m = Int((d.translation.height / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded())
-                        if m != snapped { snapped = m }
-                    }
-                }
-            }
-            .onEnded { value in
-                defer { snapped = 0 }
-                guard case .second(true, let d) = value else { return }
+    private func pressRecognizer(edge: Edge?) -> some View {
+        PressDragRecognizer(
+            minimumDuration: edge == nil ? 0.4 : 0.3,
+            onTap: edge == nil ? { if Date().timeIntervalSince(lastPress) > 0.6 { onTap() } } : nil,
+            onBegan: { _ in
                 lastPress = Date()
-                let dy = d?.translation.height ?? 0
+                pickedUp += 1
+                drag = DragInfo(active: block.movable || edge == nil, edge: block.movable ? edge : nil, dy: 0)
+            },
+            onChanged: { _, t in
+                lastPress = Date()
+                guard block.movable else { return }
+                drag.dy = t.height
+                let m = Int((t.height / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded())
+                if m != snapped { snapped = m }
+            },
+            onEnded: { _, t in
+                lastPress = Date()
+                defer { snapped = 0; drag = DragInfo() }
+                let dy = t.height
                 let m = Int((dy / hourHeight * 60 / CGFloat(DayTimeline.snap)).rounded()) * Int(DayTimeline.snap)
                 // 動かさずに離した：メニュー
                 if abs(dy) < 6 || m == 0 || !block.movable {
@@ -686,6 +706,8 @@ struct TimelineBlock: View {
                 case .bottom: onResize(block.start, max(block.start + snap, ((block.plannedEnd + delta) / snap) * snap))
                 case .top: onResize(min(block.plannedEnd - snap, ((block.start + delta + snap / 2) / snap) * snap), block.plannedEnd)
                 }
-            }
+            },
+            onCancelled: { drag = DragInfo(); snapped = 0 }
+        )
     }
 }

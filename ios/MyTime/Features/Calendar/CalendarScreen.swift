@@ -131,17 +131,12 @@ struct CalendarScreen: View {
             }
             .frame(height: 18)
             Divider()
-            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: 0.7)
+            DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: 0.7, onSwipeDay: { n in
+                swipeEdge = n < 0 ? .trailing : .leading
+                withAnimation(Motion.sheet) { selected = Calendar.current.date(byAdding: .day, value: n < 0 ? 1 : -1, to: selected) ?? selected }
+            })
                 .id(day)
                 .transition(reduceMotion ? .opacity : .push(from: swipeEdge))
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 40).onEnded { v in
-                        guard abs(v.translation.width) > 80, abs(v.translation.width) > abs(v.translation.height) * 1.6 else { return }
-                        let n = v.translation.width < 0 ? 1 : -1
-                        swipeEdge = n > 0 ? .trailing : .leading
-                        withAnimation(Motion.sheet) { selected = Calendar.current.date(byAdding: .day, value: n, to: selected) ?? selected }
-                    }
-                )
         }
     }
 }

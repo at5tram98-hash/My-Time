@@ -113,6 +113,7 @@ struct PlanBoard: View {
     @Environment(AppModel.self) private var model
     @State private var hourHeight: CGFloat = 56
     @State private var creating: (lane: Int, lo: Int, hi: Int)?
+    @State private var blockDragging = false
     @State private var createTick = 0
     static let gutter: CGFloat = 46
     static let snap = 15
@@ -142,7 +143,7 @@ struct PlanBoard: View {
                                     .allowsHitTesting(false)
                             }
                             ForEach(placed) { p in
-                                PlanBlock(item: p.item, hourHeight: hourHeight, editable: editable, onTap: { onTap(p.item) }, onChange: onChange)
+                                PlanBlock(item: p.item, hourHeight: hourHeight, editable: editable, onTap: { onTap(p.item) }, onChange: onChange, onDragging: { blockDragging = $0 })
                                     .frame(width: max(20, (lw - 4) / CGFloat(p.columns) - 2), height: max(22, y(p.item.end) - y(p.item.start) - 2))
                                     .offset(x: Self.gutter + (p.item.kind == .event ? 0 : lw) + 2 + (lw - 4) / CGFloat(p.columns) * CGFloat(p.column), y: y(p.item.start) + 1)
                             }
@@ -166,6 +167,7 @@ struct PlanBoard: View {
                 }
                 .frame(height: hourHeight * 24 + 8)
             }
+            .scrollDisabled(creating != nil || blockDragging)
             // 計画の最初（なければ7時）へ。表示が整ってから動かす
             .task(id: day) {
                 try? await Task.sleep(for: .milliseconds(150))
@@ -187,6 +189,20 @@ struct PlanBoard: View {
             for it in list { let p = lay[it.id]; out.append(Placed(item: it, column: p?.column ?? 0, columns: max(1, p?.columns ?? 1))) }
         }
         return out
+    }
+
+    private func updateCreating(start: CGPoint, current: CGPoint, moved: Bool, width: CGFloat) {
+        guard editable else { return }
+        let lane = start.x >= Self.gutter + width / 2 ? 1 : 0
+        let anchor = Int(start.y / hourHeight * 60) / Self.snap * Self.snap
+        let at = day + EpochMs(anchor) * MINUTE
+        let laneKind: PlanItem.Kind = lane == 0 ? .event : .task
+        // すでに計画がある時刻では作らない（計画の移動と取り合わない）
+        if creating == nil, plan.items.contains(where: { $0.kind == laneKind && $0.start <= at && at < $0.end }) { return }
+        let cur = Int((current.y / hourHeight * 60 / CGFloat(Self.snap)).rounded()) * Self.snap
+        let end = !moved ? anchor + 60 : max(cur, anchor + Self.snap)
+        if creating == nil { createTick += 1 }
+        withAnimation(.interactiveSpring()) { creating = (creating?.lane ?? lane, max(0, min(anchor, end)), min(24 * 60, max(anchor, end))) }
     }
 
     private var existing: [EventOccurrence] {
@@ -216,29 +232,20 @@ struct PlanBoard: View {
         Color.clear
             .contentShape(Rectangle())
             .frame(width: Self.gutter + width, height: hourHeight * 24)
-            .gesture(
-                LongPressGesture(minimumDuration: 0.4)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { v in
-                        guard editable, case .second(true, let d?) = v else { return }
-                        let lane = d.startLocation.x >= Self.gutter + width / 2 ? 1 : 0
-                        let anchor = Int(d.startLocation.y / hourHeight * 60) / Self.snap * Self.snap
-                        // すでに計画がある時刻では作らない（計画の移動と取り合わない）
-                        let at = day + EpochMs(anchor) * MINUTE
-                        let laneKind: PlanItem.Kind = lane == 0 ? .event : .task
-                        if creating == nil, plan.items.contains(where: { $0.kind == laneKind && $0.start <= at && at < $0.end }) { return }
-                        let cur = Int((d.location.y / hourHeight * 60 / CGFloat(Self.snap)).rounded()) * Self.snap
-                        let moved = abs(d.translation.height) > 6
-                        let end = !moved ? anchor + 60 : max(cur, anchor + Self.snap)
-                        if creating == nil { createTick += 1 }
-                        withAnimation(.interactiveSpring()) { creating = (creating?.lane ?? lane, max(0, min(anchor, end)), min(24 * 60, max(anchor, end))) }
-                    }
-                    .onEnded { _ in
+            // 長押し→上下になぞって範囲を決める（UIKit のジェスチャー：上下のスクロールを邪魔しない）
+            .overlay {
+                PressDragRecognizer(
+                    minimumDuration: 0.4,
+                    onBegan: { p in updateCreating(start: p, current: p, moved: false, width: width) },
+                    onChanged: { p, t in updateCreating(start: CGPoint(x: p.x - t.width, y: p.y - t.height), current: p, moved: abs(t.height) > 6, width: width) },
+                    onEnded: { _, _ in
                         guard let c = creating else { return }
                         creating = nil
                         onCreate(c.lane == 0 ? .event : .task, day + EpochMs(c.lo) * MINUTE, day + EpochMs(c.hi) * MINUTE)
-                    }
-            )
+                    },
+                    onCancelled: { creating = nil }
+                )
+            }
             .accessibilityElement()
             .accessibilityLabel("計画の時刻軸")
             .accessibilityAction(named: "タスクの計画を追加") { if editable { onCreate(.task, day + 9 * HOUR, day + 10 * HOUR) } }
@@ -253,9 +260,10 @@ struct PlanBlock: View {
     var editable: Bool
     var onTap: () -> Void
     var onChange: (PlanItem) -> Void
+    var onDragging: (Bool) -> Void = { _ in }
     @Environment(AppModel.self) private var model
-    @GestureState private var moveDy: CGFloat = 0
-    @GestureState private var resizeDy: CGFloat = 0
+    @State private var moveDy: CGFloat = 0
+    @State private var resizeDy: CGFloat = 0
     @State private var picked = 0
 
     private func step(_ dy: CGFloat) -> EpochMs { EpochMs((dy / hourHeight * 60 / 15).rounded()) * 15 * MINUTE }
@@ -282,11 +290,17 @@ struct PlanBlock: View {
                 Capsule().fill(item.kind == .event ? Color.white.opacity(0.8) : tint).frame(width: 26, height: 4).padding(.bottom, 3)
                     .frame(maxWidth: .infinity, minHeight: 14, alignment: .bottom)
                     .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 2)
-                        .updating($resizeDy) { v, st, _ in st = v.translation.height }
-                        .onEnded { v in
-                            var c = item; c.end = max(item.start + 15 * MINUTE, item.end + step(v.translation.height)); onChange(c)
-                        })
+                    .overlay {
+                        PressDragRecognizer(
+                            minimumDuration: 0.15,
+                            onChanged: { _, t in resizeDy = t.height },
+                            onEnded: { _, t in
+                                resizeDy = 0
+                                var c = item; c.end = max(item.start + 15 * MINUTE, item.end + step(t.height)); onChange(c)
+                            },
+                            onCancelled: { resizeDy = 0 }
+                        )
+                    }
                     .accessibilityHidden(true)
             }
         }
@@ -295,18 +309,24 @@ struct PlanBlock: View {
         .shadow(color: .black.opacity(moveDy != 0 || resizeDy != 0 ? 0.18 : 0), radius: 8, y: 3)
         .zIndex(moveDy != 0 ? 10 : 0)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
-        .highPriorityGesture(LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .updating($moveDy) { v, st, _ in if case .second(true, let d?) = v { st = d.translation.height } }
-            .onChanged { v in if case .second(true, nil) = v { picked += 1 } }
-            .onEnded { v in
-                guard case .second(true, let d?) = v else { return }
-                let delta = step(d.translation.height)
-                guard delta != 0 else { return }
-                var c = item; c.start += delta; c.end += delta; onChange(c)
-            }, including: editable ? .all : .subviews)
+        // タップで編集、長押し→上下で移動（UIKit のジェスチャー：上下のスクロールを邪魔しない）
+        .overlay {
+            PressDragRecognizer(
+                minimumDuration: 0.35,
+                onTap: onTap,
+                onBegan: editable ? { _ in picked += 1 } : nil,
+                onChanged: editable ? { _, t in moveDy = t.height == 0 ? 0.0001 : t.height } : nil,
+                onEnded: editable ? { _, t in
+                    moveDy = 0
+                    let delta = step(t.height)
+                    guard delta != 0 else { return }
+                    var c = item; c.start += delta; c.end += delta; onChange(c)
+                } : nil,
+                onCancelled: { moveDy = 0 }
+            )
+        }
         .sensoryFeedback(.impact(weight: .medium), trigger: picked)
+        .onChange(of: moveDy != 0 || resizeDy != 0) { _, a in onDragging(a) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("計画 \(item.title)、\(model.hm(item.start))〜\(model.hm(item.end))")
         .accessibilityAction(named: "15分遅らせる") { if editable { var c = item; c.start += 15 * MINUTE; c.end += 15 * MINUTE; onChange(c) } }

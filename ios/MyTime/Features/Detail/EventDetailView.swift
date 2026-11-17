@@ -128,11 +128,15 @@ struct EventDetailView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.orange.opacity(0.14)))
                 }
                 if let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
-                    Label(s.text, systemImage: s.symbol)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(s.color)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(s.color.opacity(0.14)))
+                    HStack(spacing: 4) {
+                        Image(systemName: s.symbol).imageScale(.small)
+                        Text(s.text).lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(s.color)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(s.color.opacity(0.14)))
+                    .fixedSize(horizontal: true, vertical: true)
                 }
             }
             Spacer(minLength: 0)
@@ -167,7 +171,7 @@ struct EventDetailView: View {
         if now >= end { return Status(text: "終了しました", symbol: "checkmark.circle", color: .secondary) }
         if now >= start { return Status(text: "進行中・あと\(durationText(end - now))", symbol: "dot.radiowaves.left.and.right", color: .green) }
         let diff = start - now
-        if diff < 24 * HOUR { return Status(text: "あと\(durationText(diff))で始まります", symbol: "clock", color: .blue) }
+        if diff < 24 * HOUR { return Status(text: "開始まであと\(durationText(diff))", symbol: "clock", color: .blue) }
         return nil
     }
 

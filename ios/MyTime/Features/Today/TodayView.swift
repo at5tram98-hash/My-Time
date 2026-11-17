@@ -128,15 +128,11 @@ struct TodayView: View {
                         onPlanCreate: { s, e in
                             if plan?.isApproved == true { planNotice = true } else { editingPlan = PlanItem(id: model.repo.newId(), kind: .task, title: "", start: s, end: e) }
                         },
-                        onPlanTap: { id in editingPlan = plan?.items.first { $0.id == id } })
+                        onPlanTap: { id in editingPlan = plan?.items.first { $0.id == id } },
+                        // 左へなぞる＝次の日、右へ＝前の日
+                        onSwipeDay: { n in go(to: model.time.addDays(day, n < 0 ? 1 : -1)) })
                 .id(day)
                 .transition(reduceMotion ? .opacity : .push(from: direction))
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 40).onEnded { v in
-                        guard abs(v.translation.width) > 80, abs(v.translation.width) > abs(v.translation.height) * 1.6 else { return }
-                        go(to: model.time.addDays(day, v.translation.width < 0 ? 1 : -1))
-                    }
-                )
         }
         .padding(.top, 4)
         .background(Color(.systemBackground))
@@ -254,7 +250,7 @@ struct TodayView: View {
     }
 }
 
-/// 今やることのカード。状況によって見せ方を変える。
+/// Live Activity（今日の画面の一番上のカード）。状況によって見せ方を変える。
 /// 実行中：経過と進み具合／予定の最中：残り時間と進み具合・教室や場所／次の予定・授業：あと何分・教室や場所／
 /// 出発：出発までの時間／何もない：大きな時計と、明日の最初の予定
 struct NowCard: View {
@@ -348,11 +344,14 @@ struct NowCard: View {
                     circle("tray", "未割当を開く", .indigo) { router.open(.inbox) }
                 } else if let c = countdown {
                     // 次の予定・出発まで：右に大きく残り時間
+                    // 「あと12分」
                     VStack(alignment: .trailing, spacing: 0) {
-                        Text(c.big).font(.title2.weight(.bold)).monospacedDigit().foregroundStyle(tint)
-                            .contentTransition(.numericText())
                         Text(c.small).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(c.big).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(tint)
+                            .contentTransition(.numericText())
+                            .lineLimit(1).minimumScaleFactor(0.6)
                     }
+                    .fixedSize()
                     .accessibilityHidden(true)
                 }
             }
@@ -485,8 +484,8 @@ struct NowCard: View {
         guard next.kind == .event || next.kind == .leave else { return nil }
         let m = Int((at - now) / MINUTE)
         if m <= 0 { return ("今", next.kind == .leave ? "出発" : "開始") }
-        let big = m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60):\(String(format: "%02d", m % 60))"
-        return (big, next.kind == .leave ? "で出発" : "で開始")
+        let big = m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分"
+        return (big, "あと")
     }
 
     /// 進み具合のバー（予定の最中・実行中で予定時刻があるとき）

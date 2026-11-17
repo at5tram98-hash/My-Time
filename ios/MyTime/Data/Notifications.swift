@@ -63,7 +63,9 @@ enum NotificationScheduler {
     /// これまでの予約を消して、予約し直す（My Time が作った予約だけ）
     static func reschedule(model: AppModel) async {
         let center = UNUserNotificationCenter.current()
-        await TaskAlarms.sync(tasks: model.tasks, now: model.now)
+        // チェックポイントは、これから7日分の回（繰り返しを含む）
+        let cps = (0..<8).flatMap { model.checkpoints(on: model.time.addDays(model.time.startOfDay(model.now), $0)) }.filter { $0.at > model.now }
+        await TaskAlarms.sync(tasks: model.tasks, checkpoints: cps, now: model.now)
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
         let settings = await center.notificationSettings()
@@ -71,10 +73,17 @@ enum NotificationScheduler {
         let now = model.now
         let events = model.visibleEvents(from: now, to: model.time.addDays(now, 7))
         // 通知がオフでも、アラームを付けたタスクは鳴らす
-        let all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time)
+        var all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time)
+        for c in cps {
+            let name = c.title.isEmpty ? "チェックポイント" : c.title
+            if let n = c.notifyBefore, c.at - EpochMs(n) * MINUTE > now {
+                all.append(Plan(id: "cp:\(c.id)@\(c.at)", title: "📍 \(name)", body: n == 0 ? "\(model.hm(c.at))になりました" : "あと\(n)分（\(model.hm(c.at))）", at: c.at - EpochMs(n) * MINUTE))
+            }
+            if c.alarm { all.append(Plan(id: "cpalarm:\(c.id)@\(c.at)", title: "⏰ \(name)", body: "\(model.hm(c.at))になりました", at: c.at, alarm: true)) }
+        }
         // 本物のアラーム（AlarmKit）が使えるときは、アラームの通知は出さない（二重に鳴らさない）
         let systemAlarms = TaskAlarms.systemAlarmsActive
-        for p in all where (model.notificationsEnabled && !p.alarm) || (p.alarm && !systemAlarms) {
+        for p in all where ((model.notificationsEnabled || p.id.hasPrefix("cp:")) && !p.alarm) || (p.alarm && !systemAlarms) {
             let content = UNMutableNotificationContent()
             content.title = p.title
             content.body = p.body
