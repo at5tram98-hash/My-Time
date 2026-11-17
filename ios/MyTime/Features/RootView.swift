@@ -192,7 +192,7 @@ struct MainToolbar: ToolbarContent {
                 Button("新しい予定", systemImage: "calendar") { router.open(.editor(EditorSeed(kind: .event))) }
                 Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
                 Divider()
-                Button("チェックポイント", systemImage: "mappin.and.ellipse") { router.open(.checkpoint(nil)) }
+                Button("チェックポイント", systemImage: "flag.checkered") { router.open(.checkpoint(nil)) }
                 Divider()
                 Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
             } label: {

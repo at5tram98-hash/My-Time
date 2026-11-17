@@ -131,8 +131,8 @@ struct DayTimeline: View {
                             if let c = creating { creatingGhost(c, width: width) }
                             // チェックポイント：予定のレーンにオレンジの固定の線
                             ForEach(model.checkpoints(on: day)) { c in
-                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width))) { router.open(.checkpoint(c)) }
-                                    .offset(x: Self.gutter, y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
+                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width)), gutter: Self.gutter) { router.open(.checkpoint(c)) }
+                                    .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
                             }
                             if model.time.isSameDay(day, now) { nowLine(width: geo.size.width) }
                         }

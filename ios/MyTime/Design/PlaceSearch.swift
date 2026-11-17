@@ -159,7 +159,7 @@ struct PlaceTravelEditor: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("移動時間")
                         if let t = travel, t > 0 {
-                            Text("\(model.hm(model.time.ms(start) - EpochMs(t) * MINUTE))に出発").font(.caption).foregroundStyle(.secondary)
+                            Text("\(model.hm(model.time.ms(start) - EpochMs(t) * MINUTE))発").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }

@@ -445,6 +445,21 @@ struct TaskRow: View {
                     } else if let sub = subtitle {
                         Text(sub).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
+                    if scrub == nil && !chips.isEmpty {
+                        // 締切までの残り・見積・サブタスク・カテゴリーなど
+                        HStack(spacing: 4) {
+                            ForEach(Array(chips.enumerated()), id: \.offset) { _, c in
+                                HStack(spacing: 2) {
+                                    Image(systemName: c.symbol).imageScale(.small)
+                                    Text(c.text).lineLimit(1)
+                                }
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(c.tint)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(c.tint.opacity(0.12)))
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -512,12 +527,28 @@ struct TaskRow: View {
         model.perform("実績を\(Int((v * 100).rounded()))%にしました") { try model.repo.recordProgress(task.id, value: v) }
     }
 
+    private struct Chip { var text: String; var symbol: String; var tint: Color }
+
+    private var chips: [Chip] {
+        var out: [Chip] = []
+        if task.status == .running { out.append(Chip(text: formatDuration(workedMs(task, at: model.now)), symbol: "timer", tint: .green)) }
+        if let d = task.deadline, !task.isDone {
+            let m = Int((d - model.now) / MINUTE)
+            let text = m < 0 ? "締切を過ぎました" : m < 60 ? "締切まであと\(m)分" : m < 24 * 60 ? "締切まであと\(m / 60)時間" : "締切まであと\(m / 60 / 24)日"
+            out.append(Chip(text: text, symbol: "flag.fill", tint: m < 24 * 60 ? .red : .orange))
+        }
+        let subs = model.subtasks(of: task.id)
+        if !subs.isEmpty { out.append(Chip(text: "\(subs.filter(\.done).count)/\(subs.count)", symbol: "checklist", tint: .secondary)) }
+        if let m = task.estimateMinutes, !task.isDone { out.append(Chip(text: m < 60 ? "\(m)分" : "\(m / 60)時間\(m % 60 == 0 ? "" : "\(m % 60)分")", symbol: "hourglass", tint: .teal)) }
+        if let c = task.category, !c.isEmpty { out.append(Chip(text: c, symbol: "tray.fill", tint: .brown)) }
+        return Array(out.prefix(3))
+    }
+
     private var subtitle: String? {
         var p: [String] = []
         if task.kind == .check, let c = task.checkAt { p.append("\(model.time.dayLabel(c)) \(model.hm(c))") }
         if let s = task.plannedStart, let e = task.plannedEnd { p.append("\(model.time.dayLabel(s)) \(model.hm(s))〜\(model.hm(e))") }
-        if let d = task.deadline { p.append("締切 \(model.time.dayLabel(d))") }
-        if task.status == .running { p.append("実行中") }
+
         return p.isEmpty ? nil : p.joined(separator: "・")
     }
 }

@@ -52,7 +52,7 @@ enum TaskAlarms {
         }
         // チェックポイントのアラーム（題名だけのタスクとして同じ形で鳴らす）
         for c in checkpoints where c.alarm && c.at > now && c.at < now + 7 * DAY {
-            let t = MTTask.make(title: c.title.isEmpty ? "チェックポイント" : "📍 \(c.title)", now: now, id: "cp-" + c.id)
+            let t = MTTask.make(title: c.title.isEmpty ? "チェックポイント" : c.title, now: now, id: "cp-" + c.id)
             wanted[alarmID(taskId: t.id, at: c.at)] = (t, c.at)
         }
         let existing = Set(((try? manager.alarms) ?? []).map(\.id))

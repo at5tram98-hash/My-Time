@@ -41,8 +41,11 @@ struct DayPlan: Equatable {
     /// draft（下書き）/ approved（承認済み）
     var status = "draft"
     var approvedAt: EpochMs?
+    /// その日の目標（ひとこと）
+    var goal: String = ""
 
     var isApproved: Bool { status == "approved" }
+    var isEmpty: Bool { items.isEmpty && goal.isEmpty && !isApproved }
 
     init(items: [PlanItem] = [], status: String = "draft", approvedAt: EpochMs? = nil) { self.items = items; self.status = status; self.approvedAt = approvedAt }
 
@@ -50,10 +53,11 @@ struct DayPlan: Equatable {
         items = (v?["items"]?.arrayValue ?? []).compactMap(PlanItem.init).sorted { $0.start < $1.start }
         status = v?["status"]?.stringValue ?? "draft"
         approvedAt = v?["approvedAt"]?.intValue
+        goal = v?["goal"]?.stringValue ?? ""
     }
 
     var json: JSONValue {
-        .object(["status": .string(status), "approvedAt": approvedAt.map { .number(Double($0)) } ?? .null, "items": .array(items.map(\.json))])
+        .object(["status": .string(status), "approvedAt": approvedAt.map { .number(Double($0)) } ?? .null, "items": .array(items.map(\.json)), "goal": .string(goal)])
     }
 }
 
@@ -69,7 +73,7 @@ extension AppModel {
     func dayPlan(_ day: EpochMs) -> DayPlan? {
         guard let v = settings.raw[Self.plansKey]?[planKey(day)] else { return nil }
         let p = DayPlan(v)
-        return p.items.isEmpty && !p.isApproved ? nil : p
+        return p.isEmpty ? nil : p
     }
 
     func saveDayPlan(_ day: EpochMs, _ plan: DayPlan?) {
@@ -90,9 +94,12 @@ extension AppModel {
         guard var plan = dayPlan(day), !plan.isApproved else { return 0 }
         let before = plan
         var created: [(PlanItem.Kind, String)] = []
+        /// 未割当から入れたタスク（承認すると時間を決める。取り消しで元に戻す）
+        var scheduled: [MTTask] = []
         let ok = perform("計画を承認しました（\(plan.items.count)件）", undo: { [weak self] in
             guard let self else { return }
             for (k, id) in created { if k == .event { try self.repo.deleteEvent(id) } else { try self.repo.deleteTask(id) } }
+            for t in scheduled { try self.repo.saveTask(t, isNew: false) }
             self.saveDayPlan(day, before)
         }) {
             for i in plan.items.indices {
@@ -103,6 +110,10 @@ extension AppModel {
                     try repo.saveEvent(e, isNew: true)
                     plan.items[i].refId = e.id
                     created.append((.event, e.id))
+                } else if let rid = it.refId, var existing = tasks.first(where: { $0.id == rid }) {
+                    scheduled.append(existing)
+                    existing.plannedStart = it.start; existing.plannedEnd = it.end
+                    try repo.saveTask(existing, isNew: false)
                 } else {
                     var t = MTTask.make(title: name, now: now, id: repo.newId())
                     t.plannedStart = it.start; t.plannedEnd = it.end

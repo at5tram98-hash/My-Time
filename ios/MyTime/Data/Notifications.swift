@@ -25,32 +25,59 @@ enum NotificationScheduler {
     }
 
     /// 予約する内容（純粋な計算。テストしやすいよう分けている）
-    static func plans(events: [EventOccurrence], tasks: [MTTask], minutesBefore: Int, now: EpochMs, time: DomainTime) -> [Plan] {
+    static func plans(events: [EventOccurrence], tasks: [MTTask], minutesBefore: Int, now: EpochMs, time: DomainTime,
+                      calendarKinds: [String: CalendarKind] = [:], employers: [String: String] = [:]) -> [Plan] {
         var out: [Plan] = []
+        func left(_ m: Int) -> String { m <= 0 ? "まもなく" : m < 60 ? "あと\(m)分" : m % 60 == 0 ? "あと\(m / 60)時間" : "あと\(m / 60)時間\(m % 60)分" }
         for e in events where !e.event.allDay && e.start > now {
-            if let tm = e.event.travelMinutes, tm > 0 {
+            let ev = e.event
+            let kind = calendarKinds[ev.calendarId]
+            let room = ev.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+            let place = ev.placeName.flatMap { $0.isEmpty ? nil : $0 }
+            if let tm = ev.travelMinutes, tm > 0 {
+                // 出発：「〇〇へ出発まであと10分」／本文：開始の時刻・場所
                 let leave = e.start - EpochMs(tm) * MINUTE
-                out.append(Plan(id: "leave:\(e.id)", title: "出発の時刻です", body: "\(e.title)（\(time.hm(e.start))から・移動\(tm)分）", at: leave - EpochMs(minutesBefore) * MINUTE))
-            } else {
-                out.append(Plan(id: "event:\(e.id)", title: e.title, body: "\(time.hm(e.start))から" + (e.event.placeName.map { "・\($0)" } ?? ""), at: e.start - EpochMs(minutesBefore) * MINUTE))
+                var lines = ["\(time.hm(e.start))開始・移動\(tm)分"]
+                if let place { lines.append("場所：\(place)") }
+                out.append(Plan(id: "leave:\(e.id)", title: "\(e.title)へ出発まで\(left(minutesBefore))", body: lines.joined(separator: "\n"), at: leave - EpochMs(minutesBefore) * MINUTE))
+                continue
             }
+            var lines: [String] = []
+            if kind == .class || ev.specType == .class {
+                // 授業：「演習Ⅰまであと10分」／教室
+                if let room { lines.append("教室：\(room)") }
+                lines.append("\(time.hm(e.start))〜\(time.hm(e.end))")
+            } else if kind == .job || ev.specType == .shift {
+                // バイト：「GU の勤務まであと10分」／勤務先・時間
+                if let name = ev.employerId.flatMap({ employers[$0] }) { lines.append("勤務先：\(name)") }
+                lines.append("勤務：\(time.hm(e.start))〜\(time.hm(e.end))")
+                if ev.extra?["shiftPending"]?.boolValue == true { lines.append("シフトは調整中です") }
+            } else {
+                lines.append("\(time.hm(e.start))〜\(time.hm(e.end))")
+                if let place { lines.append("場所：\(place)") }
+                if ev.extra?["meetingUrl"]?.stringValue != nil { lines.append("オンライン") }
+            }
+            let what = (kind == .job || ev.specType == .shift) && !e.title.contains("勤務") ? "\(e.title)の勤務" : e.title
+            out.append(Plan(id: "event:\(e.id)", title: minutesBefore == 0 ? "\(what)の時間です" : "\(what)まで\(left(minutesBefore))", body: lines.joined(separator: "\n"), at: e.start - EpochMs(minutesBefore) * MINUTE))
         }
         // アラーム：開始の時刻に、1分おきに3回
         for t in tasks {
             guard let at = alarmTime(t) else { continue }
             for i in 0..<3 {
-                out.append(Plan(id: "alarm\(i):\(t.id)", title: "⏰ \(t.title)", body: i == 0 ? "\(time.hm(at))になりました" : "まだ始めていません（\(time.hm(at))から）", at: at + EpochMs(i) * MINUTE, alarm: true))
+                out.append(Plan(id: "alarm\(i):\(t.id)", title: t.title, body: i == 0 ? "\(time.hm(at))です" : "\(time.hm(at))開始・まだ始めていません", at: at + EpochMs(i) * MINUTE, alarm: true))
             }
         }
         for t in tasks where !t.isDone {
             if t.kind == .do, let s = t.plannedStart {
-                out.append(Plan(id: "task:\(t.id)", title: "始める時刻です", body: "\(t.title)（\(time.hm(s))から）", at: s))
+                var lines = ["\(time.hm(s))〜\(t.plannedEnd.map(time.hm) ?? "")"]
+                if let m = t.estimateMinutes { lines.append("見積：\(m)分") }
+                out.append(Plan(id: "task:\(t.id)", title: "\(t.title)を始める時間です", body: lines.joined(separator: "\n"), at: s))
             }
             if t.kind == .check, let c = t.checkAt {
-                out.append(Plan(id: "check:\(t.id)", title: "確認", body: t.title, at: c))
+                out.append(Plan(id: "check:\(t.id)", title: "\(t.title)を確認", body: "\(time.hm(c))", at: c))
             }
             if let d = t.deadline {
-                out.append(Plan(id: "due:\(t.id)", title: "締切まで3時間", body: "\(t.title)（\(time.dayLabel(d)) \(time.hm(d))）", at: d - 3 * HOUR))
+                out.append(Plan(id: "due:\(t.id)", title: "\(t.title)の締切まであと3時間", body: "締切：\(time.dayLabel(d)) \(time.hm(d))", at: d - 3 * HOUR))
             }
         }
         return out.filter { $0.at > now }.sorted { $0.at < $1.at }.prefix(limit).map { $0 }
@@ -73,13 +100,15 @@ enum NotificationScheduler {
         let now = model.now
         let events = model.visibleEvents(from: now, to: model.time.addDays(now, 7))
         // 通知がオフでも、アラームを付けたタスクは鳴らす
-        var all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time)
+        var all = plans(events: events, tasks: model.tasks, minutesBefore: model.notifyMinutesBefore, now: now, time: model.time,
+                        calendarKinds: Dictionary(model.calendars.map { ($0.id, $0.kind) }, uniquingKeysWith: { a, _ in a }),
+                        employers: Dictionary(model.employers.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a }))
         for c in cps {
             let name = c.title.isEmpty ? "チェックポイント" : c.title
             if let n = c.notifyBefore, c.at - EpochMs(n) * MINUTE > now {
-                all.append(Plan(id: "cp:\(c.id)@\(c.at)", title: "📍 \(name)", body: n == 0 ? "\(model.hm(c.at))になりました" : "あと\(n)分（\(model.hm(c.at))）", at: c.at - EpochMs(n) * MINUTE))
+                all.append(Plan(id: "cp:\(c.id)@\(c.at)", title: n == 0 ? "\(name)の時間です" : "\(name)まであと\(n)分", body: "\(model.hm(c.at))" + (c.notes.isEmpty ? "" : "\n\(c.notes)"), at: c.at - EpochMs(n) * MINUTE))
             }
-            if c.alarm { all.append(Plan(id: "cpalarm:\(c.id)@\(c.at)", title: "⏰ \(name)", body: "\(model.hm(c.at))になりました", at: c.at, alarm: true)) }
+            if c.alarm { all.append(Plan(id: "cpalarm:\(c.id)@\(c.at)", title: name, body: "\(model.hm(c.at))です", at: c.at, alarm: true)) }
         }
         // 本物のアラーム（AlarmKit）が使えるときは、アラームの通知は出さない（二重に鳴らさない）
         let systemAlarms = TaskAlarms.systemAlarmsActive

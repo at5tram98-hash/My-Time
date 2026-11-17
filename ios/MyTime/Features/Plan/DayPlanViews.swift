@@ -1,7 +1,7 @@
 import SwiftUI
 import MyTimeCore
 
-// MARK: 翌日の計画（その他から開く）
+// MARK: 翌日計画（その他から開く）
 
 /// 明日の計画を、今日の画面と同じ時刻軸で下書きし、「承認」で本当の予定・タスクにする
 struct DayPlanView: View {
@@ -27,7 +27,9 @@ struct DayPlanView: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
+            goalField(plan)
+            analysis(plan)
             Divider()
 
             HStack(spacing: 0) {
@@ -45,10 +47,21 @@ struct DayPlanView: View {
                       onChange: { item in update(plan) { p in if let i = p.items.firstIndex(where: { $0.id == item.id }) { p.items[i] = item } } })
         }
         .safeAreaInset(edge: .bottom) { bottomBar(plan) }
-        .navigationTitle("翌日の計画")
+        .navigationTitle("翌日計画")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !plan.isApproved {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("前の週の同じ曜日から写す", systemImage: "arrow.uturn.backward.circle") { copy(from: model.time.addDays(day, -7), into: plan) }
+                        Button("前の日の計画から写す", systemImage: "doc.on.doc") { copy(from: model.time.addDays(day, -1), into: plan) }
+                        Button("未割当を空き時間に入れる", systemImage: "wand.and.stars") { autofill(plan) }
+                        Divider()
+                        Button("計画をすべて消す", systemImage: "trash", role: .destructive) { update(plan) { $0.items = [] } }
+                            .disabled(plan.items.isEmpty)
+                    } label: { Image(systemName: "wand.and.stars") }
+                    .accessibilityLabel("計画の道具")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { addAtNextFreeHour(plan) } label: { Image(systemName: "plus") }.accessibilityLabel("計画を追加")
                 }
@@ -90,7 +103,99 @@ struct DayPlanView: View {
         var p = plan
         change(&p)
         p.items.sort { $0.start < $1.start }
-        model.saveDayPlan(day, p.items.isEmpty && !p.isApproved ? nil : p)
+        model.saveDayPlan(day, p.isEmpty ? nil : p)
+    }
+
+    // MARK: 目標・分析・道具
+
+    private func goalField(_ plan: DayPlan) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "target").foregroundStyle(.indigo)
+            TextField("この日の目標（例：レポートを仕上げる）", text: Binding(get: { plan.goal }, set: { v in update(plan) { $0.goal = v } }))
+                .font(.subheadline)
+                .disabled(plan.isApproved)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .glass(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal)
+        .padding(.bottom, 6)
+    }
+
+    /// 合計・空き時間・重なり・1日の幅（承認後は達成の割合）
+    private func analysis(_ plan: DayPlan) -> some View {
+        let d1 = model.time.addDays(day, 1)
+        let existing = model.visibleEvents(from: day, to: d1).filter { o in !o.event.allDay && !plan.items.contains { $0.refId == o.masterId } }
+        let planned = plan.items.reduce(EpochMs(0)) { $0 + ($1.end - $1.start) }
+        let busy = (plan.items.map { ($0.start, $0.end) } + existing.map { ($0.start, $0.end) })
+        let free = freeMinutes(busy)
+        let overlaps = overlapCount(plan.items, existing)
+        let first = plan.items.map(\.start).min(), last = plan.items.map(\.end).max()
+        let doneCount = plan.items.filter { it in it.refId.flatMap { id in model.tasks.first { $0.id == id } }?.isDone == true }.count
+        let tasksInPlan = plan.items.filter { $0.kind == .task }.count
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                GlassPill(text: "計画 \(formatDuration(planned))", symbol: "clock", tint: .indigo)
+                GlassPill(text: "空き \(free / 60)時間\(free % 60)分", symbol: "hourglass", tint: .green)
+                if overlaps > 0 { GlassPill(text: "重なり \(overlaps)", symbol: "exclamationmark.triangle.fill", tint: .red) }
+                if let first, let last { GlassPill(text: "\(model.hm(first))〜\(model.hm(last))", symbol: "sunrise", tint: .orange) }
+                if plan.isApproved && tasksInPlan > 0 { GlassPill(text: "達成 \(doneCount)/\(tasksInPlan)", symbol: "checkmark.seal.fill", tint: .green) }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 2)
+        }
+        .padding(.bottom, 8)
+    }
+
+    /// 活動の時間帯のうち、何も入っていない分
+    private func freeMinutes(_ busy: [(EpochMs, EpochMs)]) -> Int {
+        let from = day + EpochMs(model.settings.suggestFromHour) * HOUR, to = day + EpochMs(model.settings.suggestToHour) * HOUR
+        let parts = busy.map { (max($0.0, from), min($0.1, to)) }.filter { $0.1 > $0.0 }.sorted { $0.0 < $1.0 }
+        var used: EpochMs = 0, cur = from
+        for (s, e) in parts where e > cur { used += e - max(s, cur); cur = max(cur, e) }
+        return Int(max(0, to - from - used) / MINUTE)
+    }
+
+    private func overlapCount(_ items: [PlanItem], _ existing: [EventOccurrence]) -> Int {
+        var n = 0
+        for (i, a) in items.enumerated() {
+            if existing.contains(where: { $0.start < a.end && a.start < $0.end }) { n += 1; continue }
+            if items.enumerated().contains(where: { j, b in j != i && b.start < a.end && a.start < b.end }) { n += 1 }
+        }
+        return n
+    }
+
+    /// 別の日の計画を、同じ時刻でこの日に写す（すでにある計画は残す）
+    private func copy(from src: EpochMs, into plan: DayPlan) {
+        guard let p = model.dayPlan(src), !p.items.isEmpty else { model.errorMessage = "\(model.time.dayLabel(src))の計画はありません"; return }
+        let shift = day - src
+        update(plan) { d in
+            for it in p.items {
+                d.items.append(PlanItem(id: model.repo.newId(), kind: it.kind, title: it.title, start: it.start + shift, end: it.end + shift, calendarId: it.calendarId))
+            }
+            if d.goal.isEmpty { d.goal = p.goal }
+        }
+    }
+
+    /// 未割当のタスクを、活動の時間帯の空いている所へ順に入れる（見積、なければ30分）
+    private func autofill(_ plan: DayPlan) {
+        let existing = model.visibleEvents(from: day, to: model.time.addDays(day, 1)).filter { !$0.event.allDay }
+        var busy = plan.items.map { ($0.start, $0.end) } + existing.map { ($0.start, $0.end) }
+        let to = day + EpochMs(model.settings.suggestToHour) * HOUR
+        var added: [PlanItem] = []
+        for t in model.inbox where !plan.items.contains(where: { $0.title == t.title }) {
+            let len = EpochMs(t.estimateMinutes ?? 30) * MINUTE
+            var s = day + EpochMs(model.settings.suggestFromHour) * HOUR
+            while s + len <= to {
+                if !busy.contains(where: { $0.0 < s + len && s < $0.1 }) { break }
+                s += 15 * MINUTE
+            }
+            guard s + len <= to else { continue }
+            // refId に元のタスクを入れておき、承認したらそのタスクに時間を決める（新しく作らない）
+            added.append(PlanItem(id: model.repo.newId(), kind: .task, title: t.title, start: s, end: s + len, refId: t.id))
+            busy.append((s, s + len))
+        }
+        guard !added.isEmpty else { model.errorMessage = "入れられる未割当のタスクか、空き時間がありません"; return }
+        update(plan) { $0.items.append(contentsOf: added) }
     }
 
     /// 右上の＋：最後の計画のあと（なければ9時）に1時間

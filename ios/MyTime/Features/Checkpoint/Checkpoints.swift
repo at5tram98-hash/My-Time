@@ -78,27 +78,37 @@ extension AppModel {
 
 // MARK: 時刻軸の線
 
-/// オレンジの固定の線（現在線と同じ形で、名前だけ）。タップで詳細
+/// オレンジの固定の線。現在時刻の札と同じく、時刻の目盛り（灰色の列）に時刻を出し、そのままタイトルへつなげる。
+/// gutter：時刻の列の幅（週表示の列の中では 0）
 struct CheckpointLine: View {
     var checkpoint: Checkpoint
     var width: CGFloat
+    var gutter: CGFloat = 0
     var onTap: () -> Void
     @Environment(AppModel.self) private var model
 
     var body: some View {
         ZStack(alignment: .leading) {
-            Rectangle().fill(Color.orange).frame(width: width, height: 1.5)
-            HStack(spacing: 3) {
-                Image(systemName: checkpoint.alarm ? "alarm.fill" : "mappin").font(.system(size: 8, weight: .bold))
-                Text(checkpoint.title.isEmpty ? model.hm(checkpoint.at) : checkpoint.title).font(.system(size: 10, weight: .bold)).lineLimit(1)
+            Rectangle().fill(Color.orange).frame(height: 1.5).padding(.leading, gutter)
+            HStack(spacing: 0) {
+                Text(model.hm(checkpoint.at))
+                    .font(.caption2.weight(.bold)).monospacedDigit()
+                    .padding(.leading, 5).padding(.trailing, 4)
+                if !checkpoint.title.isEmpty {
+                    Rectangle().fill(.white.opacity(0.5)).frame(width: 1, height: 10)
+                    Text(checkpoint.title)
+                        .font(.caption2.weight(.semibold)).lineLimit(1)
+                        .padding(.leading, 4).padding(.trailing, 6)
+                }
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 6).padding(.vertical, 2)
+            .padding(.vertical, 1)
             .background(Capsule().fill(Color.orange))
             .fixedSize()
-            .offset(x: 2)
+            // 時刻の部分が目盛りの列の右端にそろうように置く
+            .offset(x: gutter > 0 ? max(0, gutter - 40) : 1)
         }
-        .frame(width: width, height: 18, alignment: .leading)
+        .frame(width: width + gutter, height: 18, alignment: .leading)
         .contentShape(Rectangle())
         // 下の予定の札（UIKit のジェスチャー）より先に受け取る
         .overlay { PressDragRecognizer(onTap: onTap) }
@@ -153,7 +163,7 @@ struct CheckpointSheet: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "mappin.circle.fill").font(.system(size: 34)).foregroundStyle(.orange)
+                RoundedRectangle(cornerRadius: 3).fill(Color.orange).frame(width: 6, height: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(checkpoint.title.isEmpty ? "チェックポイント" : checkpoint.title).font(.title3.weight(.bold)).lineLimit(2)
                     Text("\(model.time.dayLabel(checkpoint.at)) \(model.hm(checkpoint.at))").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
@@ -189,7 +199,7 @@ struct CheckpointSheet: View {
         Form {
             Section {
                 HStack(spacing: 12) {
-                    Image(systemName: "mappin.circle.fill").font(.title2).foregroundStyle(.orange)
+                    RoundedRectangle(cornerRadius: 2).fill(Color.orange).frame(width: 4, height: 28)
                     TextField("例：バスに乗る", text: $checkpoint.title).font(.title3.weight(.medium)).focused($focused)
                 }
                 DatePicker("時刻", selection: Binding(get: { model.time.date(checkpoint.at) }, set: { checkpoint.at = model.time.ms($0) }))

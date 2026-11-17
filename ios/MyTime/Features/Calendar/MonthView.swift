@@ -202,7 +202,7 @@ struct MonthView: View {
                 let s = d + 9 * HOUR
                 router.open(.editor(EditorSeed(kind: .task, start: s, end: s + HOUR)))
             }
-            Button("チェックポイント", systemImage: "mappin.and.ellipse") {
+            Button("チェックポイント", systemImage: "flag.checkered") {
                 router.open(.checkpoint(Checkpoint(id: model.repo.newId(), title: "", at: d + 8 * HOUR)))
             }
             if !events.isEmpty {

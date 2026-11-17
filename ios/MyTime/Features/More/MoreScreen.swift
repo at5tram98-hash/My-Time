@@ -52,7 +52,7 @@ struct MoreScreen: View {
 
                 Section("計画") {
                     NavigationLink(value: MoreRoute.dayPlan) {
-                        row("翌日の計画", "list.clipboard.fill", .indigo, tomorrowPlanSummary)
+                        row("翌日計画", "list.clipboard.fill", .indigo, tomorrowPlanSummary)
                     }
                 }
 

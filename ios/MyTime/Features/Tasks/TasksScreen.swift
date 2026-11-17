@@ -6,6 +6,10 @@ struct TasksScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @State private var filter: Filter = .open
+    /// 並び：time（時刻）・deadline（締切）・created（追加順）・title（名前）
+    @AppStorage("tasks.sort") private var sort = "time"
+    /// まとめ方：when（いつ）・category（カテゴリー）・none
+    @AppStorage("tasks.group") private var grouping = "when"
     @State private var query = ""
     /// 一覧の上で直接入れる新しいタスク（純正リマインダーと同じ）
     @State private var quickTitle = ""
@@ -34,6 +38,7 @@ struct TasksScreen: View {
                 Section {
                 } header: {
                     VStack(spacing: 10) {
+                        todayCard
                         summaryTiles
                         filterBar
                     }
@@ -50,8 +55,8 @@ struct TasksScreen: View {
                         if query.isEmpty { Text(emptyHint) }
                     }
                     .listRowBackground(Color.clear)
-                } else if filter == .open && query.isEmpty {
-                    ForEach(groups(list), id: \.0) { title, items, tint in
+                } else if filter == .open && query.isEmpty && grouping != "none" {
+                    ForEach(grouping == "category" ? categoryGroups(list) : groups(list), id: \.0) { title, items, tint in
                         Section {
                             ForEach(items, id: \.id) { taskRow($0) }
                         } header: {
@@ -72,7 +77,25 @@ struct TasksScreen: View {
             // 下に浮かぶガラスの入力欄（改行で続けて追加）
             .safeAreaInset(edge: .bottom) { if filter == .open || filter == .inbox { quickAddBar } }
             .navigationTitle("タスク")
-            .toolbar { MainToolbar() }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("並び", selection: $sort) {
+                            Label("時刻の順", systemImage: "clock").tag("time")
+                            Label("締切の順", systemImage: "flag.checkered").tag("deadline")
+                            Label("追加した順", systemImage: "plus.circle").tag("created")
+                            Label("名前の順", systemImage: "textformat").tag("title")
+                        }
+                        Picker("まとめ方", selection: $grouping) {
+                            Label("いつ（今日・明日…）", systemImage: "calendar").tag("when")
+                            Label("カテゴリー", systemImage: "tray.full").tag("category")
+                            Label("まとめない", systemImage: "list.bullet").tag("none")
+                        }
+                    } label: { Image(systemName: "line.3.horizontal.decrease.circle") }
+                    .accessibilityLabel("並びとまとめ方")
+                }
+                MainToolbar()
+            }
             .animation(Motion.pop, value: filter)
         }
     }
@@ -80,6 +103,66 @@ struct TasksScreen: View {
     // MARK: ガラスの部品
 
     /// 上のまとめ（今日・期限切れ・フラグ）。押すとその絞り込みへ
+    /// 今日の進み：完了の割合・作業した時間・次にやること（すぐ開始できる）
+    private var todayCard: some View {
+        let d0 = model.time.startOfDay(model.now)
+        let today = tasksForDay(model.tasks, day: d0, time: model.time)
+        let done = today.filter(\.isDone).count
+        let worked = model.tasks.reduce(EpochMs(0)) { sum, t in
+            sum + t.intervals.reduce(0) { $0 + max(0, min($1.end ?? model.now, model.now) - max($1.start, d0)) }
+        }
+        let running = model.tasks.first { $0.status == .running }
+        let next = running ?? today.filter { !$0.isDone && $0.kind == .do }.min { (taskAnchor($0) ?? .max) < (taskAnchor($1) ?? .max) }
+        let ratio = today.isEmpty ? 0 : Double(done) / Double(today.count)
+        return HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(Color.secondary.opacity(0.18), lineWidth: 7)
+                Circle().trim(from: 0, to: ratio).stroke(Color.green.gradient, style: StrokeStyle(lineWidth: 7, lineCap: .round)).rotationEffect(.degrees(-90))
+                VStack(spacing: 0) {
+                    Text("\(done)/\(today.count)").font(.subheadline.weight(.bold)).monospacedDigit()
+                    Text("今日").font(.system(size: 9)).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 62, height: 62)
+            .animation(Motion.value, value: ratio)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("作業 \(formatDuration(worked))", systemImage: "timer").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if let t = next {
+                    Text(t.status == .running ? "実行中" : "次にやること").font(.caption2.weight(.bold)).foregroundStyle(t.status == .running ? .green : .accentColor)
+                    Text(t.title).font(.headline).lineLimit(1)
+                    if let s = t.plannedStart { Text("\(model.hm(s))〜\(t.plannedEnd.map(model.hm) ?? "")").font(.caption).foregroundStyle(.secondary).monospacedDigit() }
+                } else {
+                    Text(today.isEmpty ? "今日のタスクはありません" : "今日のタスクはすべて完了").font(.headline)
+                }
+            }
+            Spacer(minLength: 0)
+            if let t = next, t.kind == .do, !t.isDone {
+                Button {
+                    let a: TaskAction = t.status == .running ? .finish : t.status == .paused ? .resume : .start
+                    model.perform(a == .finish ? "完了しました" : "開始しました", undo: { try model.repo.taskAction(t.id, a == .finish ? .undoFinish : .undoStart) }) {
+                        try model.repo.taskAction(t.id, a)
+                    }
+                } label: {
+                    Image(systemName: t.status == .running ? "checkmark" : "play.fill").font(.title3.weight(.bold)).foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(t.status == .running ? Color.green.gradient : Color.accentColor.gradient))
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel(t.status == .running ? "完了" : "開始")
+            }
+        }
+        .padding(14)
+        .glass(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { if let t = next { router.open(.task(t.id)) } }
+    }
+
+    /// カテゴリーごと（なしは最後）
+    private func categoryGroups(_ list: [MTTask]) -> [(String, [MTTask], Color)] {
+        let dict = Dictionary(grouping: list) { $0.category?.isEmpty == false ? $0.category! : "" }
+        return dict.keys.sorted { a, b in a.isEmpty ? false : b.isEmpty ? true : a < b }.map { k in (k.isEmpty ? "カテゴリーなし" : k, dict[k]!, Color.secondary) }
+    }
+
     private var summaryTiles: some View {
         let late = model.tasks.filter { !$0.isDone && $0.kind == .do && ($0.plannedEnd.map { $0 < model.now } ?? false) }.count
         return Group {
@@ -286,8 +369,16 @@ struct TasksScreen: View {
             .filter { matches($0, filter) }
             .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || $0.notes.localizedCaseInsensitiveContains(q) }
             .sorted { a, b in
-                let x = taskAnchor(a) ?? a.deadline ?? .max, y = taskAnchor(b) ?? b.deadline ?? .max
-                return x != y ? x < y : a.createdAt < b.createdAt
+                switch sort {
+                case "deadline":
+                    let x = a.deadline ?? .max, y = b.deadline ?? .max
+                    return x != y ? x < y : (taskAnchor(a) ?? .max) < (taskAnchor(b) ?? .max)
+                case "created": return a.createdAt > b.createdAt
+                case "title": return a.title.localizedStandardCompare(b.title) == .orderedAscending
+                default:
+                    let x = taskAnchor(a) ?? a.deadline ?? .max, y = taskAnchor(b) ?? b.deadline ?? .max
+                    return x != y ? x < y : a.createdAt < b.createdAt
+                }
             }
     }
 }

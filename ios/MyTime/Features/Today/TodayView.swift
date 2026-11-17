@@ -38,7 +38,6 @@ struct TodayView: View {
                             .disabled(model.time.isSameDay(day, model.now))
                         Button("日付を選択", systemImage: "calendar") { showDatePicker = true }
                         Divider()
-                        Button("文章で追加", systemImage: "text.bubble") { router.open(.quickAdd) }
                         Button("計画の支援", systemImage: "wand.and.stars") { router.open(.planAssist) }
                         Divider()
                         Toggle(isOn: $showTomorrow.animation(Motion.sheet)) { Label("計画を表示", systemImage: "list.clipboard") }
@@ -60,7 +59,7 @@ struct TodayView: View {
                     p.items.removeAll { $0.id == item.id }
                     if let result { p.items.append(result) }
                     p.items.sort { $0.start < $1.start }
-                    model.saveDayPlan(model.time.startOfDay(item.start), p.items.isEmpty && !p.isApproved ? nil : p)
+                    model.saveDayPlan(model.time.startOfDay(item.start), p.isEmpty ? nil : p)
                 }
                 .environment(model)
             }
@@ -147,7 +146,7 @@ struct TodayView: View {
                 laneButton("予定", symbol: "calendar", count: events, on: focus == "main", width: w * mainFraction) { toggleFocus("main") }
                 laneButton("タスク", symbol: "checklist", count: tasks, on: focus == "detail", width: w * (1 - mainFraction)) { toggleFocus("detail") }
                 if let t = tomorrowFraction {
-                    // 計画の見出し（タップで翌日の計画を開く）
+                    // 計画の見出し（タップで翌日計画を開く）
                     Button { router.openMore(.dayPlan) } label: {
                         HStack(spacing: 3) {
                             Image(systemName: model.dayPlan(day)?.isApproved == true ? "checkmark.seal" : "list.clipboard").imageScale(.small)
@@ -162,7 +161,7 @@ struct TodayView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("計画 \(tomorrow)件。タップすると翌日の計画を開きます")
+                    .accessibilityLabel("計画 \(tomorrow)件。タップすると翌日計画を開きます")
                 }
             }
         }
@@ -493,11 +492,11 @@ struct NowCard: View {
         if let o = occurrence, isOngoing {
             let v = Double(now - o.start) / Double(max(1, o.end - o.start))
             let left = Int((o.end - now) / MINUTE)
-            return (min(1, max(0, v)), model.hm(o.start), "あと\(left < 60 ? "\(left)分" : "\(left / 60)時間\(left % 60)分")で終わる", "予定の進み具合")
+            return (min(1, max(0, v)), "\(model.hm(o.start))〜\(model.hm(o.end))", "あと\(left < 60 ? "\(left)分" : "\(left / 60)時間\(left % 60)分")", "予定の進み具合")
         }
         if let task, task.status == .running, let s = task.plannedStart, let e = task.plannedEnd, e > s {
             let v = Double(now - s) / Double(e - s)
-            return (min(1, max(0, v)), model.hm(s), now < e ? "\(model.hm(e))まで" : "予定を\(Int((now - e) / MINUTE))分過ぎています", "予定の時間の進み具合")
+            return (min(1, max(0, v)), model.hm(s), now < e ? "あと\(Int((e - now) / MINUTE))分" : "+\(Int((now - e) / MINUTE))分", "予定の時間の進み具合")
         }
         return nil
     }

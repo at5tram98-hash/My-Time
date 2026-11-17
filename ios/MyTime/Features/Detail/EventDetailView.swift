@@ -169,9 +169,9 @@ struct EventDetailView: View {
     private func status(start: EpochMs, end: EpochMs, now: EpochMs, allDay: Bool) -> Status? {
         if allDay { return nil }
         if now >= end { return Status(text: "終了しました", symbol: "checkmark.circle", color: .secondary) }
-        if now >= start { return Status(text: "進行中・あと\(durationText(end - now))", symbol: "dot.radiowaves.left.and.right", color: .green) }
+        if now >= start { return Status(text: "あと\(durationText(end - now))", symbol: "dot.radiowaves.left.and.right", color: .green) }
         let diff = start - now
-        if diff < 24 * HOUR { return Status(text: "開始まであと\(durationText(diff))", symbol: "clock", color: .blue) }
+        if diff < 24 * HOUR { return Status(text: "あと\(durationText(diff))", symbol: "clock", color: .blue) }
         return nil
     }
 
@@ -257,7 +257,7 @@ struct EventDetailView: View {
                 .accessibilityHint("マップで開きます")
             }
             if let m = ev.travelMinutes, m > 0 {
-                LabeledContent("移動", value: "\(m)分（\(model.hm(start - EpochMs(m) * MINUTE))に出発）")
+                LabeledContent("移動", value: "\(m)分・\(model.hm(start - EpochMs(m) * MINUTE))発")
             }
             if let room = ev.classInfo?["room"]?.stringValue, !room.isEmpty { LabeledContent("教室", value: room) }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
