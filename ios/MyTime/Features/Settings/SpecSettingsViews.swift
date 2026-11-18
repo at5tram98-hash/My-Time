@@ -21,7 +21,7 @@ struct SpecSettingsListView: View {
             }
         }
         .searchable(text: $query, prompt: "種類を探す")
-        .navigationTitle("専門の種類")
+        .navigationTitle("種類ごとの設定")
     }
 
     private func row(_ d: SpecDef) -> some View {
@@ -30,6 +30,8 @@ struct SpecSettingsListView: View {
             Image(systemName: model.specSymbol(d.id)).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                 .frame(width: 30, height: 30).background(model.specTint(d.id).gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .opacity(s.enabled ? 1 : 0.4)
+                .saturation(s.enabled ? 1 : 0)
+                .animation(Motion.pop, value: s.enabled)
             VStack(alignment: .leading, spacing: 1) {
                 Text(d.name).foregroundStyle(s.enabled ? .primary : .secondary)
                 Text(s.enabled ? d.blurb : "オフ（種類の選択に出しません）").font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -169,7 +171,13 @@ struct LiveActivitySettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("この iPhone", value: LiveActivityCoordinator.shared.activitiesEnabled ? "使えます" : "オフ（設定アプリ › My Time で許可）")
+                let on = LiveActivityCoordinator.shared.activitiesEnabled
+                LabeledContent("この iPhone") {
+                    HStack(spacing: 6) {
+                        Circle().fill(on ? Color.green : Color.orange).frame(width: 8, height: 8)
+                        Text(on ? "使えます" : "オフ（設定アプリ › My Time で許可）")
+                    }
+                }
                 if !active.isEmpty {
                     ForEach(active, id: \.self) { Text($0).font(.subheadline) }
                 }
@@ -196,7 +204,7 @@ struct LiveActivitySettingsView: View {
                 Button("いま照合する") { Task { await LiveActivityCoordinator.shared.reconcile(model: model); active = LiveActivityCoordinator.shared.activeSummaries } }
             }
         }
-        .navigationTitle("Live Activity")
+        .navigationTitle("ロック画面の表示")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if !loaded { p = model.livePrefs; loaded = true }

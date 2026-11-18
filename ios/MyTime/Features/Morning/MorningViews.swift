@@ -27,6 +27,8 @@ struct MorningHomeView: View {
                 .disabled(r.enabledSteps.isEmpty)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+            } footer: {
+                Text("押すと工程を1つずつ案内します。ロック画面とダイナミックアイランドからも「完了」できます。")
             }
 
             departureSection(r)
@@ -139,9 +141,13 @@ struct MorningHomeView: View {
                 Text((a.label.isEmpty ? "アラーム" : a.label) + "・" + (a.weekdays.isEmpty ? "毎日" : a.weekdays.map { DomainTime.weekdayJa[$0] }.joined()) + (a.snoozeMinutes > 0 ? "・スヌーズ\(a.snoozeMinutes)分" : ""))
                     .font(.caption).foregroundStyle(.secondary)
                 if let n = a.next(after: model.now, time: model.time) {
-                    Text("次は \(model.time.dayLabel(n)) \(model.hm(n))").font(.caption2).foregroundStyle(.orange)
+                    Label(nextText(n), systemImage: "alarm").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                } else {
+                    Text("オフ（鳴りません）").font(.caption2).foregroundStyle(.secondary)
                 }
             }
+            .opacity(a.enabled ? 1 : 0.55)
+            .animation(Motion.pop, value: a.enabled)
             Spacer()
             Toggle("", isOn: Binding(get: { a.enabled }, set: { v in
                 var x = model.morning
@@ -152,6 +158,13 @@ struct MorningHomeView: View {
             .tint(.orange)
         }
         .foregroundStyle(.primary)
+    }
+
+    /// 「今日 7:00」「明日 7:00」「11月20日(金) 7:00」
+    private func nextText(_ n: EpochMs) -> String {
+        let t = model.time
+        let d = t.isSameDay(n, model.now) ? "今日" : t.isSameDay(n, t.addDays(model.now, 1)) ? "明日" : t.dayLabel(n)
+        return "次は\(d) \(model.hm(n))"
     }
 
     private func stepRow(_ s: MorningStep, routine: MorningRoutine) -> some View {
@@ -329,6 +342,7 @@ struct MorningRunView: View {
                         VStack(spacing: 6) {
                             Text("全\(run.steps.count)工程中 \(run.index + 1)工程目").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                             ProgressView(value: Double(run.doneCount), total: Double(run.steps.count)).tint(.orange)
+                                .animation(Motion.value, value: run.doneCount)
                         }
                         Spacer(minLength: 0)
                         VStack(spacing: 8) {
@@ -349,6 +363,7 @@ struct MorningRunView: View {
                         Text("準備の経過 \(clock(run.elapsed(now: now)))" + (run.isPaused ? "（一時停止中）" : "")).font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
                         Button { act { $0.complete(now: model.now) } } label: {
                             Label("完了", systemImage: "checkmark").font(.title3.weight(.bold))
+                                .symbolEffect(.bounce, value: run.index)
                                 .frame(maxWidth: .infinity, minHeight: 60)
                                 .foregroundStyle(.white)
                                 .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -363,6 +378,14 @@ struct MorningRunView: View {
                         }
                     }
                     .padding()
+                    .background(alignment: .top) {
+                        // 進むほど上から暖かい色が広がる（朝日のイメージ）
+                        LinearGradient(colors: [Color.orange.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 120 + 380 * CGFloat(run.doneCount) / CGFloat(max(1, run.steps.count)))
+                            .ignoresSafeArea()
+                            .animation(Motion.value, value: run.doneCount)
+                            .allowsHitTesting(false)
+                    }
                     .animation(reduceMotion ? nil : .snappy, value: run.index)
                 }
             } else if let f = finished ?? r.history.first(where: { $0.finishedAt != nil && r.active == nil }) {
@@ -429,6 +452,8 @@ struct MorningRunView: View {
             Section {
                 VStack(spacing: 6) {
                     Image(systemName: "sun.max.fill").font(.system(size: 48)).foregroundStyle(.orange)
+                        .symbolEffect(.bounce, options: .nonRepeating, value: f.id)
+                        .transition(.scale.combined(with: .opacity))
                     Text("準備ができました").font(.title3.weight(.bold))
                     Text("合計 \(formatSeconds(f.elapsed(now: f.finishedAt ?? model.now)))").foregroundStyle(.secondary)
                 }

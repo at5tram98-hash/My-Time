@@ -91,7 +91,9 @@ struct CleaningHomeView: View {
                 Text(i.lastDone.map { "前回 \(model.time.dayLabel($0))" } ?? "未記録").font(.caption).foregroundStyle(.secondary)
                 if let due {
                     Text(overdue > 0 ? "\(overdue)日過ぎ" : "次 \(model.time.dayLabel(due))").font(.caption.weight(.semibold))
-                        .foregroundStyle(overdue > 0 ? .orange : .teal)
+                        .foregroundStyle(overdue > 0 ? Color.white : Color.teal)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(overdue > 0 ? AnyShapeStyle(Color.orange.gradient) : AnyShapeStyle(Color.teal.opacity(0.12))))
                 }
             }
         }
@@ -131,6 +133,7 @@ struct CleaningStartSheet: View {
                                     Image(systemName: a.symbol).font(.title2).foregroundStyle(on ? .white : .teal)
                                     Spacer()
                                     Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(on ? .white : .secondary)
+                                        .contentTransition(.symbolEffect(.replace))
                                 }
                                 Text(a.name).font(.headline).foregroundStyle(on ? .white : .primary)
                                 Text("\(a.items.count)箇所" + (due > 0 ? "・\(due)箇所が目標日を過ぎています" : ""))
@@ -188,7 +191,9 @@ struct CleaningSessionView: View {
                             ProgressRing(value: c.ratio ?? 0, ideal: nil, symbol: "bubbles.and.sparkles.fill", tint: .teal, size: 60, done: c.ratio == 1)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(c.done) / \(c.total) 箇所").font(.title2.weight(.bold)).monospacedDigit()
-                                Text("対象外は数えません").font(.caption).foregroundStyle(.secondary)
+                                    .contentTransition(.numericText())
+                                    .animation(Motion.value, value: c.done)
+                                Text("Yes＝清掃した・No＝まだ・対象外＝今回はしない（数えない）").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                                 Text(Date(timeIntervalSince1970: Double(s.startedAt) / 1000), style: .timer).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(.teal)
                             }
                             Spacer()
@@ -197,7 +202,14 @@ struct CleaningSessionView: View {
                         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                         ForEach(book.areas.filter { s.areaIds.contains($0.id) }) { a in
                             VStack(alignment: .leading, spacing: 10) {
-                                Label(a.name, systemImage: a.symbol).font(.headline).foregroundStyle(.teal)
+                                let ac = CleaningSession.completion(a.items.map { s.results[$0.id] ?? .no })
+                                HStack {
+                                    Label(a.name, systemImage: a.symbol).font(.headline).foregroundStyle(.teal)
+                                    Spacer()
+                                    Text("\(ac.done)/\(ac.total)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                                        .contentTransition(.numericText())
+                                }
+                                ProgressView(value: ac.ratio ?? 0).tint(.teal).animation(Motion.value, value: ac.done)
                                 ForEach(a.items) { i in card(i, status: s.results[i.id] ?? .no) }
                             }
                         }
@@ -243,6 +255,7 @@ struct CleaningSessionView: View {
                     Button { set(i.id, x) } label: {
                         Text(x.label).font(.caption.weight(.bold))
                             .frame(minWidth: x == .skip ? 50 : 40, minHeight: 34)
+                            .scaleEffect(on ? 1.06 : 1)
                             .foregroundStyle(on ? .white : color(x))
                             .background(Capsule().fill(on ? AnyShapeStyle(color(x).gradient) : AnyShapeStyle(color(x).opacity(0.12))))
                     }
@@ -282,6 +295,7 @@ struct CleaningSessionView: View {
             Section {
                 VStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").font(.system(size: 48)).foregroundStyle(.teal)
+                        .symbolEffect(.bounce, options: .nonRepeating, value: s.id)
                     Text("清掃を記録しました").font(.title3.weight(.bold))
                     Text(mins < 1 ? "所要時間 1分未満" : "所要時間 \(mins)分").foregroundStyle(.secondary)
                 }

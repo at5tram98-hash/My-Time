@@ -151,16 +151,12 @@ final class LiveActivityCoordinator {
             guard emp != nil || o.event.specType == .shift || model.calendar(o.event.calendarId)?.kind == .job else { continue }
             let p = emp?.pay ?? PayProfile()
             let from = o.start - EpochMs(p.noticeMinutes) * MINUTE
-            let att = o.event.attendance(occurrence: o.originalStart ?? o.start)
-            let status: String
-            if let a = att, a.clockOut != nil { status = a.confirmed ? "退勤（確定）" : "退勤" }
-            else if att?.clockIn != nil { status = "勤務中" }
-            else { status = now < o.start ? "出勤前" : "開始時刻を過ぎています" }
+            let status = now < o.start ? "開始まで" : "勤務中"
             let name = emp?.name ?? o.title
             out.append(Item(
                 candidate: LiveCandidate(id: "shift:\(o.id)@\(from)", kind: .shift, showFrom: from, showUntil: o.end, start: o.start),
                 content: .init(title: name.contains("勤務") ? name : "\(name)勤務", headline: p.address.isEmpty ? nil : p.address, detail: range(o.start, o.end),
-                               countdownTo: date(now < o.start ? o.start : o.end), status: now < o.start ? status : "\(status)・終了まで", endsAt: date(o.end),
+                               countdownTo: date(now < o.start ? o.start : o.end), status: now < o.start ? status : "勤務中・終了まで", endsAt: date(o.end),
                                tint: emp.map { $0.pay.color } ?? model.eventColor(o.event), symbol: p.symbol, url: "mytime://event/\(o.id)", canComplete: false),
                 endsAt: o.end))
         }

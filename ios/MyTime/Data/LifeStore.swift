@@ -13,6 +13,7 @@ enum LifeKey: String {
     case live = "iosLiveActivity"
     case specSettings = "iosSpecSettings"
     case confirmedPay = "iosConfirmedPay"
+    case autoDelete = "iosAutoDelete"
 }
 
 extension AppModel {
@@ -68,6 +69,11 @@ extension AppModel {
     func specTint(_ t: SpecTypeId) -> Color { specSetting(t).color.map { Color(hex: $0) } ?? SPEC_BY_ID[t]?.tint ?? .accentColor }
     /// 種類を選ぶ画面に出す種類（無効にしたものは出さない）
     var enabledSpecDefs: [SpecDef] { SPEC_PICKABLE.filter { specSetting($0.id).enabled } }
+
+    // MARK: 自動削除
+
+    var autoDeletePrefs: AutoDeletePrefs { lifeValue(.autoDelete, as: AutoDeletePrefs.self) ?? AutoDeletePrefs() }
+    func saveAutoDeletePrefs(_ p: AutoDeletePrefs) { setLifeValue(.autoDelete, p) }
 
     // MARK: 確定した給与
 

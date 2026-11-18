@@ -237,40 +237,6 @@ public enum PaySchedule {
     }
 }
 
-// MARK: - 勤務の記録（出勤・退勤は利用者が確定する）
-
-public struct Attendance: Codable, Equatable, Sendable {
-    public var clockIn: EpochMs?
-    public var clockOut: EpochMs?
-    /// 利用者が「この時間で確定」を押したか（確定するまでは予定の時間で見込みを出す）
-    public var confirmed: Bool
-    public init(clockIn: EpochMs? = nil, clockOut: EpochMs? = nil, confirmed: Bool = false) { self.clockIn = clockIn; self.clockOut = clockOut; self.confirmed = confirmed }
-}
-
-public extension MTEvent {
-    var attendance: Attendance? { extra?["attendance"].flatMap { try? JSONValue.decode(Attendance.self, from: $0) } }
-
-    /// 繰り返しの勤務は回ごと（元の開始時刻をキーに `attendances` へ）。繰り返しでなければ `attendance`
-    func attendance(occurrence key: EpochMs?) -> Attendance? {
-        if recurrence != nil, let k = key { return extra?["attendances"]?["\(k)"].flatMap { try? JSONValue.decode(Attendance.self, from: $0) } }
-        return attendance
-    }
-
-    /// 勤務の記録を書き込んだ extra を返す（nil で消す）
-    func extraWithAttendance(_ a: Attendance?, occurrence key: EpochMs?) -> JSONValue {
-        var o = extra?.objectValue ?? [:]
-        let v = a.flatMap { try? JSONValue.from($0) } ?? .null
-        if recurrence != nil, let k = key {
-            var m = o["attendances"]?.objectValue ?? [:]
-            m["\(k)"] = a == nil ? nil : v
-            o["attendances"] = .object(m)
-        } else {
-            o["attendance"] = v
-        }
-        return .object(o)
-    }
-}
-
 /// 給与明細などで確定した額（期間＝締め日で1件）
 public struct ConfirmedPay: Codable, Equatable, Sendable, Identifiable {
     public var id: String { "\(employerId)@\(closing)" }
@@ -289,16 +255,11 @@ public struct ShiftLine: Equatable, Sendable, Identifiable {
     public var start: EpochMs
     public var end: EpochMs
     public var planned: ShiftPayResult
-    /// 確定した出勤・退勤による実績（未確定なら nil）
-    public var actual: ShiftPayResult?
-    public var best: ShiftPayResult { actual ?? planned }
-    public var isConfirmed: Bool { actual != nil }
+    public var best: ShiftPayResult { planned }
 }
 
 public struct PayrollSummary: Equatable, Sendable {
     public var total: Int
-    public var confirmedPart: Int
-    public var predictedPart: Int
     public var workMinutes: Int
     public var shifts: Int
 }
@@ -312,18 +273,12 @@ public enum Payroll {
             let p = emp.pay
             let brk = o.event.extra?["spec"]?["details"]?["breakMinutes"]?.intValue.map(Int.init)
             guard let planned = PayCalculator.shift(start: o.start, end: o.end, profile: p, breakOverride: brk, time: time) else { return nil }
-            var actual: ShiftPayResult?
-            if let a = o.event.attendance(occurrence: o.originalStart ?? o.start), a.confirmed, let i = a.clockIn, let out = a.clockOut, out > i {
-                actual = PayCalculator.shift(start: i, end: out, profile: p, breakOverride: brk, time: time)
-            }
-            return ShiftLine(id: o.id, employerId: eid, title: o.title, start: o.start, end: o.end, planned: planned, actual: actual)
+            return ShiftLine(id: o.id, employerId: eid, title: o.title, start: o.start, end: o.end, planned: planned)
         }
     }
 
     public static func summary(_ lines: [ShiftLine]) -> PayrollSummary {
-        let c = lines.filter(\.isConfirmed)
-        return PayrollSummary(total: lines.reduce(0) { $0 + $1.best.total }, confirmedPart: c.reduce(0) { $0 + $1.best.total },
-                              predictedPart: lines.filter { !$0.isConfirmed }.reduce(0) { $0 + $1.best.total },
+        PayrollSummary(total: lines.reduce(0) { $0 + $1.best.total },
                               workMinutes: lines.reduce(0) { $0 + $1.best.workMinutes }, shifts: lines.count)
     }
 
@@ -343,9 +298,9 @@ public struct PayrollExport: Codable, Equatable, Sendable {
     }
     public struct Shift: Codable, Equatable, Sendable {
         public var id: String; public var employerId: String; public var start: EpochMs; public var end: EpochMs
-        public var workMinutes: Int; public var pay: Int; public var transport: Int; public var confirmed: Bool
-        public init(id: String, employerId: String, start: EpochMs, end: EpochMs, workMinutes: Int, pay: Int, transport: Int, confirmed: Bool) {
-            self.id = id; self.employerId = employerId; self.start = start; self.end = end; self.workMinutes = workMinutes; self.pay = pay; self.transport = transport; self.confirmed = confirmed
+        public var workMinutes: Int; public var pay: Int; public var transport: Int
+        public init(id: String, employerId: String, start: EpochMs, end: EpochMs, workMinutes: Int, pay: Int, transport: Int) {
+            self.id = id; self.employerId = employerId; self.start = start; self.end = end; self.workMinutes = workMinutes; self.pay = pay; self.transport = transport
         }
     }
     public struct Period: Codable, Equatable, Sendable {

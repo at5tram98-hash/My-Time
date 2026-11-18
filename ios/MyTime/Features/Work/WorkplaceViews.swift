@@ -117,7 +117,7 @@ struct EmployerEditor: View {
                 .padding(.vertical, 2)
                 }
             }
-            Section("給与") {
+            Section {
                 LabeledContent("時給") {
                     TextField("円", value: $p.hourlyWage, format: .number).keyboardType(.numberPad).multilineTextAlignment(.trailing)
                 }
@@ -128,6 +128,15 @@ struct EmployerEditor: View {
                     Picker("単位の端数", selection: $p.unitRounding) { ForEach(PayRounding.allCases, id: \.self) { Text($0.label).tag($0) } }
                 }
                 Picker("円の端数", selection: $p.yenRounding) { ForEach(PayRounding.allCases, id: \.self) { Text($0.label).tag($0) } }
+            } header: { Text("給与") } footer: {
+                // 例：18:30〜22:00 の勤務でいくらになるか（条件を変えるとすぐ変わる）
+                let d0 = model.time.startOfDay(model.now)
+                if let r = PayCalculator.shift(start: d0 + 18 * HOUR + 30 * MINUTE, end: d0 + 22 * HOUR, profile: p, time: model.time), p.hourlyWage != nil {
+                    Text("例：18:30〜22:00 の勤務なら 給与 \(yen(r.pay))＋交通費 \(yen(r.transport))＝\(yen(r.total))")
+                        .contentTransition(.numericText())
+                } else {
+                    Text("時給を入れると、18:30〜22:00 の勤務でいくらになるかをここに出します。")
+                }
             }
             Section {
                 Picker("交通費", selection: $p.transportMode) { ForEach(TransportMode.allCases, id: \.self) { Text($0.label).tag($0) } }
@@ -165,7 +174,7 @@ struct EmployerEditor: View {
                 .onDelete { p.premiums.remove(atOffsets: $0) }
                 Button("割増を追加", systemImage: "plus") { p.premiums.append(PremiumRule(kind: .night, rate: 0.25)) }
             } header: { Text("割増") } footer: { Text("勤務先の決まりに合わせて登録します（自動では足しません）。") }
-            Section("締め日と支給日") {
+            Section {
                 Picker("締め日", selection: $p.closingDay) {
                     Text("月末").tag(0)
                     ForEach(1...28, id: \.self) { Text("\($0)日").tag($0) }
@@ -177,6 +186,9 @@ struct EmployerEditor: View {
                     Text("月末").tag(0)
                     ForEach(1...31, id: \.self) { Text("\($0)日").tag($0) }
                 }
+            } header: { Text("締め日と支給日") } footer: {
+                let per = PaySchedule.period(containing: model.now, profile: p, time: model.time)
+                Text("いまの勤務は \(model.time.dayLabel(per.from))〜\(model.time.dayLabel(per.closing)) の分として、\(model.time.dayLabel(per.payday)) に支給されます。")
             }
             Section {
                 Picker("勤務の何分前に知らせる", selection: $p.noticeMinutes) {
@@ -297,10 +309,16 @@ struct PayrollView: View {
                     tile("今月", month)
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-            } footer: { Text("交通費を含む見込み。出勤・退勤を確定した勤務は実績で計算します（緑の数字）。") }
+            } footer: { Text("予定の勤務時間から計算した見込み（交通費を含む）。給与明細を受け取ったら、下の支給の行を押して金額を入れると「確定」になります。") }
 
             Section("これからの支給") {
-                if next.isEmpty { Text("勤務先を登録すると表示します").foregroundStyle(.secondary) }
+                if next.isEmpty {
+                    ContentUnavailableView {
+                        Label("勤務先がありません", systemImage: "briefcase")
+                    } description: { Text("勤務先と時給を登録すると、ここに支給の見込みが出ます。") } actions: {
+                        NavigationLink("勤務先を登録") { EmployersView() }.buttonStyle(.borderedProminent)
+                    }
+                }
                 ForEach(next, id: \.key) { p in
                     Button { editing = p; amountText = p.confirmed.map(String.init) ?? "" } label: {
                         HStack(spacing: 12) {
@@ -331,10 +349,22 @@ struct PayrollView: View {
                 ForEach(model.employers, id: \.id) { e in
                     let ls = monthLines.filter { $0.employerId == e.id }
                     let s = Payroll.summary(ls)
-                    LabeledContent {
-                        Text(yen(s.total)).monospacedDigit()
-                    } label: {
-                        Label("\(e.name)（\(s.shifts)回・\(s.workMinutes / 60)時間\(s.workMinutes % 60)分）", systemImage: e.pay.symbol)
+                    let all = max(1, Payroll.summary(monthLines).total)
+                    VStack(alignment: .leading, spacing: 6) {
+                        LabeledContent {
+                            Text(yen(s.total)).monospacedDigit()
+                        } label: {
+                            Label("\(e.name)（\(s.shifts)回・\(s.workMinutes / 60)時間\(s.workMinutes % 60)分）", systemImage: e.pay.symbol)
+                                .foregroundStyle(Color(hex: e.pay.color), .primary)
+                        }
+                        // 今月の合計に占める割合
+                        GeometryReader { g in
+                            Capsule().fill(Color(.tertiarySystemFill))
+                                .overlay(alignment: .leading) {
+                                    Capsule().fill(Color(hex: e.pay.color).gradient).frame(width: g.size.width * CGFloat(s.total) / CGFloat(all))
+                                }
+                        }
+                        .frame(height: 6)
                     }
                 }
             }
@@ -345,19 +375,18 @@ struct PayrollView: View {
                         HStack {
                             Text("\(t.dayLabel(l.start)) \(t.hm(l.start))〜\(t.hm(l.end))").font(.subheadline.weight(.semibold)).monospacedDigit()
                             Spacer()
-                            Text(yen(l.best.total)).font(.subheadline).monospacedDigit().foregroundStyle(l.isConfirmed ? .green : .primary)
+                            Text(yen(l.best.total)).font(.subheadline).monospacedDigit()
                         }
                         HStack(spacing: 6) {
                             Text(model.employer(l.employerId)?.name ?? l.title)
                             Text("予定 \(l.planned.workMinutes)分")
-                            if let a = l.actual { Text("実績 \(a.workMinutes)分").foregroundStyle(a.workMinutes >= l.planned.workMinutes ? .green : .orange) }
                             if l.best.breakMinutes > 0 { Text("休憩 \(l.best.breakMinutes)分") }
                             if l.best.belowLegalBreak { Label("休憩が法定未満", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
                         }
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-            } header: { Text("今月の勤務（予定と実績）") }
+            } header: { Text("今月の勤務") }
 
             Section {
                 ShareLink(item: exportText(), preview: SharePreview("給与データ（JSON）")) {
@@ -385,7 +414,8 @@ struct PayrollView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Text(yen(s.total)).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-            if s.confirmedPart > 0 { Text("確定 \(yen(s.confirmedPart))").font(.caption2).foregroundStyle(.green).lineLimit(1).minimumScaleFactor(0.6) }
+                .contentTransition(.numericText())
+                .animation(Motion.value, value: s.total)
             Text("\(s.shifts)回").font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -410,7 +440,7 @@ struct PayrollView: View {
             }
         }
         let x = PayrollExport(exportedAt: model.now, employers: model.employers.map { .init(id: $0.id, name: $0.name) },
-                              shifts: ls.map { .init(id: $0.id, employerId: $0.employerId, start: $0.start, end: $0.end, workMinutes: $0.best.workMinutes, pay: $0.best.pay, transport: $0.best.transport, confirmed: $0.isConfirmed) },
+                              shifts: ls.map { .init(id: $0.id, employerId: $0.employerId, start: $0.start, end: $0.end, workMinutes: $0.best.workMinutes, pay: $0.best.pay, transport: $0.best.transport) },
                               periods: periods)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -418,81 +448,44 @@ struct PayrollView: View {
     }
 }
 
-// MARK: - 予定の詳細：勤務（出勤・退勤と給与）
+// MARK: - 予定の詳細：勤務（給与の内訳）
 
 struct ShiftWorkSection: View {
     var event: MTEvent
     var start: EpochMs
     var end: EpochMs
-    /// 繰り返しの回のときの元の開始時刻
-    var occurrenceKey: EpochMs?
     @Environment(AppModel.self) private var model
-    @State private var tick = 0
 
     var body: some View {
         let emp = model.employer(event.employerId)
-        let att = event.attendance(occurrence: occurrenceKey ?? start) ?? Attendance()
         Section {
             if let emp {
                 let brk = event.extra?["spec"]?["details"]?["breakMinutes"]?.intValue.map(Int.init)
                 if let r = PayCalculator.shift(start: start, end: end, profile: emp.pay, breakOverride: brk, time: model.time) {
-                    LabeledContent("予定の勤務", value: "\(r.scheduledMinutes / 60)時間\(r.scheduledMinutes % 60)分")
-                    LabeledContent("休憩", value: "\(r.breakMinutes)分")
-                    LabeledContent("実働", value: "\(r.workMinutes / 60)時間\(r.workMinutes % 60)分")
-                    LabeledContent("給与の見込み", value: yen(r.pay))
-                    if r.transport > 0 { LabeledContent("交通費", value: yen(r.transport)) }
-                    LabeledContent { Text(yen(r.total)).font(.headline).monospacedDigit() } label: { Text("合計の見込み").font(.headline) }
+                    if emp.pay.hourlyWage == nil {
+                        NavigationLink { EmployerEditor(employerId: emp.id) } label: {
+                            Label("時給を入れると給与を計算します", systemImage: "yensign.circle").foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    // 大きな数字＋内訳（休憩を引いた実働 × 時給 ＋ 交通費）
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("合計の見込み").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(yen(r.total)).font(.system(.title, design: .rounded).weight(.bold)).monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text("実働 \(hm(r.workMinutes))（予定 \(hm(r.scheduledMinutes)) − 休憩 \(r.breakMinutes)分）" + (r.transport > 0 ? "・交通費 \(yen(r.transport))" : ""))
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
                     if r.belowLegalBreak { Label("休憩が法律の最低限より短い条件です", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
                 }
-                if let a = event.attendance(occurrence: occurrenceKey ?? start), a.confirmed, let i = a.clockIn, let o = a.clockOut,
-                   let r = PayCalculator.shift(start: i, end: o, profile: emp.pay, time: model.time) {
-                    LabeledContent("実績（確定）", value: "\(model.hm(i))〜\(model.hm(o))・\(yen(r.total))").foregroundStyle(.green)
-                }
             } else {
-                Label("勤務先を選ぶと給与を計算します（編集 › 勤務先）", systemImage: "info.circle").font(.subheadline).foregroundStyle(.secondary)
-            }
-            // 出勤・退勤：押した時刻を記録し、最後に自分で確定する（確定するまでは見込みのまま）
-            HStack(spacing: 10) {
-                stamp("出勤", att.clockIn, "figure.walk.arrival") { var a = att; a.clockIn = model.now; a.confirmed = false; save(a) }
-                stamp("退勤", att.clockOut, "figure.walk.departure") { var a = att; if a.clockIn == nil { a.clockIn = start }; a.clockOut = model.now; a.confirmed = false; save(a) }
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-            if att.clockIn != nil || att.clockOut != nil {
-                if !att.confirmed {
-                    Button { var a = att; a.clockIn = a.clockIn ?? start; a.clockOut = a.clockOut ?? end; a.confirmed = true; save(a) } label: {
-                        Label("この時間で勤務を確定", systemImage: "checkmark.seal.fill")
-                    }
-                } else {
-                    Label("勤務を確定しました", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
-                }
-                Button("記録を消す", role: .destructive) { save(nil) }
+                Label("勤務先を選ぶと給与を計算します（右上の「編集」› 勤務先）", systemImage: "info.circle").font(.subheadline).foregroundStyle(.secondary)
             }
         } header: {
             Label(emp?.name ?? "勤務", systemImage: emp?.pay.symbol ?? "briefcase.fill").foregroundStyle(Color(hex: emp?.pay.color ?? "#FF9F0A")).textCase(nil)
         }
-        .sensoryFeedback(.success, trigger: tick)
     }
 
-    private func stamp(_ title: String, _ at: EpochMs?, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: symbol).font(.title3)
-                Text(at.map { "\(title) \(model.hm($0))" } ?? title).font(.caption.weight(.semibold)).monospacedDigit()
-            }
-            .frame(maxWidth: .infinity, minHeight: 56)
-            .foregroundStyle(at == nil ? Color.accentColor : .green)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(PressableStyle())
-    }
-
-    private func save(_ a: Attendance?) {
-        let before = event
-        var e = event
-        e.extra = e.extraWithAttendance(a, occurrence: occurrenceKey ?? start)
-        if model.perform(a == nil ? "勤務の記録を消しました" : "勤務を記録しました", undo: { try model.repo.saveEvent(before, isNew: false) }, { try model.repo.saveEvent(e, isNew: false) }) {
-            tick += 1
-        }
-    }
+    private func hm(_ m: Int) -> String { m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分" }
 }

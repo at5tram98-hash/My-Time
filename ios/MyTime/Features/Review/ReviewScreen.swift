@@ -70,7 +70,7 @@ struct ReviewScreen: View {
                     .foregroundStyle(.green)
                 }
                 Section("完了したタスク") {
-                    let recent = model.tasks.filter { t in t.isDone && (t.actualEnd ?? t.checkedAt ?? 0) >= model.time.addDays(model.time.startOfDay(model.now), -6) }
+                    let recent = model.analysisTasks.filter { t in t.isDone && (t.actualEnd ?? t.checkedAt ?? 0) >= model.time.addDays(model.time.startOfDay(model.now), -6) }
                         .sorted { ($0.actualEnd ?? $0.checkedAt ?? 0) > ($1.actualEnd ?? $1.checkedAt ?? 0) }
                     if recent.isEmpty {
                         Text("まだありません").foregroundStyle(.secondary)
@@ -97,24 +97,24 @@ struct ReviewScreen: View {
     private func eventMinutes() -> EpochMs {
         let today = model.time.startOfDay(model.now)
         let from = model.time.addDays(today, -6), to = model.time.addDays(today, 1)
-        return model.visibleEvents(from: from, to: to).filter { !$0.event.allDay }
+        return model.visibleEvents(from: from, to: to, includeArchived: true).filter { !$0.event.allDay }
             .reduce(0) { $0 + max(0, min($1.end, to) - max($1.start, from)) } / MINUTE
     }
 
     private func makeStats(offsetDays: Int = 0) -> [DayStat] {
         let today = model.time.addDays(model.time.startOfDay(model.now), -offsetDays)
-        let occ = model.visibleEvents(from: model.time.addDays(today, -7), to: model.time.addDays(today, 1))
-        let busy = busyItems(events: occ, tasks: model.tasks)
+        let occ = model.visibleEvents(from: model.time.addDays(today, -7), to: model.time.addDays(today, 1), includeArchived: true)
+        let busy = busyItems(events: occ, tasks: model.analysisTasks)
         return (0..<7).reversed().map { i in
             let d0 = model.time.addDays(today, -i), d1 = model.time.addDays(d0, 1)
             var worked: EpochMs = 0
-            for t in model.tasks {
+            for t in model.analysisTasks {
                 for iv in t.intervals {
                     let s = max(iv.start, d0), e = min(iv.end ?? model.now, d1)
                     if e > s { worked += e - s }
                 }
             }
-            let done = model.tasks.filter { t in
+            let done = model.analysisTasks.filter { t in
                 guard let at = t.status == .done ? t.actualEnd : (t.checked ? t.checkedAt : nil) else { return false }
                 return at >= d0 && at < d1
             }.count

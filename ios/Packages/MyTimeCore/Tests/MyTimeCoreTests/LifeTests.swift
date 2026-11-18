@@ -85,22 +85,18 @@ final class PayrollTests: XCTestCase {
         XCTAssertEqual(next.from, t(2026, 10, 1))
     }
 
-    func testPayrollLinesConfirmedVsPredictedAndMonthlyTransport() throws {
+    func testPayrollLinesAndMonthlyTransport() throws {
         var emp = MTEmployer(json: .object(["id": .string("gu"), "name": .string("GU")]))
         var p = PayProfile(); p.hourlyWage = 1200; p.transportMode = .monthly; p.transportAmount = 5000
         emp.raw = emp.raw.merging(.object(["pay": try JSONValue.from(p)]))
         XCTAssertEqual(emp.pay.hourlyWage, 1200)
         var e = MTEvent.make(title: "GU", calendarId: "c", start: t(2026, 11, 18, 18, 30), end: t(2026, 11, 18, 22), now: 0, id: "e1")
         e.employerId = "gu"
-        let planned = Payroll.lines(occurrences: [EventOccurrence(id: "e1", masterId: "e1", originalStart: nil, event: e, start: e.start, end: e.end, title: "GU")], employers: [emp], time: time)
-        XCTAssertEqual(planned.first?.isConfirmed, false)
-        XCTAssertEqual(planned.first?.best.pay, 4200)
-        // 退勤が22:30（確定）→ 実績で計算
-        e.extra = .object(["attendance": try JSONValue.from(Attendance(clockIn: t(2026, 11, 18, 18, 30), clockOut: t(2026, 11, 18, 22, 30), confirmed: true))])
-        let actual = Payroll.lines(occurrences: [EventOccurrence(id: "e1", masterId: "e1", originalStart: nil, event: e, start: e.start, end: e.end, title: "GU")], employers: [emp], time: time)
-        XCTAssertEqual(actual.first?.best.pay, 4800)
-        XCTAssertEqual(Payroll.summary(actual).confirmedPart, 4800)
-        XCTAssertEqual(Payroll.periodTotal(actual, profile: emp.pay), 9800)
+        let lines = Payroll.lines(occurrences: [EventOccurrence(id: "e1", masterId: "e1", originalStart: nil, event: e, start: e.start, end: e.end, title: "GU")], employers: [emp], time: time)
+        XCTAssertEqual(lines.first?.best.pay, 4200)
+        // 月ごとの定額の交通費は期間に1回だけ
+        XCTAssertEqual(Payroll.periodTotal(lines, profile: emp.pay), 9200)
+        XCTAssertEqual(Payroll.periodTotal([], profile: emp.pay), 0)
     }
 
     func testOldEmployerWithoutPayDecodes() {
@@ -264,5 +260,30 @@ final class LivePlannerTests: XCTestCase {
         XCTAssertEqual(n?.title, "マクロ")
         // 開始から10分たったら次の授業へ
         XCTAssertEqual(LivePlanner.nextClass(list, isClass: { _ in true }, now: 10 * HOUR + 56 * MINUTE, endAfterStartMinutes: 10)?.title, "演習")
+    }
+}
+
+final class AutoDeleteTests: XCTestCase {
+    func testExpiryAndRetention() {
+        let now: EpochMs = 100 * DAY
+        func ev(_ id: String, end: EpochMs, rec: Bool = false) -> MTEvent {
+            var e = MTEvent.make(title: id, calendarId: "c", start: end - HOUR, end: end, now: 0, id: id)
+            if rec { e.recurrence = RecurrenceRule(freq: .weekly) }
+            return e
+        }
+        let events = [ev("old", end: now - 3 * DAY), ev("recent", end: now - DAY), ev("repeat", end: now - 10 * DAY, rec: true)]
+        XCTAssertEqual(AutoDeleteRules.expiredEvents(events, now: now, days: 2), ["old"])
+        // 2日未満の指定は2日として扱う
+        XCTAssertEqual(AutoDeleteRules.expiredEvents(events, now: now, days: 1), ["old"])
+        XCTAssertEqual(AutoDeleteRules.expiredEvents(events, now: now, days: 7), [])
+
+        var done = MTTask.make(title: "done", now: 0, id: "done"); done.plannedStart = now - 5 * DAY; done.plannedEnd = now - 5 * DAY + HOUR; done.status = .done; done.actualEnd = now - 5 * DAY
+        var open = MTTask.make(title: "open", now: 0, id: "open"); open.plannedStart = now - 5 * DAY; open.plannedEnd = now - 5 * DAY + HOUR
+        let none = MTTask.make(title: "none", now: 0, id: "none")
+        XCTAssertEqual(AutoDeleteRules.expiredTasks([done, open, none], now: now, days: 2, includeUnfinished: false), ["done"])
+        XCTAssertEqual(Set(AutoDeleteRules.expiredTasks([done, open, none], now: now, days: 2, includeUnfinished: true)), ["done", "open"])
+
+        // 片づけてから30日は残す
+        XCTAssertEqual(AutoDeleteRules.purgeable(archivedAt: ["a": now - 31 * DAY, "b": now - 29 * DAY], now: now), ["a"])
     }
 }

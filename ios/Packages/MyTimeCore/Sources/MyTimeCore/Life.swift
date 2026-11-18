@@ -434,3 +434,35 @@ public enum LivePlanner {
             .min { $0.start < $1.start }
     }
 }
+
+// MARK: - 自動削除のきまり
+
+public enum AutoDeleteRules {
+    /// 中に残す日数（分析のため）
+    public static let retentionDays = 30
+
+    /// タスクの終わり（完了した時刻・予定の終わり・締切のうち分かるもの）
+    public static func taskEnd(_ t: MTTask) -> EpochMs? {
+        if t.isDone { return t.actualEnd ?? t.checkedAt ?? t.plannedEnd ?? t.updatedAt }
+        return t.plannedEnd ?? t.deadline
+    }
+
+    /// 終わってから days 日たった予定（繰り返しは除く）
+    public static func expiredEvents(_ events: [MTEvent], now: EpochMs, days: Int) -> [String] {
+        let cutoff = now - DAY * EpochMs(max(2, days))
+        return events.filter { $0.recurrence == nil && $0.end < cutoff }.map(\.id)
+    }
+
+    public static func expiredTasks(_ tasks: [MTTask], now: EpochMs, days: Int, includeUnfinished: Bool) -> [String] {
+        let cutoff = now - DAY * EpochMs(max(2, days))
+        return tasks.filter { t in
+            guard let end = taskEnd(t) else { return false }
+            return end < cutoff && (t.isDone || includeUnfinished)
+        }.map(\.id)
+    }
+
+    /// 片づけてから30日たったもの（完全に削除する）
+    public static func purgeable(archivedAt: [String: EpochMs], now: EpochMs) -> [String] {
+        archivedAt.filter { $0.value < now - DAY * EpochMs(retentionDays) }.map(\.key).sorted()
+    }
+}

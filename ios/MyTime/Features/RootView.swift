@@ -5,7 +5,9 @@ import MyTimeCore
 enum AppTab: Hashable { case today, calendar, tasks, more }
 
 /// その他タブの中で開く画面
-enum MoreRoute: Hashable { case review, settings, dayPlan, morning, cleaning, employers, payroll, specSettings, live }
+enum MoreRoute: Hashable { case review, settings, dayPlan, employers, payroll, specSettings, live, autoDelete }
+/// タスクタブの中の画面（朝・清掃はタスクとして扱う）
+enum TasksRoute: Hashable { case morning, morningRun, cleaning, cleaningRun }
 
 /// 開くシート（下から出る画面）
 enum SheetRoute: Identifiable, Hashable {
@@ -124,6 +126,8 @@ final class Router {
     }
     /// その他タブの表示中の画面（余白のチップから振り返りを直接開くため）
     var morePath: [MoreRoute] = []
+    var tasksPath: [TasksRoute] = []
+    func openTasks(_ r: TasksRoute) { tasksPath = [r]; tab = .tasks }
     /// 今の画面の上に重ねて開く（何も開いていなければ最初のシート）
     func open(_ s: SheetRoute) {
         guard stack.last != s else { return }
@@ -205,6 +209,7 @@ struct RootView: View {
         // 前面にある間は Live Activity を1分ごとに照合する。戻ったときにアラームも照合する
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active {
+                AutoCleanup.run(model: model)
                 LiveActivityCoordinator.shared.startTicking(model: model)
                 Task { await AlarmService.sync(model: model) }
             } else {
@@ -265,9 +270,10 @@ struct RootView: View {
         case "event": router.tab = .today; router.open(.event(id))
         case "task": router.tab = .today; router.open(.task(id))
         case "checkpoint": if let c = model.checkpoints.first(where: { $0.id == id }) { router.open(.checkpoint(c)) }
-        case "morning": router.openMore(.morning)
-        case "cleaning": router.openMore(.cleaning)
+        case "morning": router.openTasks(model.morning.active != nil ? .morningRun : .morning)
+        case "cleaning": router.openTasks(model.cleaning.active != nil ? .cleaningRun : .cleaning)
         case "payroll": router.openMore(.payroll)
+        case "autodelete": router.openMore(.autoDelete)
         default: break
         }
     }

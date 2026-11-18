@@ -37,7 +37,7 @@ struct EventDetailView: View {
                         .listRowInsets(EdgeInsets())
                         // 勤務：勤務先の条件で給与を計算し、出勤・退勤を記録する
                         if isShift(ev, model: model) {
-                            ShiftWorkSection(event: ev, start: start, end: end, occurrenceKey: parsed?.originalStart)
+                            ShiftWorkSection(event: ev, start: start, end: end)
                         }
                         if let spec = ev.specType ?? (ev.classInfo != nil ? .class : nil), SPEC_BY_ID[spec] != nil,
                            !(spec == .shift && model.employer(ev.employerId) != nil) {

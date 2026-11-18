@@ -10,8 +10,15 @@ final class AppModel {
     let repo: Repository
     let time = DomainTime.current
 
+    /// 画面に出す予定・タスク（自動削除で片づけたものは含まない）
     private(set) var tasks: [MTTask] = []
     private(set) var events: [MTEvent] = []
+    /// 自動削除で片づけた予定・タスク（1か月は分析のために中に残す）
+    private(set) var archivedTasks: [MTTask] = []
+    private(set) var archivedEvents: [MTEvent] = []
+    /// 分析（振り返り）用：片づけたものも含む
+    var analysisTasks: [MTTask] { tasks + archivedTasks }
+    var analysisEvents: [MTEvent] { events + archivedEvents }
     private(set) var calendars: [MTCalendar] = []
     private(set) var subtasks: [MTSubtask] = []
     private(set) var employers: [MTEmployer] = []
@@ -44,8 +51,11 @@ final class AppModel {
     }
 
     func reload() {
-        tasks = repo.tasks()
-        events = repo.events()
+        let allTasks = repo.tasks(), allEvents = repo.events()
+        tasks = allTasks.filter { !$0.isArchived }
+        archivedTasks = allTasks.filter(\.isArchived)
+        events = allEvents.filter { !$0.isArchived }
+        archivedEvents = allEvents.filter(\.isArchived)
         calendars = repo.calendars()
         subtasks = repo.subtasks()
         employers = repo.employers()
@@ -112,13 +122,16 @@ final class AppModel {
 
     func subtasks(of taskId: String) -> [MTSubtask] { subtasks.filter { $0.taskId == taskId } }
     func calendar(_ id: String?) -> MTCalendar? { calendars.first { $0.id == id } }
-    func visibleEvents(from: EpochMs, to: EpochMs) -> [EventOccurrence] {
+    func visibleEvents(from: EpochMs, to: EpochMs, includeArchived: Bool = false) -> [EventOccurrence] {
         let hidden = Set(calendars.filter { !$0.visible }.map(\.id))
         // 種類の設定で「出さない」にした種類は出さない
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
-        return expandAll(events.filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        return expandAll((includeArchived ? analysisEvents : events).filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
     }
-    func eventColor(_ e: MTEvent) -> String { e.colorOverride ?? calendar(e.calendarId)?.color ?? "#0A84FF" }
+    /// 予定の色：自分で決めた色 → 勤務先の色（勤務先の画面で決めたとき）→ カレンダーの色
+    func eventColor(_ e: MTEvent) -> String {
+        e.colorOverride ?? employer(e.employerId).flatMap { $0.raw["pay"] != nil ? $0.pay.color : nil } ?? calendar(e.calendarId)?.color ?? "#0A84FF"
+    }
     func employer(_ id: String?) -> MTEmployer? { employers.first { $0.id == id } }
     func studioType(_ id: String?) -> StudioType? { studioTypes.first { $0.id == id } }
 

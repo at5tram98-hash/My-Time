@@ -32,13 +32,15 @@ struct TasksScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.tasksPath) {
             let list = filtered
             List {
                 Section {
                 } header: {
                     VStack(spacing: 10) {
                         todayCard
+                        LifeTaskCards()
                         summaryTiles
                         filterBar
                     }
@@ -97,6 +99,14 @@ struct TasksScreen: View {
                 MainToolbar()
             }
             .animation(Motion.pop, value: filter)
+            .navigationDestination(for: TasksRoute.self) { r in
+                switch r {
+                case .morning: MorningHomeView()
+                case .morningRun: MorningRunView()
+                case .cleaning: CleaningHomeView()
+                case .cleaningRun: CleaningSessionView()
+                }
+            }
         }
     }
 
