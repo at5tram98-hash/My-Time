@@ -56,12 +56,15 @@ struct SpecBadge: View {
     var type: SpecTypeId?
     var isEvent: Bool
     var size: CGFloat = 28
+    /// 種類の設定でアイコン・色を変えていれば、それを使う
+    @Environment(AppModel.self) private var model: AppModel?
     var body: some View {
         let def = type.flatMap { SPEC_BY_ID[$0] }
-        let tint = def?.tint ?? .gray
+        let tint = type.flatMap { t in model.map { $0.specTint(t) } } ?? def?.tint ?? .gray
+        let symbol = type.flatMap { t in model.map { $0.specSymbol(t) } } ?? def?.symbol
         ZStack {
             if isEvent { RoundedRectangle(cornerRadius: size * 0.26, style: .continuous).fill(tint) } else { Circle().fill(tint) }
-            Image(systemName: def?.symbol ?? (isEvent ? "calendar" : "circle")).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(.white)
+            Image(systemName: symbol ?? (isEvent ? "calendar" : "circle")).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(.white)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

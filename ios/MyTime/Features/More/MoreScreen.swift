@@ -56,13 +56,31 @@ struct MoreScreen: View {
                     }
                 }
 
+                Section("生活") {
+                    NavigationLink(value: MoreRoute.morning) {
+                        row("朝", "sunrise.fill", .orange, morningSummary)
+                    }
+                    NavigationLink(value: MoreRoute.cleaning) {
+                        row("清掃", "bubbles.and.sparkles.fill", .teal, cleaningSummary)
+                    }
+                }
+
                 Section("バイト") {
+                    NavigationLink(value: MoreRoute.employers) {
+                        row("勤務先と給与", "yensign.circle.fill", .green, model.employers.isEmpty ? "時給・交通費・締め日を登録" : "勤務先 \(model.employers.count)・給与の見込み")
+                    }
                     NavigationLink { ShiftPendingView() } label: {
                         row("シフトの調整中", "hourglass", .orange, pendingSummary)
                     }
                 }
 
                 Section("カスタマイズ") {
+                    NavigationLink(value: MoreRoute.specSettings) {
+                        row("専門の種類", "square.stack.3d.up.fill", .blue, "種類ごとのアイコン・既定・テンプレート")
+                    }
+                    NavigationLink(value: MoreRoute.live) {
+                        row("Live Activity", "platter.filled.top.iphone", .indigo, "ロック画面・ダイナミックアイランド")
+                    }
                     NavigationLink { StudioListView() } label: {
                         row("Create Studio", "sparkles", .purple, model.studioTypes.isEmpty ? "自分専用の種類を作る" : "自分の種類 \(model.studioTypes.filter { $0.status != "hidden" }.count)個")
                     }
@@ -105,6 +123,12 @@ struct MoreScreen: View {
                 case .review: ReviewScreen(embedded: true)
                 case .settings: SettingsView(embedded: true)
                 case .dayPlan: DayPlanView()
+                case .morning: MorningHomeView()
+                case .cleaning: CleaningHomeView()
+                case .employers: EmployersView()
+                case .payroll: PayrollView()
+                case .specSettings: SpecSettingsListView()
+                case .live: LiveActivitySettingsView()
                 }
             }
         }
@@ -183,6 +207,20 @@ struct MoreScreen: View {
     }
 
     /// iPhone の「設定」と同じ、角丸の色つきアイコン＋名前＋小さな説明
+    private var morningSummary: String {
+        let m = model.morning
+        if m.active != nil { return "準備の途中です" }
+        let next = m.alarms.compactMap { $0.next(after: model.now, time: model.time) }.min()
+        return next.map { "次のアラーム \(model.time.dayLabel($0)) \(model.hm($0))" } ?? "アラームと身支度の工程（\(m.enabledSteps.count)）"
+    }
+
+    private var cleaningSummary: String {
+        let b = model.cleaning
+        if b.active != nil { return "清掃の途中です" }
+        let n = b.neglected(now: model.now, time: model.time).count
+        return n > 0 ? "目標日を過ぎた箇所 \(n)" : "場所 \(b.areas.count)・\(b.history.count)回の記録"
+    }
+
     private func row(_ title: String, _ symbol: String, _ tint: Color, _ detail: String?) -> some View {
         HStack(spacing: 12) {
             icon(symbol, tint)

@@ -104,7 +104,7 @@ enum NotificationScheduler {
         let center = UNUserNotificationCenter.current()
         // チェックポイントは、これから7日分の回（繰り返しを含む）
         let cps = (0..<8).flatMap { model.checkpoints(on: model.time.addDays(model.time.startOfDay(model.now), $0)) }.filter { $0.at > model.now }
-        await TaskAlarms.sync(tasks: model.tasks, checkpoints: cps, now: model.now)
+        await AlarmService.sync(model: model)
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
         let settings = await center.notificationSettings()
@@ -124,6 +124,17 @@ enum NotificationScheduler {
         }
         // 本物のアラーム（AlarmKit）が使えるときは、アラームの通知は出さない（二重に鳴らさない）
         let systemAlarms = TaskAlarms.systemAlarmsActive
+        // 朝のアラーム：AlarmKit が使えないときだけ、通知で代わりに知らせる（マナーモードでは鳴らないことがある）
+        if !systemAlarms {
+            for a in model.morning.alarms where a.enabled {
+                var t = now
+                for _ in 0..<7 {
+                    guard let at = a.next(after: t, time: model.time), at < now + 7 * DAY else { break }
+                    all.append(Plan(id: "morning:\(a.id)@\(at)", title: a.label.isEmpty ? "起床の時刻です" : a.label, body: "\(model.hm(at))・朝の準備を始めましょう", at: at, alarm: true))
+                    t = at
+                }
+            }
+        }
         for p in all where ((model.notificationsEnabled || p.id.hasPrefix("cp:")) && !p.alarm) || (p.alarm && !systemAlarms) {
             let content = UNMutableNotificationContent()
             content.title = p.title

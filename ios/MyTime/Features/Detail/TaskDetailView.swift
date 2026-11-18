@@ -38,7 +38,15 @@ struct TaskDetailView: View {
                         if model.perform("削除しました", undo: {
                             try model.repo.saveTask(snapshot, isNew: true)
                             for s in subs { try model.repo.addSubtask(taskId: snapshot.id, title: s.title) }
-                        }, { try model.repo.deleteTask(task.id) }) { dismiss() }
+                        }, { try model.repo.deleteTask(task.id) }) {
+                            // 朝のタスクを消して、ほかに朝のタスクが無ければ起床アラームも解除する（設定は残し、オフにする）
+                            if task.specType == .morning && !model.tasks.contains(where: { $0.specType == .morning }) {
+                                var m = model.morning
+                                for i in m.alarms.indices { m.alarms[i].enabled = false }
+                                model.saveMorning(m)
+                            }
+                            dismiss()
+                        }
                     }
                     Button("キャンセル", role: .cancel) {}
                 } message: {

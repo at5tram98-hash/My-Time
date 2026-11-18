@@ -301,4 +301,6 @@ public extension JSONValue {
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
         try JSONDecoder().decode(T.self, from: data)
     }
+
+    static func decode<T: Decodable>(_ type: T.Type, from v: JSONValue) throws -> T { try v.decode(type) }
 }

@@ -8,17 +8,53 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000101 /* MyTimeCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000601 /* MyTimeCore */; };
+		B10000000000000000000101 /* MyTimeWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000201 /* MyTimeWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B10000000000000000000A51 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10000000000000000000701;
+			remoteInfo = MyTimeWidgetsExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B10000000000000000000851 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B10000000000000000000101 /* MyTimeWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000201 /* My Time.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "My Time.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000202 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		B10000000000000000000201 /* MyTimeWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MyTimeWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000301 /* MyTime */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MyTime;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000301 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000302 /* MyTimeWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyTimeWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +68,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000401 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -39,6 +82,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000301 /* MyTime */,
+				B10000000000000000000301 /* Shared */,
+				B10000000000000000000302 /* MyTimeWidgets */,
 				A10000000000000000000503 /* Config */,
 				A10000000000000000000502 /* Products */,
 			);
@@ -48,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000201 /* My Time.app */,
+				B10000000000000000000201 /* MyTimeWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,13 +116,16 @@
 				A10000000000000000000801 /* Sources */,
 				A10000000000000000000401 /* Frameworks */,
 				A10000000000000000000802 /* Resources */,
+				B10000000000000000000851 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B10000000000000000000A52 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000301 /* MyTime */,
+				B10000000000000000000301 /* Shared */,
 			);
 			name = MyTime;
 			packageProductDependencies = (
@@ -85,6 +134,27 @@
 			productName = MyTime;
 			productReference = A10000000000000000000201 /* My Time.app */;
 			productType = "com.apple.product-type.application";
+		};
+		B10000000000000000000701 /* MyTimeWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000902 /* Build configuration list for PBXNativeTarget "MyTimeWidgetsExtension" */;
+			buildPhases = (
+				B10000000000000000000801 /* Sources */,
+				B10000000000000000000401 /* Frameworks */,
+				B10000000000000000000802 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B10000000000000000000301 /* Shared */,
+				B10000000000000000000302 /* MyTimeWidgets */,
+			);
+			name = MyTimeWidgetsExtension;
+			productName = MyTimeWidgetsExtension;
+			productReference = B10000000000000000000201 /* MyTimeWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -97,6 +167,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A10000000000000000000701 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					B10000000000000000000701 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -119,12 +192,20 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000701 /* MyTime */,
+				B10000000000000000000701 /* MyTimeWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000802 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000802 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -141,7 +222,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000801 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B10000000000000000000A52 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10000000000000000000701 /* MyTimeWidgetsExtension */;
+			targetProxy = B10000000000000000000A51 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000A01 /* Debug */ = {
@@ -265,6 +361,64 @@
 			};
 			name = Release;
 		};
+		B10000000000000000000A03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000202 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S6YMR6M84;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "My Time";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYTIME_BUNDLE_ID).widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B10000000000000000000A04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000202 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S6YMR6M84;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "My Time";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYTIME_BUNDLE_ID).widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -282,6 +436,15 @@
 			buildConfigurations = (
 				A10000000000000000000A03 /* Debug */,
 				A10000000000000000000A04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B10000000000000000000902 /* Build configuration list for PBXNativeTarget "MyTimeWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000A03 /* Debug */,
+				B10000000000000000000A04 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

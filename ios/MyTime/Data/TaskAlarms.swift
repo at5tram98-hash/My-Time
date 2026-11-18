@@ -40,42 +40,115 @@ enum TaskAlarms {
         return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
     }
 
-    /// これから7日分のアラームをそろえる（要らなくなったものは取り消し、足りないものを予約）
-    static func sync(tasks: [MTTask], checkpoints: [Checkpoint] = [], now: EpochMs) async {
+    /// 朝のアラームの ID（時刻・曜日・音・スヌーズを変えたら別の ID になり、古いものは取り消される）
+    static func morningAlarmID(_ a: MorningAlarm) -> UUID {
+        let key = "mytime-morning:\(a.id)@\(a.hour):\(a.minute)|\(a.weekdays.sorted())|\(a.sound ?? "-")|\(a.snoozeMinutes)|\(a.label)"
+        let b = Array(Insecure.MD5.hash(data: Data(key.utf8)))
+        return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
+    }
+}
+
+/// アラームをまとめて管理する（タスク・チェックポイント・朝の起床）。
+/// AlarmKit に予約したものをアプリが知っている一覧と照らし合わせ、要らないものは取り消し、足りないものを予約する。
+/// 何度呼んでも同じ ID なので重複しない。アプリの起動時と、データが変わるたびに呼ぶ。
+@MainActor
+enum AlarmService {
+    static let sounds: [(name: String?, label: String)] = [(nil, "標準"), ("mt_chime.caf", "チャイム"), ("mt_beep.caf", "ビープ"), ("mt_soft.caf", "やわらか")]
+
+    static func sync(model: AppModel) async {
+        let cps = (0..<8).flatMap { model.checkpoints(on: model.time.addDays(model.time.startOfDay(model.now), $0)) }.filter { $0.at > model.now }
+        await sync(tasks: model.tasks, checkpoints: cps, morning: model.morning, now: model.now, time: model.time)
+    }
+
+    static func sync(tasks: [MTTask], checkpoints: [Checkpoint], morning: MorningRoutine, now: EpochMs, time: DomainTime) async {
         #if canImport(AlarmKit)
         guard #available(iOS 26.0, *), AlarmManager.shared.authorizationState == .authorized else { return }
         let manager = AlarmManager.shared
-        var wanted: [UUID: (MTTask, EpochMs)] = [:]
+        enum Item { case once(MTTask, EpochMs), morning(MorningAlarm) }
+        var wanted: [UUID: Item] = [:]
         for t in tasks {
             guard let at = NotificationScheduler.alarmTime(t), at > now, at < now + 7 * DAY else { continue }
-            wanted[alarmID(taskId: t.id, at: at)] = (t, at)
+            wanted[TaskAlarms.alarmID(taskId: t.id, at: at)] = .once(t, at)
         }
-        // チェックポイントのアラーム（題名だけのタスクとして同じ形で鳴らす）
         for c in checkpoints where c.alarm && c.at > now && c.at < now + 7 * DAY {
             let t = MTTask.make(title: c.title.isEmpty ? "チェックポイント" : c.title, now: now, id: "cp-" + c.id)
-            wanted[alarmID(taskId: t.id, at: c.at)] = (t, c.at)
+            wanted[TaskAlarms.alarmID(taskId: t.id, at: c.at)] = .once(t, c.at)
+        }
+        // 朝：起床完了を押した日は、その日の残りのアラームを鳴らさない（翌日以降の分は次の照合で戻す）
+        let woke = UserDefaults.standard.double(forKey: "morning.wokeDay")
+        let wokeToday = woke > 0 && time.isSameDay(EpochMs(woke), now)
+        for a in morning.alarms.prefix(MorningRoutine.maxAlarms) where a.enabled {
+            if wokeToday, let next = a.next(after: now, time: time), time.isSameDay(next, now) { continue }
+            wanted[TaskAlarms.morningAlarmID(a)] = .morning(a)
         }
         let existing = Set(((try? manager.alarms) ?? []).map(\.id))
         for id in existing where wanted[id] == nil { try? manager.cancel(id: id) }
         for (id, item) in wanted where !existing.contains(id) {
-            let (t, at) = item
-            let alert = AlarmPresentation.Alert(
-                title: LocalizedStringResource(stringLiteral: t.title),
-                stopButton: AlarmButton(text: "止める", textColor: .white, systemImageName: "stop.circle.fill")
-            )
-            let attributes = AlarmAttributes<TaskAlarmMetadata>(
-                presentation: AlarmPresentation(alert: alert),
-                metadata: TaskAlarmMetadata(taskId: t.id),
-                tintColor: .orange
-            )
-            let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>.alarm(
-                schedule: .fixed(Date(timeIntervalSince1970: TimeInterval(at) / 1000)),
-                attributes: attributes
-            )
-            _ = try? await manager.schedule(id: id, configuration: config)
+            switch item {
+            case .once(let t, let at):
+                let alert = AlarmPresentation.Alert(
+                    title: LocalizedStringResource(stringLiteral: t.title),
+                    stopButton: AlarmButton(text: "止める", textColor: .white, systemImageName: "stop.circle.fill")
+                )
+                let attributes = AlarmAttributes<TaskAlarmMetadata>(presentation: AlarmPresentation(alert: alert), metadata: TaskAlarmMetadata(taskId: t.id), tintColor: .orange)
+                let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>.alarm(schedule: .fixed(Date(timeIntervalSince1970: TimeInterval(at) / 1000)), attributes: attributes)
+                _ = try? await manager.schedule(id: id, configuration: config)
+            case .morning(let a):
+                let snooze = a.snoozeMinutes > 0
+                let alert = AlarmPresentation.Alert(
+                    title: LocalizedStringResource(stringLiteral: a.label.isEmpty ? "起床" : a.label),
+                    stopButton: AlarmButton(text: "止める", textColor: .white, systemImageName: "stop.circle.fill"),
+                    secondaryButton: snooze ? AlarmButton(text: "スヌーズ", textColor: .white, systemImageName: "zzz") : nil,
+                    secondaryButtonBehavior: snooze ? .countdown : nil
+                )
+                let attributes = AlarmAttributes<TaskAlarmMetadata>(presentation: AlarmPresentation(alert: alert), metadata: TaskAlarmMetadata(taskId: "morning-" + a.id), tintColor: .orange)
+                let days = (a.weekdays.isEmpty ? Array(0...6) : a.weekdays).compactMap { Self.weekday($0) }
+                let schedule = Alarm.Schedule.relative(.init(time: .init(hour: a.hour, minute: a.minute), repeats: .weekly(days)))
+                let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>(
+                    countdownDuration: snooze ? Alarm.CountdownDuration(preAlert: nil, postAlert: TimeInterval(a.snoozeMinutes * 60)) : nil,
+                    schedule: schedule, attributes: attributes,
+                    sound: a.sound.map { .named($0) } ?? .default)
+                _ = try? await manager.schedule(id: id, configuration: config)
+            }
         }
         #endif
     }
+
+    /// 起床完了：今鳴っている朝のアラームを止め、今日の残りのアラームを取り消す
+    static func markAwake(model: AppModel) async {
+        UserDefaults.standard.set(Double(model.now), forKey: "morning.wokeDay")
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            for a in model.morning.alarms { try? AlarmManager.shared.stop(id: TaskAlarms.morningAlarmID(a)) }
+        }
+        #endif
+        await sync(model: model)
+    }
+
+    #if canImport(AlarmKit)
+    @available(iOS 26.0, *)
+    static func weekday(_ d: Int) -> Locale.Weekday? {
+        [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday][safe: d]
+    }
+    #endif
+
+    /// アラームの許可の状態（画面の説明用）
+    static var stateText: String {
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            switch AlarmManager.shared.authorizationState {
+            case .authorized: return "許可済み"
+            case .denied: return "許可されていません"
+            default: return "未設定"
+            }
+        }
+        #endif
+        return "この iOS では使えません（iOS 26 以降）"
+    }
+}
+
+extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
 #if canImport(AlarmKit)

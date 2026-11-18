@@ -19,6 +19,8 @@ final class AppModel {
     private(set) var studioTypes: [StudioType] = []
     private(set) var settings = AppSettings(json: nil)
     private(set) var outboxPending = 0
+    /// 種類ごとのカレンダーへの出し方（normal / quiet / hidden）。設定を読み直すたびに作る
+    private(set) var specDisplay: [SpecTypeId: String] = [:]
 
     /// 直前の操作（画面には出さない。iPhone を振ると取り消せる）
     var toast: Toast?
@@ -49,6 +51,11 @@ final class AppModel {
         employers = repo.employers()
         studioTypes = repo.studioTypes()
         settings = repo.settings()
+        var disp: [SpecTypeId: String] = [:]
+        for (k, v) in settings.raw["iosSpecSettings"]?.objectValue ?? [:] {
+            if let t = SpecTypeId(rawValue: k), let d = v["calendarDisplay"]?.stringValue, d != "normal" { disp[t] = d }
+        }
+        specDisplay = disp
         outboxPending = repo.store.outbox().filter { $0["synced"]?.intValue == 0 }.count
         scheduleNotifications()
     }
@@ -107,7 +114,9 @@ final class AppModel {
     func calendar(_ id: String?) -> MTCalendar? { calendars.first { $0.id == id } }
     func visibleEvents(from: EpochMs, to: EpochMs) -> [EventOccurrence] {
         let hidden = Set(calendars.filter { !$0.visible }.map(\.id))
-        return expandAll(events.filter { !hidden.contains($0.calendarId) }, from: from, to: to, time: time)
+        // 種類の設定で「出さない」にした種類は出さない
+        let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
+        return expandAll(events.filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
     }
     func eventColor(_ e: MTEvent) -> String { e.colorOverride ?? calendar(e.calendarId)?.color ?? "#0A84FF" }
     func employer(_ id: String?) -> MTEmployer? { employers.first { $0.id == id } }

@@ -97,6 +97,19 @@ struct SpecPanel: View {
             if let u = str("submitUrl"), let url = URL(string: u) {
                 Link(destination: url) { Label("提出先を開く", systemImage: "arrow.up.forward.app").font(.body.weight(.semibold)) }
             }
+        case .cleaning:
+            let book = model.cleaning
+            NavigationLink { CleaningHomeView() } label: {
+                Label(book.active != nil ? "清掃を続ける" : "清掃の場所を選んで始める", systemImage: "bubbles.and.sparkles.fill").font(.body.weight(.semibold))
+            }
+            if let n = book.neglected(now: model.now, time: model.time).first {
+                hint("いちばん長く清掃していない：\(n.area.name)・\(n.item.name)", symbol: "exclamationmark.circle")
+            }
+        case .morning:
+            NavigationLink { MorningHomeView() } label: {
+                Label(model.morning.active != nil ? "朝の準備を続ける" : "朝の準備・アラーム", systemImage: "sunrise.fill").font(.body.weight(.semibold))
+            }
+            hint("工程 \(model.morning.enabledSteps.count)・見込み \(model.morning.estimate().minutes)分", symbol: "list.number")
         case .payday:
             HStack {
                 metric("入金額", details["actualAmount"]?.doubleValue.map { yen(Int($0)) } ?? "未記録", symbol: "yensign.circle.fill", big: true)

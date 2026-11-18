@@ -3,6 +3,19 @@
 <plist version="1.0">
 <dict>
 	<key>NSAlarmKitUsageDescription</key>
-	<string>タスクの開始・確認の時刻に、時計のアラームと同じように鳴らすために使います。</string>
+	<string>タスクの開始・確認の時刻と、朝の起床に、時計のアラームと同じように鳴らすために使います。</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>mytime</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>mytime</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

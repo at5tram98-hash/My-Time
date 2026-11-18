@@ -5,7 +5,7 @@ import MyTimeCore
 enum AppTab: Hashable { case today, calendar, tasks, more }
 
 /// その他タブの中で開く画面
-enum MoreRoute: Hashable { case review, settings, dayPlan }
+enum MoreRoute: Hashable { case review, settings, dayPlan, morning, cleaning, employers, payroll, specSettings, live }
 
 /// 開くシート（下から出る画面）
 enum SheetRoute: Identifiable, Hashable {
@@ -151,6 +151,7 @@ final class Router {
 /// iOS 26 以降の SDK でビルドすると、タブバーとツールバーは自動で Liquid Glass になる。
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var router = Router()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showUndo = false
@@ -199,6 +200,20 @@ struct RootView: View {
             }
         }
         #endif
+        // Live Activity・ウィジェットから開く（mytime://event/ID・task/ID・checkpoint/ID・morning・cleaning）
+        .onOpenURL { url in openDeepLink(url) }
+        // 前面にある間は Live Activity を1分ごとに照合する。戻ったときにアラームも照合する
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active {
+                LiveActivityCoordinator.shared.startTicking(model: model)
+                Task { await AlarmService.sync(model: model) }
+            } else {
+                LiveActivityCoordinator.shared.stopTicking()
+            }
+        }
+        .task {
+            LiveActionRouter.handler = { [model] kind, value in await LiveActions.handle(kind: kind, value: value, model: model) }
+        }
         .sheet(item: router.level(0)) { _ in
             SheetHost(level: 0)
                 .environment(model)
@@ -241,6 +256,22 @@ struct RootView: View {
         }
         .preferredColorScheme(model.settings.theme == "dark" ? .dark : model.settings.theme == "light" ? .light : nil)
     }
+
+    private func openDeepLink(_ url: URL) {
+        guard url.scheme == "mytime" else { return }
+        let id = url.pathComponents.dropFirst().first ?? ""
+        router.closeAll()
+        switch url.host() ?? "" {
+        case "event": router.tab = .today; router.open(.event(id))
+        case "task": router.tab = .today; router.open(.task(id))
+        case "checkpoint": if let c = model.checkpoints.first(where: { $0.id == id }) { router.open(.checkpoint(c)) }
+        case "morning": router.openMore(.morning)
+        case "cleaning": router.openMore(.cleaning)
+        case "payroll": router.openMore(.payroll)
+        default: break
+        }
+    }
+
 }
 
 /// embedded のときは外側のナビゲーションを使い、そうでなければ自分で NavigationStack を持つ

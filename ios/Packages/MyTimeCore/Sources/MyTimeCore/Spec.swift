@@ -6,6 +6,8 @@ public enum SpecTypeId: String, CaseIterable, Sendable {
     case shift, shiftRequest, payday, `class`, assignment, exam, language, certification, report, presentation
     case groupWork, reading, shopping, appointment, outing, trip, transit, routine, chores, cooking
     case workout, project, paperwork, payment, leisure
+    /// iOS 版で追加（S26 清掃・S27 朝）。Web 版は知らない種類を「種類なし」として扱う
+    case cleaning, morning
 }
 
 public enum SpecGroup: String, CaseIterable, Sendable {
@@ -60,6 +62,8 @@ public let SPEC_DEFS: [SpecDef] = [
     .init(id: .paperwork, code: "S23", name: "申請・提出・行政手続", group: .money, symbol: "doc.on.clipboard.fill", color: "#8E8E93", isEvent: false, isCheck: false, blurb: "期限と窓口の受付時間を分けて示します"),
     .init(id: .payment, code: "S24", name: "支払い・口座確認", group: .money, symbol: "creditcard.fill", color: "#34C759", isEvent: false, isCheck: true, blurb: "支払ったことは自分で記録します"),
     .init(id: .leisure, code: "S25", name: "自由時間・趣味・休息", group: .self, symbol: "music.note", color: "#BF5AF2", isEvent: false, isCheck: false, blurb: "空いた時間に候補を出すだけです"),
+    .init(id: .cleaning, code: "S26", name: "清掃", group: .life, symbol: "bubbles.and.sparkles.fill", color: "#30B0C7", isEvent: false, isCheck: false, blurb: "場所を選び、箇所ごとに Yes・No・対象外を記録します"),
+    .init(id: .morning, code: "S27", name: "朝", group: .life, symbol: "sunrise.fill", color: "#FF9F0A", isEvent: false, isCheck: false, blurb: "起床アラームと身支度の工程を順に案内します"),
 ]
 
 /// 種類を選ぶ画面に出すもの（読書は廃止。既存のデータは読めるように定義は残す）

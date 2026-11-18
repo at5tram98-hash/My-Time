@@ -275,4 +275,37 @@ extension Repository {
         }
         return e
     }
+
+    /// 勤務先の名前と給与条件を保存する（知らない項目・Web 版の項目はそのまま残す）
+    public func updateEmployer(_ id: String, name: String, pay: PayProfile) throws {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { throw RepositoryError("勤務先の名前を入力してください") }
+        guard let prev = store.get(.employer, id: id) else { throw RepositoryError("勤務先が見つかりません") }
+        var e = MTEmployer(json: prev)
+        e.name = n
+        e.updatedAt = clock()
+        e.raw = e.raw.merging(.object(["pay": try JSONValue.from(pay)]))
+        try store.transaction {
+            store.put(.employer, id: id, json: e.json)
+            record(.employer, id, op: "put", action: "update", detail: ["snapshot": prev])
+        }
+    }
+
+    /// 勤務先を削除する。勤務の予定は消さない（勤務先なしとして残る）
+    public func deleteEmployer(_ id: String) throws {
+        try store.transaction {
+            let prev = store.get(.employer, id: id)
+            store.delete(.employer, id: id)
+            record(.employer, id, op: "delete", action: "delete", detail: prev.map { ["snapshot": $0] })
+        }
+    }
+
+    /// 削除した勤務先を元に戻す（取り消し用）
+    public func restoreEmployer(_ json: JSONValue) throws {
+        guard let id = json["id"]?.stringValue else { return }
+        try store.transaction {
+            store.put(.employer, id: id, json: json)
+            record(.employer, id, op: "put", action: "create")
+        }
+    }
 }

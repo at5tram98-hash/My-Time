@@ -596,6 +596,16 @@ struct EditorView: View {
         if d.isEvent, d.id == .shift || d.id == .class {
             calendarId = model.calendars.first { $0.kind == (d.id == .shift ? .job : .class) }?.id ?? calendarId
         }
+        // 種類ごとの設定の既定（所要時間・通知・繰り返し）
+        let st = model.specSetting(d.id)
+        if let m = st.defaultMinutes { end = start.addingTimeInterval(TimeInterval(m * 60)) }
+        if let n = st.notifyBefore { notifies = [n] }
+        switch st.repeatRule {
+        case "daily": rule = RecurrenceRule(freq: .daily)
+        case "weekly": rule = RecurrenceRule(freq: .weekly)
+        case "monthly": rule = RecurrenceRule(freq: .monthly)
+        default: break
+        }
     }
 
     /// カレンダーを色の丸で選ぶ（純正カレンダーの色分けと同じ考え方）
@@ -856,6 +866,7 @@ struct EditorView: View {
 /// 種類を選ぶ画面（グループごと）。下にガラスの検索欄
 struct SpecTypePicker: View {
     @Binding var spec: SpecTypeId?
+    @Environment(AppModel.self) private var model: AppModel?
     var onPick: (SpecDef) -> Void
     var studioTypes: [StudioType] = []
     var studioId: String? = nil
@@ -889,7 +900,8 @@ struct SpecTypePicker: View {
                 }
             }
             ForEach(SpecGroup.allCases, id: \.self) { g in
-                let defs = SPEC_PICKABLE.filter { $0.group == g && hit($0.name, $0.blurb) }
+                // 種類の設定でオフにした種類は出さない（選んでいる種類は残す）
+                let defs = SPEC_PICKABLE.filter { $0.group == g && hit($0.name, $0.blurb) && ($0.id == spec || model?.specSetting($0.id).enabled != false) }
                 if !defs.isEmpty {
                     Section(g.label) {
                         ForEach(defs) { d in
