@@ -148,15 +148,18 @@ struct EmployerEditor: View {
             } header: { Text("交通費") }
             Section {
                 ForEach($p.breakRules) { $r in
-                    HStack {
-                        Stepper("\(r.overMinutes / 60)時間\(r.overMinutes % 60 == 0 ? "" : "\(r.overMinutes % 60)分")を超えたら", value: $r.overMinutes, in: 0...720, step: 30)
+                    Stepper("勤務 \(r.overMinutes / 60)時間\(r.overMinutes % 60 == 0 ? "" : "\(r.overMinutes % 60)分")", value: $r.overMinutes, in: 0...720, step: 30)
+                    Picker("数え方", selection: $r.inclusive) {
+                        Text("を超えたら").tag(false)
+                        Text("以上なら").tag(true)
                     }
+                    .pickerStyle(.segmented)
                     Stepper("休憩 \(r.breakMinutes)分", value: $r.breakMinutes, in: 0...180, step: 5)
                 }
                 .onDelete { p.breakRules.remove(atOffsets: $0) }
                 Button("条件を追加", systemImage: "plus") { p.breakRules.append(BreakRule(overMinutes: 360, breakMinutes: 45)) }
             } header: { Text("休憩") } footer: {
-                Text("勤務時間が長いほうの条件を使います。予定に休憩を入力したときはそちらを優先します。法律では6時間を超えると45分、8時間を超えると60分以上の休憩が必要です（下回る勤務には印を出します）。")
+                Text("「以上」はちょうどの時間も含みます（例：4時間以上なら 4:00 の勤務も休憩あり、4時間を超えたらなら 4:01 から）。勤務時間が長いほうの条件を使います。予定に休憩を入力したときはそちらを優先します。法律では6時間を超えると45分、8時間を超えると60分以上の休憩が必要です（下回る勤務には印を出します）。")
             }
             Section {
                 ForEach($p.premiums) { $r in

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct MyTimeApp: App {
@@ -19,7 +20,12 @@ struct MyTimeApp: App {
         }
         let model = AppModel.live(container: container)
         model.errorMessage = failure
+        model.storeFailure = failure
         _model = State(initialValue: model)
+        // 通知を押したときの受け口（起動の最初に設定しないと、閉じていたときの通知を受け取れない）
+        UNUserNotificationCenter.current().delegate = NotificationTapHandler.shared
+        // ロック画面のボタンから裏で起動されたときも動くように、画面より先に受け口を用意する
+        LiveActionRouter.handler = { kind, value in await LiveActions.handle(kind: kind, value: value, model: model) }
     }
 
     var body: some Scene {

@@ -65,6 +65,9 @@ struct EditorView: View {
     @State private var studioValues: [String: JSONValue] = [:]
     @State private var bring = ""
     @FocusState private var titleFocused: Bool
+    /// 開いたときの入力の内容（変更があるか比べる）
+    @State private var initialSignature = ""
+    @State private var confirmDiscard = false
 
     struct LinkItem: Identifiable, Equatable { var id = UUID().uuidString; var title = ""; var url = "" }
 
@@ -89,7 +92,14 @@ struct EditorView: View {
             .navigationTitle(isNew ? (kind == .event ? "新しい予定" : "新しいタスク") : (kind == .event ? "予定を編集" : "タスクを編集"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    // 変更があるときは、消してよいか確かめてから閉じる（変更がなければすぐ閉じる）
+                    Button("キャンセル") { if hasChanges { confirmDiscard = true } else { dismiss() } }
+                        .confirmationDialog("変更を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                            Button("破棄して閉じる", role: .destructive) { dismiss() }
+                            Button("編集を続ける", role: .cancel) {}
+                        }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isNew ? "追加" : "保存", action: save).fontWeight(.semibold).disabled(!canSave)
                 }
@@ -99,6 +109,8 @@ struct EditorView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in withAnimation(.snappy) { keyboardUp = true } }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.snappy) { keyboardUp = false } }
             .onAppear(perform: load)
+            // 変更があるときは、下になぞって閉じない（キャンセルから確かめる）
+            .interactiveDismissDisabled(hasChanges)
             .sensoryFeedback(.success, trigger: saved)
 
             .sensoryFeedback(.selection, trigger: page)
@@ -709,8 +721,18 @@ struct EditorView: View {
         studioValues = extra?["studio"]?["values"]?.objectValue ?? [:]
     }
 
+    /// 入力の内容をまとめた文字（変更の有無を比べるだけ）
+    private var signature: String {
+        [title, notes, spec?.rawValue ?? "", "\(details.count)", "\(start.timeIntervalSince1970)", "\(end.timeIntervalSince1970)", "\(hasTime)", "\(allDay)", "\(isCheck)",
+         "\(hasDeadline)", "\(deadline.timeIntervalSince1970)", "\(estimate)", "\(hasEstimate)", calendarId, "\(String(describing: rule))", place?.name ?? "", "\(travel ?? -1)",
+         "\(notifies)", meetingUrl, "\(links.map { $0.title + $0.url })", color ?? "", category, hideAfterEnd ? "1" : "0", subjectName, room, flagged ? "1" : "0", icon,
+         alarm ? "1" : "0", employerId ?? "", shiftPending ? "1" : "0", studioId ?? "", "\(studioValues.count)", bring, "\(kind)"].joined(separator: "|")
+    }
+    private var hasChanges: Bool { loaded && !initialSignature.isEmpty && signature != initialSignature }
+
     private func load() {
         guard !loaded else { return }
+        defer { DispatchQueue.main.async { initialSignature = signature } }
         loaded = true
         kind = seed.kind
         let now = model.now

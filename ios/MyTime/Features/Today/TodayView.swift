@@ -539,44 +539,23 @@ struct CompactLabel: LabelStyle {
     }
 }
 
-/// 上の見出し：日付と「18:30:20」を5秒ごとに入れ替える（数字はなめらかに入れ替わる）
+/// 上の見出し：日付と曜日だけ（固定。時計と入れ替えない）。押すと日付を選ぶ
 struct DateClockTitle: View {
     var title: String
     var isToday: Bool
     var onTap: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            let sec = Calendar.current.component(.second, from: ctx.date)
-            // 今日を見ているときだけ時計を出す（5秒ごとに日付⇄時刻）
-            let showClock = isToday && (sec / 5) % 2 == 1
-            Button(action: onTap) {
-                ZStack {
-                    if showClock {
-                        Text(ctx.date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
-                            .font(.headline.monospacedDigit())
-                            .contentTransition(.numericText(countsDown: false))
-                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.8)),
-                                                                              removal: .move(edge: .top).combined(with: .opacity)))
-                            .id("clock")
-                    } else {
-                        Text(title)
-                            .font(.headline)
-                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.8)),
-                                                                              removal: .move(edge: .top).combined(with: .opacity)))
-                            .id("date")
-                    }
-                }
-                // 幅を固定して、毎秒の書き換えでナビゲーションバーの配置が動かないようにする（＋などのボタンが押しにくくなるのを防ぐ）
-                .frame(width: 190, height: 28)
-                .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: showClock)
-                .animation(reduceMotion ? nil : .snappy, value: ctx.date)
-                .clipped()
+        Button(action: onTap) {
+            HStack(spacing: 4) {
+                Text(title).font(.headline)
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .accessibilityHint("日付を選びます")
+            .lineLimit(1)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title + (isToday ? "、今日" : ""))
+        .accessibilityHint("日付を選びます")
     }
 }

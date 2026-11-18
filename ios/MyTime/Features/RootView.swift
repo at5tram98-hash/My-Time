@@ -179,6 +179,8 @@ struct RootView: View {
                 .tag(AppTab.more)
         }
         .environment(router)
+        // 秒の表示：iOS の時計のすぐ下のすき間（ステータスバーとナビゲーションバーの間）。どこにも重ならない
+        .overlay(alignment: .topLeading) { SecondsAccessory() }
         #if DEBUG
         // 開発用：起動引数 `-route quickAdd|planAssist|settings` `-tab calendar|tasks|review` で画面を直接開く（UI テスト・スクリーンショット用）
         .task {
@@ -206,6 +208,21 @@ struct RootView: View {
         #endif
         // Live Activity・ウィジェットから開く（mytime://event/ID・task/ID・checkpoint/ID・morning・cleaning）
         .onOpenURL { url in openDeepLink(url) }
+        // 通知を押したとき（アプリが閉じていたときも、起動後に開く）
+        .onReceive(NotificationCenter.default.publisher(for: .mytimeOpenLink)) { n in
+            if let u = n.object as? URL { openDeepLink(u) }
+        }
+        .task { if let u = NotificationTapHandler.shared.takePending() { openDeepLink(u) } }
+        // 保存先を開けずメモリ上で動いているときは、上に出し続ける（ふつうの保存と間違えないように）
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let f = model.storeFailure {
+                Label("一時的なメモリ上で動いています。変更は保存されません。", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(8)
+                    .background(Color.orange)
+                    .accessibilityHint(f)
+            }
+        }
         // 前面にある間は Live Activity を1分ごとに照合する。戻ったときにアラームも照合する
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active {
@@ -215,9 +232,6 @@ struct RootView: View {
             } else {
                 LiveActivityCoordinator.shared.stopTicking()
             }
-        }
-        .task {
-            LiveActionRouter.handler = { [model] kind, value in await LiveActions.handle(kind: kind, value: value, model: model) }
         }
         .sheet(item: router.level(0)) { _ in
             SheetHost(level: 0)
@@ -245,6 +259,8 @@ struct RootView: View {
                 .environment(model)
         }
         // 操作のあとに画面下へ知らせは出さない。取り消しは iPhone を振る（純正アプリと同じ「シェイクで取り消す」）
+        // VoiceOver の操作からも元に戻せる（振らなくてよい）
+        .accessibilityAction(named: "直前の操作を元に戻す") { if model.toast?.undo != nil { showUndo = true } }
         .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
             if model.toast?.undo != nil { showUndo = true }
         }
@@ -262,21 +278,35 @@ struct RootView: View {
         .preferredColorScheme(model.settings.theme == "dark" ? .dark : model.settings.theme == "light" ? .light : nil)
     }
 
+    /// mytime:// のリンク（ロック画面・通知から）。対象が無い・形が正しくないときは今日の画面に戻すだけ（空の画面を重ねない）
     private func openDeepLink(_ url: URL) {
         guard url.scheme == "mytime" else { return }
         let id = url.pathComponents.dropFirst().first ?? ""
+        let validId = !id.isEmpty && id.count < 200 && id.allSatisfy { $0.isLetter || $0.isNumber || "-_@.".contains($0) }
         router.closeAll()
+        func fallback() {
+            router.tab = .today
+            Diagnostics.record("link", ok: false, "リンクの対象が見つかりませんでした")
+        }
         switch url.host() ?? "" {
-        case "event": router.tab = .today; router.open(.event(id))
-        case "task": router.tab = .today; router.open(.task(id))
-        case "checkpoint": if let c = model.checkpoints.first(where: { $0.id == id }) { router.open(.checkpoint(c)) }
+        case "event":
+            let master = parseOccurrenceId(id)?.masterId ?? id
+            guard validId, model.events.contains(where: { $0.id == master }) else { return fallback() }
+            router.tab = .today; router.open(.event(id))
+        case "task":
+            guard validId, model.tasks.contains(where: { $0.id == id }) else { return fallback() }
+            router.tab = .today; router.open(.task(id))
+        case "checkpoint":
+            guard validId, let c = model.checkpoints.first(where: { $0.id == id }) else { return fallback() }
+            router.tab = .today; router.open(.checkpoint(c))
         case "morning": router.openTasks(model.morning.active != nil ? .morningRun : .morning)
         case "cleaning": router.openTasks(model.cleaning.active != nil ? .cleaningRun : .cleaning)
         case "payroll": router.openMore(.payroll)
         case "autodelete": router.openMore(.autoDelete)
-        default: break
+        default: fallback()
         }
     }
+
 
 }
 

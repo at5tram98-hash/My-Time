@@ -1,0 +1,38 @@
+name: iOS
+
+# iOS アプリ（Swift）の検査。既存の Web の CI とは別に動く（Web の CI・公開には影響しない）。
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: いちばん新しい Xcode を使う
+        run: |
+          X=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Xcode: $X"
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+      - name: MyTimeCore の単体テスト
+        working-directory: ios/Packages/MyTimeCore
+        run: swift test
+      - name: アプリと Widget Extension（Debug）
+        working-directory: ios
+        run: xcodebuild -project MyTime.xcodeproj -scheme MyTime -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -5
+      - name: アプリと Widget Extension（Release）
+        working-directory: ios
+        run: xcodebuild -project MyTime.xcodeproj -scheme MyTime -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -5
+      - name: UI テスト（XCUITest）
+        working-directory: ios
+        run: |
+          DEV=$(xcrun simctl list devices available | grep -E "iPhone [0-9]+ Pro \(" | tail -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          echo "Simulator: $DEV"
+          xcodebuild -project MyTime.xcodeproj -scheme MyTime -destination "id=$DEV" CODE_SIGNING_ALLOWED=NO test | grep -E "Test Case|TEST (SUCCEEDED|FAILED)|error:"

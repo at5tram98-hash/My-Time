@@ -9,6 +9,17 @@ struct HistoryView: View {
         let logs = model.repo.history(limit: 300)
         let byDay = Dictionary(grouping: logs) { model.time.startOfDay($0["at"]?.intValue ?? 0) }
         List {
+            // 直前の操作を元に戻す（振る操作のほかに、ここからも。VoiceOver からも使える）
+            if let t = model.toast, t.undo != nil {
+                Section {
+                    Button {
+                        t.undo?(); model.toast = nil
+                    } label: {
+                        Label { VStack(alignment: .leading, spacing: 2) { Text("直前の操作を元に戻す"); Text(t.text).font(.caption).foregroundStyle(.secondary) } }
+                        icon: { Image(systemName: "arrow.uturn.backward.circle.fill") }
+                    }
+                } footer: { Text("iPhone を振っても元に戻せます。") }
+            }
             if logs.isEmpty {
                 ContentUnavailableView("まだ操作はありません", systemImage: "clock.arrow.circlepath")
             }

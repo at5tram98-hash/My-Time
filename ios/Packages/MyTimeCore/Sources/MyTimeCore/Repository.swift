@@ -257,6 +257,51 @@ public final class Repository {
         try store.transaction { store.put(.event, id: masterId, json: m.json); record(.event, masterId, op: "put", action: "occurrence-cancel", detail: ["originalStart": originalStart.json]) }
     }
 
+    /// 自動削除：片づけ（画面から外して archivedAt を付ける）と完全削除を1つのトランザクションで。
+    /// 1件でも失敗したら全部やめる（途中まで消えた状態にしない）
+    public func applyCleanup(archiveEvents: [String], archiveTasks: [String], purgeEvents: [String], purgeTasks: [String], at: EpochMs) throws {
+        func mark(_ x: JSONValue?) -> JSONValue { (x ?? .object([:])).merging(.object(["archivedAt": .number(Double(at))])) }
+        try store.transaction {
+            for id in archiveEvents {
+                guard var e = event(id) else { throw RepositoryError("予定が見つかりません") }
+                e.extra = mark(e.extra); e.updatedAt = clock()
+                store.put(.event, id: id, json: e.json)
+                record(.event, id, op: "put", action: "archive")
+            }
+            for id in archiveTasks {
+                guard let raw = store.get(.task, id: id) else { throw RepositoryError("タスクが見つかりません") }
+                var t = MTTask(json: raw)
+                t.extra = mark(t.extra); t.updatedAt = clock()
+                store.put(.task, id: id, json: t.json)
+                record(.task, id, op: "put", action: "archive")
+            }
+            for id in purgeEvents {
+                let prev = store.get(.event, id: id)
+                store.delete(.event, id: id)
+                record(.event, id, op: "delete", action: "purge", detail: prev.map { ["snapshot": $0] })
+            }
+            for id in purgeTasks {
+                let subs = store.all(.subtask).filter { $0["taskId"]?.stringValue == id }
+                for sub in subs { if let sid = sub["id"]?.stringValue { store.delete(.subtask, id: sid) } }
+                store.delete(.task, id: id)
+                record(.task, id, op: "delete", action: "purge")
+            }
+        }
+    }
+
+    /// 片づけた予定・タスクを元に戻す（1つのトランザクション）
+    public func restoreArchived(events: [String], tasks: [String]) throws {
+        func unmark(_ x: JSONValue?) -> JSONValue? {
+            guard var o = x?.objectValue else { return x }
+            o["archivedAt"] = nil
+            return .object(o)
+        }
+        try store.transaction {
+            for id in events { if var e = event(id) { e.extra = unmark(e.extra); store.put(.event, id: id, json: e.json); record(.event, id, op: "put", action: "restore") } }
+            for id in tasks { if let raw = store.get(.task, id: id) { var t = MTTask(json: raw); t.extra = unmark(t.extra); store.put(.task, id: id, json: t.json); record(.task, id, op: "put", action: "restore") } }
+        }
+    }
+
     /// 取り消し・取り消しの解除。originalStart を渡すと繰り返しのその回だけ（例外に印を付ける）
     public func setStruck(eventId: String, originalStart: EpochMs?, struck: Bool) throws {
         guard var m = event(eventId) else { throw RepositoryError("予定が見つかりません") }

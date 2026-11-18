@@ -178,6 +178,7 @@ struct CleaningSessionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var summary: CleaningSession?
     @State private var tap = 0
+    @State private var confirmFinish = false
 
     var body: some View {
         let book = model.cleaning
@@ -223,7 +224,10 @@ struct CleaningSessionView: View {
                             Text("途中で保存").frame(maxWidth: .infinity, minHeight: 50)
                         }
                         .buttonStyle(.bordered)
-                        Button { finish() } label: {
+                        Button {
+                            // まだの箇所（No）が残っていれば、終えてよいか確かめる
+                            if c.done < c.total { confirmFinish = true } else { finish() }
+                        } label: {
                             Text("清掃を完了").fontWeight(.semibold).frame(maxWidth: .infinity, minHeight: 50)
                         }
                         .buttonStyle(.borderedProminent).tint(.teal)
@@ -240,6 +244,10 @@ struct CleaningSessionView: View {
         .navigationTitle(model.cleaning.active != nil ? "清掃中" : "清掃の記録")
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: tap)
+        .confirmationDialog("まだの箇所があります", isPresented: $confirmFinish, titleVisibility: .visible) {
+            Button("このまま終える") { finish() }
+            Button("清掃を続ける", role: .cancel) {}
+        } message: { Text("「No」の箇所は清掃していないものとして記録します。") }
     }
 
     private func card(_ i: CleaningItem, status: CleaningStatus) -> some View {

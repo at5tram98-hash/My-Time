@@ -25,12 +25,25 @@ public enum TransportMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 勤務が overMinutes を超えたら breakMinutes の休憩（いちばん長い時間に当てはまる条件を使う）
+/// 勤務が overMinutes を超えたら（inclusive なら以上なら）breakMinutes の休憩（いちばん長い時間に当てはまる条件を使う）
 public struct BreakRule: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var overMinutes: Int
     public var breakMinutes: Int
-    public init(id: String = UUID().uuidString, overMinutes: Int, breakMinutes: Int) { self.id = id; self.overMinutes = overMinutes; self.breakMinutes = breakMinutes }
+    /// true：「○時間以上」／false：「○時間を超えたら」（勤務先の決まりに合わせる）
+    public var inclusive: Bool
+    public init(id: String = UUID().uuidString, overMinutes: Int, breakMinutes: Int, inclusive: Bool = false) {
+        self.id = id; self.overMinutes = overMinutes; self.breakMinutes = breakMinutes; self.inclusive = inclusive
+    }
+    enum CodingKeys: String, CodingKey { case id, overMinutes, breakMinutes, inclusive }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        overMinutes = try c.decode(Int.self, forKey: .overMinutes)
+        breakMinutes = try c.decode(Int.self, forKey: .breakMinutes)
+        inclusive = (try? c.decode(Bool.self, forKey: .inclusive)) ?? false
+    }
+    public func applies(_ scheduledMinutes: Int) -> Bool { inclusive ? scheduledMinutes >= overMinutes : scheduledMinutes > overMinutes }
 }
 
 /// 割増（勤務先の条件として登録する。率は 0.25 = 25%増し）
@@ -143,7 +156,7 @@ public enum PayCalculator {
     public static func shift(start: EpochMs, end: EpochMs, profile p: PayProfile, breakOverride: Int? = nil, time: DomainTime = .current) -> ShiftPayResult? {
         guard end > start else { return nil }
         let scheduled = Int((end - start) / MINUTE)
-        let ruleBreak = p.breakRules.filter { scheduled > $0.overMinutes }.max { $0.overMinutes < $1.overMinutes }?.breakMinutes ?? 0
+        let ruleBreak = p.breakRules.filter { $0.applies(scheduled) }.max { $0.overMinutes < $1.overMinutes }?.breakMinutes ?? 0
         let brk = min(scheduled, max(0, breakOverride ?? ruleBreak))
         let unit = max(1, p.unitMinutes)
         let work = Int(p.unitRounding.apply(Double(scheduled - brk) / Double(unit))) * unit

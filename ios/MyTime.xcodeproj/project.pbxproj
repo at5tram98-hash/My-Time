@@ -19,6 +19,13 @@
 			remoteGlobalIDString = B10000000000000000000701;
 			remoteInfo = MyTimeWidgetsExtension;
 		};
+		C10000000000000000000A51 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000701;
+			remoteInfo = MyTime;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -38,6 +45,7 @@
 /* Begin PBXFileReference section */
 		A10000000000000000000201 /* My Time.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "My Time.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000202 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		C10000000000000000000201 /* MyTimeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyTimeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000201 /* MyTimeWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MyTimeWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -55,6 +63,11 @@
 		B10000000000000000000302 /* MyTimeWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MyTimeWidgets;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000301 /* MyTimeUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyTimeUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +88,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C10000000000000000000401 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -84,6 +104,7 @@
 				A10000000000000000000301 /* MyTime */,
 				B10000000000000000000301 /* Shared */,
 				B10000000000000000000302 /* MyTimeWidgets */,
+				C10000000000000000000301 /* MyTimeUITests */,
 				A10000000000000000000503 /* Config */,
 				A10000000000000000000502 /* Products */,
 			);
@@ -94,6 +115,7 @@
 			children = (
 				A10000000000000000000201 /* My Time.app */,
 				B10000000000000000000201 /* MyTimeWidgetsExtension.appex */,
+				C10000000000000000000201 /* MyTimeUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -156,6 +178,27 @@
 			productReference = B10000000000000000000201 /* MyTimeWidgetsExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		C10000000000000000000701 /* MyTimeUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C10000000000000000000902 /* Build configuration list for PBXNativeTarget "MyTimeUITests" */;
+			buildPhases = (
+				C10000000000000000000801 /* Sources */,
+				C10000000000000000000401 /* Frameworks */,
+				C10000000000000000000802 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C10000000000000000000A52 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C10000000000000000000301 /* MyTimeUITests */,
+			);
+			name = MyTimeUITests;
+			productName = MyTimeUITests;
+			productReference = C10000000000000000000201 /* MyTimeUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -171,6 +214,10 @@
 					};
 					B10000000000000000000701 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					C10000000000000000000701 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A10000000000000000000701;
 					};
 				};
 			};
@@ -193,6 +240,7 @@
 			targets = (
 				A10000000000000000000701 /* MyTime */,
 				B10000000000000000000701 /* MyTimeWidgetsExtension */,
+				C10000000000000000000701 /* MyTimeUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -206,6 +254,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B10000000000000000000802 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C10000000000000000000802 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -229,6 +284,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C10000000000000000000801 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -236,6 +298,11 @@
 			isa = PBXTargetDependency;
 			target = B10000000000000000000701 /* MyTimeWidgetsExtension */;
 			targetProxy = B10000000000000000000A51 /* PBXContainerItemProxy */;
+		};
+		C10000000000000000000A52 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000701 /* MyTime */;
+			targetProxy = C10000000000000000000A51 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -419,6 +486,46 @@
 			};
 			name = Release;
 		};
+		C10000000000000000000A03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000202 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S6YMR6M84;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYTIME_BUNDLE_ID).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = MyTime;
+			};
+			name = Debug;
+		};
+		C10000000000000000000A04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000202 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8S6YMR6M84;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MYTIME_BUNDLE_ID).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = MyTime;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -445,6 +552,15 @@
 			buildConfigurations = (
 				B10000000000000000000A03 /* Debug */,
 				B10000000000000000000A04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C10000000000000000000902 /* Build configuration list for PBXNativeTarget "MyTimeUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C10000000000000000000A03 /* Debug */,
+				C10000000000000000000A04 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

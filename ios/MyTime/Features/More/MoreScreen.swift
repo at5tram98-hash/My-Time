@@ -5,6 +5,7 @@ import MyTimeCore
 /// その他タブ。「今日」でできることは置かない。
 /// ここだけにあるもの：記録（連続日数・今週の作業・振り返り・操作履歴）、使い方、通知と外観、設定、このアプリについて
 struct MoreScreen: View {
+    @AppStorage("clock.showSeconds") private var showSeconds = true
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @AppStorage(AccountKeys.name) private var accountName = ""
@@ -91,6 +92,9 @@ struct MoreScreen: View {
                     Toggle(isOn: Binding(get: { model.notificationsEnabled }, set: setNotify)) {
                         row("通知", "bell.badge.fill", .red, model.notificationsEnabled ? "予定の\(model.notifyMinutesBefore == 0 ? "開始時刻" : "\(model.notifyMinutesBefore)分前")に知らせる" : "オフ")
                     }
+                    Toggle(isOn: $showSeconds.animation(Motion.pop)) {
+                        row("秒を表示", "clock.badge", .gray, "画面の上（時計の下）に小さく。iOS の時計そのものは変えられません")
+                    }
                     Picker(selection: Binding(get: { model.settings.theme }, set: { v in model.updateSettings { $0.theme = v } })) {
                         Text("自動").tag("system")
                         Text("ライト").tag("light")
@@ -105,7 +109,7 @@ struct MoreScreen: View {
                 } header: {
                     Text("このアプリについて")
                 } footer: {
-                    Text("データはこの iPhone の中に保存されます。Web 版とは「設定 › データの移行」でやり取りできます。")
+                    Text("データはこの iPhone の中だけに保存されます（自動の同期はまだありません）。Web 版とは「設定 › データの移行」で手動でやり取りできます。")
                 }
             }
             .navigationTitle("その他")

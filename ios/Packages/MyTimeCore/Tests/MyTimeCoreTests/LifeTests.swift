@@ -315,3 +315,93 @@ final class StrikeTests: XCTestCase {
         XCTAssertEqual(expandAll([reread], from: 0, to: 3 * DAY).map(\.isStruck), [false, true, false])
     }
 }
+
+/// 保存の失敗を起こす保存先（故障注入）。transaction の最後で失敗し、途中の変更を取り消す
+final class FailingStore: RecordStore {
+    let inner = InMemoryStore()
+    var fail = false
+    struct DiskFull: Error {}
+    func all(_ e: EntityName) -> [JSONValue] { inner.all(e) }
+    func get(_ e: EntityName, id: String) -> JSONValue? { inner.get(e, id: id) }
+    func put(_ e: EntityName, id: String, json: JSONValue) { inner.put(e, id: id, json: json) }
+    func delete(_ e: EntityName, id: String) { inner.delete(e, id: id) }
+    func appendLog(_ entry: JSONValue) { inner.appendLog(entry) }
+    func logs() -> [JSONValue] { inner.logs() }
+    func appendOutbox(_ entry: JSONValue) { inner.appendOutbox(entry) }
+    func outbox() -> [JSONValue] { inner.outbox() }
+    func settings() -> JSONValue? { inner.settings() }
+    func putSettings(_ value: JSONValue) { inner.putSettings(value) }
+    func transaction(_ body: () throws -> Void) throws {
+        try inner.transaction { try body(); if fail { throw DiskFull() } }
+    }
+}
+
+final class SaveFailureTests: XCTestCase {
+    /// 保存に失敗したら、エラーを返し、元のデータを保つ（偽の成功にしない）
+    func testFailedSaveKeepsPreviousData() throws {
+        let store = FailingStore()
+        let repo = Repository(store: store, clock: { 1 })
+        let e = MTEvent.make(title: "授業", calendarId: "c", start: 0, end: HOUR, now: 0, id: "e")
+        try repo.saveEvent(e, isNew: true)
+        store.fail = true
+        var changed = e; changed.title = "変更"
+        XCTAssertThrowsError(try repo.saveEvent(changed, isNew: false))
+        XCTAssertEqual(repo.events().first?.title, "授業")
+        XCTAssertThrowsError(try repo.setStruck(eventId: "e", originalStart: nil, struck: true))
+        XCTAssertFalse(expandAll(repo.events(), from: 0, to: DAY)[0].isStruck)
+        XCTAssertThrowsError(try repo.deleteEvent("e"))
+        XCTAssertEqual(repo.events().count, 1)
+    }
+}
+
+final class CleanupTransactionTests: XCTestCase {
+    func testCleanupIsAllOrNothing() throws {
+        let store = FailingStore()
+        let repo = Repository(store: store, clock: { 1 })
+        try repo.saveEvent(MTEvent.make(title: "a", calendarId: "c", start: 0, end: HOUR, now: 0, id: "a"), isNew: true)
+        try repo.saveEvent(MTEvent.make(title: "b", calendarId: "c", start: 0, end: HOUR, now: 0, id: "b"), isNew: true)
+        // 存在しない ID が混ざる → 全部やめる
+        XCTAssertThrowsError(try repo.applyCleanup(archiveEvents: ["a", "missing"], archiveTasks: [], purgeEvents: [], purgeTasks: [], at: 5))
+        XCTAssertNil(repo.events().first { $0.id == "a" }?.extra?["archivedAt"])
+        // 保存の失敗 → 何も変わらない
+        store.fail = true
+        XCTAssertThrowsError(try repo.applyCleanup(archiveEvents: ["a"], archiveTasks: [], purgeEvents: ["b"], purgeTasks: [], at: 5))
+        XCTAssertEqual(repo.events().count, 2)
+        store.fail = false
+        try repo.applyCleanup(archiveEvents: ["a"], archiveTasks: [], purgeEvents: ["b"], purgeTasks: [], at: 5)
+        XCTAssertEqual(repo.events().count, 1)
+        XCTAssertEqual(repo.events().first?.extra?["archivedAt"]?.intValue, 5)
+        try repo.restoreArchived(events: ["a"], tasks: [])
+        XCTAssertNil(repo.events().first?.extra?["archivedAt"])
+    }
+
+    /// 30日の境界：29日は残す、31日は完全削除
+    func testRetentionBoundary() {
+        let now: EpochMs = 100 * DAY
+        XCTAssertEqual(AutoDeleteRules.purgeable(archivedAt: ["d29": now - 29 * DAY, "d30": now - 30 * DAY, "d31": now - 31 * DAY], now: now), ["d31"])
+    }
+}
+
+final class BreakBoundaryTests: XCTestCase {
+    /// 境界：「4時間以上で15分・6.5時間以上で45分・8時間以上で60分」と「超」の違い
+    func testInclusiveAndExclusiveBoundaries() {
+        var inc = PayProfile(); inc.hourlyWage = 1000
+        inc.breakRules = [BreakRule(overMinutes: 240, breakMinutes: 15, inclusive: true), BreakRule(overMinutes: 390, breakMinutes: 45, inclusive: true), BreakRule(overMinutes: 480, breakMinutes: 60, inclusive: true)]
+        var exc = inc
+        exc.breakRules = inc.breakRules.map { var r = $0; r.inclusive = false; return r }
+        func brk(_ p: PayProfile, _ m: Int) -> Int { PayCalculator.shift(start: 0, end: EpochMs(m) * MINUTE, profile: p)!.breakMinutes }
+        let cases: [(Int, Int, Int)] = [  // 勤務分, 以上の休憩, 超の休憩
+            (239, 0, 0), (240, 15, 0), (241, 15, 15),
+            (389, 15, 15), (390, 45, 15), (391, 45, 45),
+            (419, 45, 45), (420, 45, 45), (421, 45, 45),
+            (479, 45, 45), (480, 60, 45), (481, 60, 60),
+        ]
+        for (m, a, b) in cases {
+            XCTAssertEqual(brk(inc, m), a, "以上 \(m)分")
+            XCTAssertEqual(brk(exc, m), b, "超 \(m)分")
+        }
+        // 古いデータ（inclusive なし）は「超」として読む
+        let old = try! JSONValue.parse(#"{"id":"x","overMinutes":360,"breakMinutes":45}"#).decode(BreakRule.self)
+        XCTAssertFalse(old.inclusive)
+    }
+}

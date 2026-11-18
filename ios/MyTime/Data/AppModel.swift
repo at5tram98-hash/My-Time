@@ -33,6 +33,8 @@ final class AppModel {
     /// 直前の操作（画面には出さない。iPhone を振ると取り消せる）
     var toast: Toast?
     var errorMessage: String?
+    /// 保存先を開けず、メモリ上で動いているとき（変更は保存されない）。画面の上に出し続ける
+    var storeFailure: String?
 
     struct Toast: Identifiable, Equatable {
         let id = UUID()
@@ -115,6 +117,8 @@ final class AppModel {
             return true
         } catch {
             errorMessage = (error as? CustomStringConvertible)?.description ?? error.localizedDescription
+            if !(error is RepositoryError) { Diagnostics.failure("save", error, context: "保存") }
+            reload()
             return false
         }
     }
@@ -146,8 +150,15 @@ final class AppModel {
 
     func updateSettings(_ change: (inout AppSettings) -> Void) {
         repo.updateSettings(change)
+        // 保存に失敗したら、変更は取り消されている（画面は読み直した保存済みの値になる）
+        if let e = (repo.store as? SwiftDataStore)?.lastSaveError {
+            errorMessage = "保存できませんでした。変更は元に戻しました。（\(Diagnostics.describe(e))）"
+        }
         reload()
     }
+
+    /// 直前の設定の保存が成功したか
+    var lastSaveSucceeded: Bool { (repo.store as? SwiftDataStore)?.lastSaveError == nil }
 }
 
 /// 時刻と日付の表示

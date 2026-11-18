@@ -99,8 +99,31 @@ enum NotificationScheduler {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// 通知を押したときに開く画面（mytime://…）
+    static func link(for id: String) -> String {
+        let body = id.split(separator: ":", maxSplits: 1).last.map(String.init) ?? ""
+        let target = body.split(separator: "@").first.map(String.init) ?? body
+        if id.hasPrefix("event:") || id.hasPrefix("leave:") || id.hasPrefix("quiz:") { return "mytime://event/\(body)" }
+        if id.hasPrefix("cp:") || id.hasPrefix("cpalarm:") { return "mytime://checkpoint/\(target)" }
+        if id.hasPrefix("morning:") { return "mytime://morning" }
+        return "mytime://task/\(target)"
+    }
+
+    /// 予約し直しは順番に1つずつ（同時に走ると、消した通知が戻ったり二重になったりする）
+    private static var chain: Task<Void, Never>?
+
     /// これまでの予約を消して、予約し直す（My Time が作った予約だけ）
     static func reschedule(model: AppModel) async {
+        let prev = chain
+        let next = Task { @MainActor in
+            await prev?.value
+            await rescheduleNow(model: model)
+        }
+        chain = next
+        await next.value
+    }
+
+    private static func rescheduleNow(model: AppModel) async {
         let center = UNUserNotificationCenter.current()
         // チェックポイントは、これから7日分の回（繰り返しを含む）
         let cps = (0..<8).flatMap { model.checkpoints(on: model.time.addDays(model.time.startOfDay(model.now), $0)) }.filter { $0.at > model.now }
@@ -122,11 +145,10 @@ enum NotificationScheduler {
             }
             if c.alarm { all.append(Plan(id: "cpalarm:\(c.id)@\(c.at)", title: name, body: "\(model.hm(c.at))です", at: c.at, alarm: true)) }
         }
-        // 本物のアラーム（AlarmKit）が使えるときは、アラームの通知は出さない（二重に鳴らさない）
-        let systemAlarms = TaskAlarms.systemAlarmsActive
-        // 朝のアラーム：AlarmKit が使えないときだけ、通知で代わりに知らせる（マナーモードでは鳴らないことがある）
-        if !systemAlarms {
-            for a in model.morning.alarms where a.enabled {
+        // 朝のアラーム：本物のアラーム（AlarmKit）で予約できなかったときだけ、通知で代わりに知らせる
+        // （通知はマナーモード・集中モードで鳴らないことがあり、目覚ましと同じではない）
+        do {
+            for a in model.morning.alarms where a.enabled && !AlarmService.confirmed.contains("morning:\(a.id)") {
                 var t = now
                 for _ in 0..<7 {
                     guard let at = a.next(after: t, time: model.time), at < now + 7 * DAY else { break }
@@ -135,16 +157,37 @@ enum NotificationScheduler {
                 }
             }
         }
-        for p in all where ((model.notificationsEnabled || p.id.hasPrefix("cp:")) && !p.alarm) || (p.alarm && !systemAlarms) {
+        // アラームの通知は、本物のアラームとして予約できなかったものだけ（二重に鳴らさない）
+        func coveredByAlarm(_ p: Plan) -> Bool {
+            let c = AlarmService.confirmed
+            if p.id.hasPrefix("alarm"), let tid = p.id.split(separator: ":", maxSplits: 1).last,
+               let t = model.tasks.first(where: { $0.id == tid }), let at = alarmTime(t) { return c.contains("task:\(t.id)@\(at)") }
+            if p.id.hasPrefix("cpalarm:") { return c.contains("cp:" + p.id.dropFirst("cpalarm:".count)) }
+            if p.id.hasPrefix("morning:"), let aid = p.id.dropFirst("morning:".count).split(separator: "@").first { return c.contains("morning:\(aid)") }
+            return false
+        }
+        var chosen = all.filter { p in p.alarm ? !coveredByAlarm(p) : (model.notificationsEnabled || p.id.hasPrefix("cp:")) }
+        // iOS が一度に予約できる通知は64件まで。起床・アラーム → チェックポイント → 予定の順で、近いものから
+        func rank(_ p: Plan) -> Int { p.alarm ? 0 : p.id.hasPrefix("cp:") ? 1 : p.id.hasPrefix("quiz:") ? 2 : 3 }
+        chosen.sort { (rank($0), $0.at) < (rank($1), $1.at) }
+        let dropped = max(0, chosen.count - 60)
+        chosen = Array(chosen.prefix(60))
+        var okCount = 0, failCount = 0
+        for p in chosen {
             let content = UNMutableNotificationContent()
             content.title = p.title
             content.body = p.body
-            content.sound = p.alarm ? .defaultCritical : .default
+            // 重要な通知（Critical Alerts）の許可は持っていないので使わない。アラームの代わりは「時間厳守」の通知
+            content.sound = .default
             if p.alarm { content.interruptionLevel = .timeSensitive }
             content.threadIdentifier = "mytime"
+            content.userInfo = ["link": link(for: p.id)]
             let comps = model.time.calendar.dateComponents([.year, .month, .day, .hour, .minute], from: model.time.date(p.at))
             let req = UNNotificationRequest(identifier: prefix + p.id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false))
-            try? await center.add(req)
+            do { try await center.add(req); okCount += 1 } catch { failCount += 1; Diagnostics.failure("notification", error, context: "通知の予約") }
         }
+        Diagnostics.setCount("notifications", okCount)
+        Diagnostics.setCount("notificationsDropped", dropped)
+        if failCount == 0 { Diagnostics.record("notification", ok: true, "通知 \(okCount)件を予約" + (dropped > 0 ? "（上限のため \(dropped)件は後で予約）" : "")) }
     }
 }

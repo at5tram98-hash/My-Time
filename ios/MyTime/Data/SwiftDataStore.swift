@@ -149,7 +149,19 @@ final class SwiftDataStore: RecordStore {
         }
     }
 
+    /// 直前の保存の失敗（なければ nil）。呼び出し側はこれを見て「保存できませんでした」と知らせる
+    private(set) var lastSaveError: Error?
+
+    /// トランザクションの外の保存（設定など）。失敗したら変更を取り消し、エラーを残す（黙って成功にしない）
     private func saveIfNeeded() {
-        if !inTransaction { try? context.save() }
+        guard !inTransaction else { return }
+        do {
+            try context.save()
+            lastSaveError = nil
+        } catch {
+            context.rollback()
+            lastSaveError = error
+            Task { @MainActor in Diagnostics.failure("save", error, context: "設定の保存") }
+        }
     }
 }

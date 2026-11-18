@@ -60,6 +60,10 @@ enum AlarmService {
         await sync(tasks: model.tasks, checkpoints: cps, morning: model.morning, now: model.now, time: model.time)
     }
 
+    /// 本物のアラーム（AlarmKit）として予約できたもの（通知で代わりに鳴らす必要がないもの）。
+    /// 鍵：タスクは "task:ID@時刻"、チェックポイントは "cp:ID@時刻"、朝は "morning:ID"
+    static private(set) var confirmed: Set<String> = []
+
     static func sync(tasks: [MTTask], checkpoints: [Checkpoint], morning: MorningRoutine, now: EpochMs, time: DomainTime) async {
         #if canImport(AlarmKit)
         guard #available(iOS 26.0, *), AlarmManager.shared.authorizationState == .authorized else { return }
@@ -81,8 +85,23 @@ enum AlarmService {
             if wokeToday, let next = a.next(after: now, time: time), time.isSameDay(next, now) { continue }
             wanted[TaskAlarms.morningAlarmID(a)] = .morning(a)
         }
-        let existing = Set(((try? manager.alarms) ?? []).map(\.id))
-        for id in existing where wanted[id] == nil { try? manager.cancel(id: id) }
+        var keyOf: [UUID: String] = [:]
+        for (id, item) in wanted {
+            switch item {
+            case .once(let t, let at): keyOf[id] = (t.id.hasPrefix("cp-") ? "cp:\(t.id.dropFirst(3))" : "task:\(t.id)") + "@\(at)"
+            case .morning(let a): keyOf[id] = "morning:\(a.id)"
+            }
+        }
+        let existing: Set<UUID>
+        do { existing = Set(try manager.alarms.map(\.id)) } catch {
+            Diagnostics.failure("alarm", error, context: "予約済みのアラームを読めませんでした")
+            existing = []
+        }
+        for id in existing where wanted[id] == nil {
+            do { try manager.cancel(id: id) } catch { Diagnostics.failure("alarm", error, context: "アラームの取り消し") }
+        }
+        var ok = Set(existing.filter { wanted[$0] != nil }.compactMap { keyOf[$0] })
+        var failed = 0
         for (id, item) in wanted where !existing.contains(id) {
             switch item {
             case .once(let t, let at):
@@ -92,7 +111,8 @@ enum AlarmService {
                 )
                 let attributes = AlarmAttributes<TaskAlarmMetadata>(presentation: AlarmPresentation(alert: alert), metadata: TaskAlarmMetadata(taskId: t.id), tintColor: .orange)
                 let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>.alarm(schedule: .fixed(Date(timeIntervalSince1970: TimeInterval(at) / 1000)), attributes: attributes)
-                _ = try? await manager.schedule(id: id, configuration: config)
+                do { _ = try await manager.schedule(id: id, configuration: config); if let k = keyOf[id] { ok.insert(k) } }
+                catch { failed += 1; Diagnostics.failure("alarm", error, context: "アラームの予約（通知で代わりに知らせます）") }
             case .morning(let a):
                 let snooze = a.snoozeMinutes > 0
                 let alert = AlarmPresentation.Alert(
@@ -108,9 +128,13 @@ enum AlarmService {
                     countdownDuration: snooze ? Alarm.CountdownDuration(preAlert: nil, postAlert: TimeInterval(a.snoozeMinutes * 60)) : nil,
                     schedule: schedule, attributes: attributes,
                     sound: a.sound.map { .named($0) } ?? .default)
-                _ = try? await manager.schedule(id: id, configuration: config)
+                do { _ = try await manager.schedule(id: id, configuration: config); if let k = keyOf[id] { ok.insert(k) } }
+                catch { failed += 1; Diagnostics.failure("alarm", error, context: "アラームの予約（通知で代わりに知らせます）") }
             }
         }
+        confirmed = ok
+        Diagnostics.setCount("alarms", ok.count)
+        if failed == 0 { Diagnostics.record("alarm", ok: true, "アラーム \(ok.count)件を予約") }
         #endif
     }
 

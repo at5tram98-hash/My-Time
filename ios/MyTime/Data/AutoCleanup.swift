@@ -53,12 +53,13 @@ enum AutoCleanup {
         let now = model.now
         let p = plan(model: model, prefs: prefs, now: now)
         guard !p.isEmpty else { return p }
-        func mark(_ x: JSONValue?) -> JSONValue { (x ?? .object([:])).merging(.object(["archivedAt": .number(Double(now))])) }
-        model.perform {
-            for id in p.events { if var e = model.events.first(where: { $0.id == id }) { e.extra = mark(e.extra); try? model.repo.saveEvent(e, isNew: false) } }
-            for id in p.tasks { if var t = model.tasks.first(where: { $0.id == id }) { t.extra = mark(t.extra); try? model.repo.saveTask(t, isNew: false) } }
-            for id in p.purgeEvents { try? model.repo.deleteEvent(id) }
-            for id in p.purgeTasks { try? model.repo.deleteTask(id) }
+        // 片づけと完全削除は1つのトランザクション（1件でも失敗したら何も変えない）
+        let ok = model.perform {
+            try model.repo.applyCleanup(archiveEvents: p.events, archiveTasks: p.tasks, purgeEvents: p.purgeEvents, purgeTasks: p.purgeTasks, at: now)
+        }
+        guard ok else {
+            Diagnostics.record("cleanup", ok: false, "自動削除を保存できなかったため、何も削除していません")
+            return Plan()
         }
         if !p.checkpoints.isEmpty {
             model.updateSettings { s in
@@ -66,19 +67,14 @@ enum AutoCleanup {
                 s.raw = s.raw.merging(.object([AppModel.checkpointsKey: .array(list)]))
             }
         }
+        Diagnostics.record("cleanup", ok: model.lastSaveSucceeded, "片づけ 予定\(p.events.count)・タスク\(p.tasks.count)／完全削除 \(p.purgeEvents.count + p.purgeTasks.count)／チェックポイント \(p.checkpoints.count)")
         return p
     }
 
     /// 片づけたものを元に戻す（設定画面から）
     static func restoreAll(model: AppModel) {
-        func unmark(_ x: JSONValue?) -> JSONValue? {
-            guard var o = x?.objectValue else { return x }
-            o["archivedAt"] = nil
-            return .object(o)
-        }
-        model.perform("片づけた予定・タスクを戻しました") {
-            for var e in model.archivedEvents { e.extra = unmark(e.extra); try? model.repo.saveEvent(e, isNew: false) }
-            for var t in model.archivedTasks { t.extra = unmark(t.extra); try? model.repo.saveTask(t, isNew: false) }
-        }
+        let ev = model.archivedEvents.map(\.id), tk = model.archivedTasks.map(\.id)
+        model.perform("片づけた予定・タスクを戻しました") { try model.repo.restoreArchived(events: ev, tasks: tk) }
     }
+
 }

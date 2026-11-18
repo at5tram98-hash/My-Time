@@ -167,6 +167,8 @@ struct LiveActivitySettingsView: View {
     @State private var p = LivePrefs()
     @State private var loaded = false
     @State private var active: [String] = []
+    @State private var confirmEnd = false
+    @State private var result: String?
 
     var body: some View {
         Form {
@@ -185,6 +187,9 @@ struct LiveActivitySettingsView: View {
                 Text("ロック画面とダイナミックアイランドに出します。どれをダイナミックアイランドに出すかは iPhone（OS）が決めるため、ここで決めるのは「どれを先に始めるか」です。")
             }
             Section {
+                Toggle(isOn: $p.privacy) { Label("人前モード", systemImage: "eye.slash") }
+            } footer: { Text("オンにすると、ロック画面とダイナミックアイランドに予定の名前・教室・場所を出さず「授業」「勤務」などだけを出します。") }
+            Section {
                 ForEach(LiveKind.allCases, id: \.self) { k in
                     Toggle(k.label, isOn: Binding(get: { !p.disabled.contains(k) }, set: { on in if on { p.disabled.remove(k) } else { p.disabled.insert(k) } }))
                 }
@@ -200,9 +205,18 @@ struct LiveActivitySettingsView: View {
                 Text("iOS 26 以降は、これからの授業・バイトを予約しておき、アプリを開いていなくても時刻になると出ます。それより前の iOS では、アプリを開いたときに出し、通知で代わりに知らせます。終わる時刻を過ぎると「終了」と表示し、次にアプリを開いたときに消えます。")
             }
             Section {
-                Button("いま出ているものをすべて終える", role: .destructive) { Task { await LiveActivityCoordinator.shared.endAll(); active = [] } }
-                Button("いま照合する") { Task { await LiveActivityCoordinator.shared.reconcile(model: model); active = LiveActivityCoordinator.shared.activeSummaries } }
+                Button("いま照合する", systemImage: "arrow.triangle.2.circlepath") {
+                    Task {
+                        let r = await LiveActivityCoordinator.shared.reconcile(model: model)
+                        active = LiveActivityCoordinator.shared.activeSummaries
+                        result = r.failed > 0 ? "表示 \(r.active)・予約 \(r.scheduled)・失敗 \(r.failed)（くわしくは診断）" : "表示 \(r.active)件・予約 \(r.scheduled)件・終了 \(r.ended)件"
+                    }
+                }
+                if let result { Text(result).font(.footnote).foregroundStyle(.secondary).transition(.opacity) }
+                NavigationLink { DiagnosticsView() } label: { Label("診断", systemImage: "stethoscope") }
+                Button("いま出ているものをすべて終える", systemImage: "xmark.circle", role: .destructive) { confirmEnd = true }
             }
+            .animation(Motion.pop, value: result)
         }
         .navigationTitle("ロック画面の表示")
         .navigationBarTitleDisplayMode(.inline)
@@ -211,5 +225,9 @@ struct LiveActivitySettingsView: View {
             active = LiveActivityCoordinator.shared.activeSummaries
         }
         .onChange(of: p) { _, v in model.saveLivePrefs(v) }
+        .confirmationDialog("ロック画面の表示をすべて終えますか？", isPresented: $confirmEnd, titleVisibility: .visible) {
+            Button("すべて終える", role: .destructive) { Task { await LiveActivityCoordinator.shared.endAll(); active = []; result = "すべて終えました" } }
+            Button("キャンセル", role: .cancel) {}
+        } message: { Text("予定は消えません。次にアプリを開いたとき、必要なものはまた表示されます。") }
     }
 }

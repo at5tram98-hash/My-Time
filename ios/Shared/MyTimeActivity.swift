@@ -36,6 +36,13 @@ struct MyTimeActivityAttributes: ActivityAttributes {
         var url: String
         /// 「完了」ボタンを出すか（朝の工程）
         var canComplete: Bool
+        /// ボタンの操作の対象（"朝のID:工程の番号"）。押したときにこの工程のままなら1回だけ進める（連打で飛ばさない）
+        var token: String? = nil
+        /// 種類ごとの短い表示（Compact の左・右。長い名前や住所を入れない）
+        var compactLeading: String? = nil
+        var compactTrailing: String? = nil
+        /// 段階：before（開始前）/ active（進行中）/ run（自分で進めている）。時間がたつと表示側で次の段階に移る
+        var phase: String? = nil
     }
 
     /// 種類（LiveKind の rawValue）
@@ -45,10 +52,16 @@ struct MyTimeActivityAttributes: ActivityAttributes {
 }
 #endif
 
-/// Live Activity のボタン（アプリの中で実行される）。アプリ側が handler を入れる
+/// Live Activity のボタン（アプリの中で実行される）。
+/// アプリの起動時（App の init）に handler を入れるので、ロック画面から押されてアプリが裏で起動したときも動く。
+/// handler は永続の保存先に書き込み、成功したときだけ true を返す。
 @MainActor
 enum LiveActionRouter {
-    static var handler: ((String, String) async -> Void)?
+    static var handler: ((String, String) async -> Bool)?
+}
+
+struct LiveActionError: Error, CustomLocalizedStringResourceConvertible {
+    var localizedStringResource: LocalizedStringResource { "操作を保存できませんでした。アプリを開いてもう一度お試しください。" }
 }
 
 /// 朝の工程を進める（完了・スキップ・戻る・一時停止）
@@ -62,7 +75,8 @@ struct MorningStepIntent: LiveActivityIntent {
     init(action: String) { self.action = action }
 
     func perform() async throws -> some IntentResult {
-        await LiveActionRouter.handler?("morning", action)
+        // 受け口が無い・保存に失敗したときは成功にしない
+        guard let h = await LiveActionRouter.handler, await h("morning", action) else { throw LiveActionError() }
         return .result()
     }
 }
@@ -78,7 +92,7 @@ struct FinishTaskIntent: LiveActivityIntent {
     init(taskId: String) { self.taskId = taskId }
 
     func perform() async throws -> some IntentResult {
-        await LiveActionRouter.handler?("finishTask", taskId)
+        guard let h = await LiveActionRouter.handler, await h("finishTask", taskId) else { throw LiveActionError() }
         return .result()
     }
 }

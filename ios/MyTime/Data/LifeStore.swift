@@ -99,9 +99,11 @@ struct LivePrefs: Codable, Equatable {
     var checkpointLeadMinutes = 30
     /// 同時に出す数（1〜2）
     var maxConcurrent = 1
+    /// 人前モード：ロック画面に名前・教室・場所を出さない
+    var privacy = false
 
     init() {}
-    enum CodingKeys: String, CodingKey { case disabled, classLeadMinutes, classEndAfterStart, transitLeadMinutes, checkpointLeadMinutes, maxConcurrent }
+    enum CodingKeys: String, CodingKey { case disabled, classLeadMinutes, classEndAfterStart, transitLeadMinutes, checkpointLeadMinutes, maxConcurrent, privacy }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         disabled = (try? c.decode(Set<LiveKind>.self, forKey: .disabled)) ?? []
@@ -110,6 +112,7 @@ struct LivePrefs: Codable, Equatable {
         transitLeadMinutes = (try? c.decode(Int.self, forKey: .transitLeadMinutes)) ?? 30
         checkpointLeadMinutes = (try? c.decode(Int.self, forKey: .checkpointLeadMinutes)) ?? 30
         maxConcurrent = (try? c.decode(Int.self, forKey: .maxConcurrent)) ?? 1
+        privacy = (try? c.decode(Bool.self, forKey: .privacy)) ?? false
     }
 }
 
