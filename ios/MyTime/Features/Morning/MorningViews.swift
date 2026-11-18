@@ -102,7 +102,9 @@ struct MorningHomeView: View {
             }
 
             Section {
-                Stepper("出発の \(r.bufferMinutes)分前に準備を終える", value: Binding(get: { r.bufferMinutes }, set: { v in var x = model.morning; x.bufferMinutes = v; model.saveMorning(x) }), in: 0...60, step: 5)
+                GlassSlider(value: Binding(get: { r.bufferMinutes }, set: { v in var x = model.morning; x.bufferMinutes = v; model.saveMorning(x) }),
+                            steps: Array(stride(from: 0, through: 60, by: 5)), label: { $0 == 0 ? "ちょうど" : "\($0)分前" },
+                            tint: .orange, symbol: "door.left.hand.open", title: "準備を終える（出発の）")
             }
         }
         .navigationTitle("朝")
@@ -257,10 +259,8 @@ struct MorningAlarmEditor: View {
                         ForEach(AlarmService.sounds, id: \.label) { s in Text(s.label).tag(s.name) }
                     }
                     Button("音を試しに聞く", systemImage: "speaker.wave.2") { SoundPreview.play(alarm.sound) }
-                    Picker("スヌーズ", selection: $alarm.snoozeMinutes) {
-                        Text("なし").tag(0)
-                        ForEach([3, 5, 9, 10, 15], id: \.self) { Text("\($0)分").tag($0) }
-                    }
+                    GlassSlider(value: $alarm.snoozeMinutes, steps: [0, 3, 5, 9, 10, 15], label: { $0 == 0 ? "なし" : "\($0)分" },
+                                tint: .orange, symbol: "zzz", title: "スヌーズ")
                     Toggle("オン", isOn: $alarm.enabled).tint(.orange)
                 }
                 if !isNew {
@@ -317,10 +317,9 @@ struct MorningStepEditor: View {
                     Toggle("この工程を行う", isOn: Binding(get: { s.enabled }, set: { v in update { $0.steps[i].enabled = v } })).tint(.orange)
                 }
                 Section {
-                    Picker("目安の時間", selection: Binding(get: { s.plannedMinutes }, set: { v in update { $0.steps[i].plannedMinutes = v } })) {
-                        Text("未設定").tag(Int?.none)
-                        ForEach([1, 2, 3, 5, 7, 10, 15, 20, 30], id: \.self) { Text("\($0)分").tag(Optional($0)) }
-                    }
+                    GlassSlider(value: Binding(get: { s.plannedMinutes ?? 0 }, set: { v in update { $0.steps[i].plannedMinutes = v == 0 ? nil : v } }),
+                                steps: [0, 1, 2, 3, 4, 5, 7, 10, 12, 15, 20, 25, 30, 45, 60], label: { $0 == 0 ? "未設定" : "\($0)分" },
+                                tint: .orange, symbol: "timer", title: "目安の時間")
                     if let a = r.average(stepId: s.id) {
                         LabeledContent("実測の平均", value: "\(formatSeconds(a.ms))（\(a.count)回）")
                     } else {
@@ -387,8 +386,8 @@ struct MorningRunView: View {
                                 Label(left == 0 ? "今日の持ち物はそろっています" : "今日の持ち物 あと\(left)個", systemImage: "bag.fill")
                                     .font(.subheadline.weight(.semibold))
                                     .padding(.horizontal, 14).padding(.vertical, 8)
-                                    .background(Capsule().fill(Color.indigo.opacity(0.12)))
-                                    .foregroundStyle(left == 0 ? Color.green : Color.indigo)
+                                    .background(Capsule().fill(Color.brown.opacity(0.14)))
+                                    .foregroundStyle(left == 0 ? Color.green : Color.brown)
                             }
                         }
                         Spacer(minLength: 0)

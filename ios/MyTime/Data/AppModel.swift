@@ -54,6 +54,8 @@ final class AppModel {
     }
 
     func reload() {
+        // カレンダーは「自分」「みお」の2つ（取り込みで増えても、ここでまとめる。済んでいれば何もしない）
+        _ = try? repo.consolidateCalendars()
         let allTasks = repo.tasks(), allEvents = repo.events()
         tasks = allTasks.filter { !$0.isArchived }
         archivedTasks = allTasks.filter(\.isArchived)
@@ -138,7 +140,10 @@ final class AppModel {
     }
     /// 予定の色：自分で決めた色 → 勤務先の色（勤務先の画面で決めたとき）→ カレンダーの色
     func eventColor(_ e: MTEvent) -> String {
-        e.colorOverride ?? employer(e.employerId).flatMap { $0.raw["pay"] != nil ? $0.pay.color : nil } ?? calendar(e.calendarId)?.color ?? "#0A84FF"
+        e.colorOverride ?? employer(e.employerId).flatMap { $0.raw["pay"] != nil ? $0.pay.color : nil }
+            // 「自分」の中の授業・勤務は種類の色（カレンダーをまとめても見分けられるように）
+            ?? (e.calendarId == MTCalendar.selfId ? e.specType.flatMap { $0 == .class || $0 == .shift ? SPEC_BY_ID[$0]?.color : nil } : nil)
+            ?? calendar(e.calendarId)?.color ?? "#0A84FF"
     }
     /// 回の色（取り消した回は灰色）
     func occurrenceColor(_ o: EventOccurrence) -> Color { o.isStruck ? Color.gray : Color(hex: eventColor(o.event)) }

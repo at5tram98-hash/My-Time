@@ -110,6 +110,64 @@ struct MinuteStopwatch: View {
     }
 }
 
+// MARK: - 時間の進み具合（OS が自動で動かす。アプリが止まっていても進む）
+
+/// 進行中：開始から終了までの帯が時間とともに伸びる。開始前：出発・開始までの残りが縮む（直前の1時間）
+struct TimeProgressBar: View {
+    var state: MyTimeActivityAttributes.ContentState
+    var stale: Bool
+    var body: some View {
+        let p = phase(state, stale: stale)
+        Group {
+            if p == .active, let s = state.countdownTo, let e = state.endsAt, e > s {
+                ProgressView(timerInterval: s...e, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+            } else if p == .before, let to = state.countdownTo, to > .now {
+                ProgressView(timerInterval: to.addingTimeInterval(-3600)...to, countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
+            }
+        }
+        .progressViewStyle(.linear)
+        .tint(accent(state))
+        .labelsHidden()
+    }
+}
+
+/// 小さな丸の進み具合（ダイナミックアイランドの右）
+struct TimeRing: View {
+    var state: MyTimeActivityAttributes.ContentState
+    var stale: Bool
+    var body: some View {
+        let p = phase(state, stale: stale)
+        if p == .active, let s = state.countdownTo, let e = state.endsAt, e > s {
+            ProgressView(timerInterval: s...e, countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
+                .progressViewStyle(.circular).tint(accent(state)).frame(width: 18, height: 18)
+        }
+    }
+}
+
+/// 詳細スケジュールの「いま」「次」
+struct SubScheduleLine: View {
+    var state: MyTimeActivityAttributes.ContentState
+    var body: some View {
+        if state.subNow != nil || state.subNext != nil {
+            HStack(spacing: 6) {
+                if let n = state.subNow {
+                    Label(n, systemImage: "smallcircle.filled.circle").font(.caption.weight(.semibold)).foregroundStyle(accent(state))
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                        .id("now-\(n)")
+                        .transition(.push(from: .bottom))
+                }
+                if let x = state.subNext {
+                    Text("次：\(x)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .id("next-\(x)")
+                        .transition(.push(from: .bottom))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}
+
 // MARK: - 拡張表示の下段
 
 struct ExpandedBottom: View {
@@ -129,12 +187,25 @@ struct ExpandedBottom: View {
                 ProgressView(value: Double(done), total: Double(total)).tint(accent(state))
                 HStack {
                     Text(kind == "morning" ? "全\(total)工程中 \(min(total, done + 1))工程目" : "\(done)/\(total)").font(.caption.weight(.semibold)).monospacedDigit()
-                    if let n = state.next { Text("次：\(n)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                        .contentTransition(.numericText())
+                    if let n = state.next { Text("次：\(n)").font(.caption).foregroundStyle(.secondary).lineLimit(1).id(n).transition(.push(from: .bottom)) }
                 }
+            } else {
+                TimeProgressBar(state: state, stale: stale)
             }
-            if (kind == "task" || kind == "study"), let tid = state.token, phase(state, stale: stale) == .run {
-                Button(intent: FinishTaskIntent(taskId: tid)) { Label("完了", systemImage: "checkmark") }
-                    .tint(accent(state)).buttonStyle(.borderedProminent).font(.caption.weight(.semibold))
+            SubScheduleLine(state: state)
+            HStack(spacing: 8) {
+                if (kind == "task" || kind == "study"), let tid = state.token, phase(state, stale: stale) == .run {
+                    Button(intent: FinishTaskIntent(taskId: tid)) { Label("完了", systemImage: "checkmark") }
+                        .tint(accent(state)).buttonStyle(.borderedProminent).font(.caption.weight(.semibold))
+                }
+                if let r = state.routeURL, let u = URL(string: r), phase(state, stale: stale) == .before {
+                    Link(destination: u) {
+                        Label("経路", systemImage: "arrow.triangle.turn.up.right.diamond.fill").font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(accent(state).opacity(0.25)))
+                    }
+                }
             }
             if state.canComplete, let token = state.token, phase(state, stale: stale) == .run {
                 HStack(spacing: 8) {
@@ -165,15 +236,18 @@ struct LockScreenView: View {
         let p = phase(state, stale: stale)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: state.symbol)
+                Image(systemName: p == .ended ? "checkmark" : state.symbol)
                     .font(.title3)
                     .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(width: 36, height: 36)
                     .background(accent(state).gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(kindLabel(kind)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                     Text(state.title).font(.headline).lineLimit(1)
+                        .id(state.title)
+                        .transition(.push(from: .bottom))
                     if let d = state.detail { Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(1).monospacedDigit() }
                 }
                 Spacer(minLength: 4)
@@ -189,13 +263,27 @@ struct LockScreenView: View {
             // いちばん大事な情報を大きく（授業の教室・バイトの出勤時刻・朝の工程・清掃の場所）
             if let h = state.headline, p != .ended, h != state.title {
                 Text(h).font(.system(size: 30, weight: .bold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
+                    .id(h)
+                    .transition(.asymmetric(insertion: .push(from: .bottom), removal: .push(from: .bottom)))
             }
             if let done = state.progressDone, let total = state.progressTotal, total > 0 {
                 ProgressView(value: Double(done), total: Double(total)).tint(accent(state))
                 HStack {
                     Text(kind == "morning" ? "全\(total)工程中 \(min(total, done + 1))工程目" : "\(done)/\(total)").font(.caption.weight(.semibold)).monospacedDigit()
-                    if let n = state.next { Text("次：\(n)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                        .contentTransition(.numericText())
+                    if let n = state.next { Text("次：\(n)").font(.caption).foregroundStyle(.secondary).lineLimit(1).id(n).transition(.push(from: .bottom)) }
                     Spacer()
+                }
+            } else if p != .ended {
+                // 時間の帯（開始前は縮み、進行中は伸びる。OS が動かすので、アプリが止まっていても進む）
+                TimeProgressBar(state: state, stale: stale)
+            }
+            SubScheduleLine(state: state)
+            if let r = state.routeURL, let u = URL(string: r), p == .before {
+                Link(destination: u) {
+                    Label("Apple マップで経路を開く", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .background(Capsule().fill(accent(state).opacity(0.2)))
                 }
             }
             if (kind == "task" || kind == "study"), let tid = state.token, p == .run {
@@ -214,6 +302,7 @@ struct LockScreenView: View {
             }
         }
         .padding(16)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: state)
         // 壁紙に左右されないよう、背景は OS の素材にまかせ、文字は標準の色（高いコントラスト）
         .foregroundStyle(.primary)
         .accessibilityElement(children: .contain)

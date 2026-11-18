@@ -14,6 +14,15 @@ enum LifeKey: String {
     case specSettings = "iosSpecSettings"
     case confirmedPay = "iosConfirmedPay"
     case autoDelete = "iosAutoDelete"
+    case everydayBring = "iosEverydayBring"
+}
+
+/// いつもの持ち物（毎日・出かける日に確かめる物）。確認の印は日ごと
+struct EverydayBring: Codable, Equatable {
+    var items: [String] = ["財布", "鍵", "スマホ"]
+    var enabled = true
+    /// "yyyy-MM-dd" → 確認した物
+    var checked: [String: [String]] = [:]
 }
 
 extension AppModel {
@@ -35,6 +44,21 @@ extension AppModel {
             })
         }
         LiveActivityCoordinator.shared.refresh(model: self)
+    }
+
+    // MARK: いつもの持ち物
+
+    var everydayBring: EverydayBring { lifeValue(.everydayBring, as: EverydayBring.self) ?? EverydayBring() }
+    func saveEverydayBring(_ b: EverydayBring) {
+        var b = b
+        // 古い日の印は7日分だけ残す
+        let keep = Set((0..<7).map { dayKey(time.addDays(now, -$0)) })
+        b.checked = b.checked.filter { keep.contains($0.key) }
+        setLifeValue(.everydayBring, b)
+    }
+    func dayKey(_ t: EpochMs) -> String {
+        let c = time.calendar.dateComponents([.year, .month, .day], from: time.date(t))
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
     // MARK: 清掃

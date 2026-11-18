@@ -43,6 +43,11 @@ struct MyTimeActivityAttributes: ActivityAttributes {
         var compactTrailing: String? = nil
         /// 段階：before（開始前）/ active（進行中）/ run（自分で進めている）。時間がたつと表示側で次の段階に移る
         var phase: String? = nil
+        /// 詳細スケジュールの「いま」と「次」（予定の中の予定）
+        var subNow: String? = nil
+        var subNext: String? = nil
+        /// 経路を開くリンク（場所がある予定。mytime://route/ID → アプリから Apple マップの経路を開く）
+        var routeURL: String? = nil
     }
 
     /// 種類（LiveKind の rawValue）

@@ -20,7 +20,7 @@ public extension Repository {
                 switch c.entity {
                 case .event:
                     guard let s = c.start, let e = c.end else { throw RepositoryError("「\(c.title)」の日時がありません") }
-                    let cal = c.spec == .shift ? "cal-job" : c.spec == .class ? "cal-class" : "cal-general"
+                    let cal = MTCalendar.selfId // カレンダーは「自分」。授業・勤務は種類で見分ける
                     var ev = MTEvent.make(title: c.title, calendarId: cal, start: s, end: e, now: now, id: newId())
                     var extra: [String: JSONValue] = [:]
                     if let specJSON { extra["spec"] = specJSON }

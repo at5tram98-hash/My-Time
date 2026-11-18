@@ -25,9 +25,8 @@ struct AutoDeleteView: View {
                 }
                 .tint(.red)
                 if p.enabled {
-                    Picker("終わってから", selection: bind(\.days)) {
-                        ForEach([2, 3, 7, 14, 30], id: \.self) { Text("\($0)日後").tag($0) }
-                    }
+                    GlassSlider(value: bind(\.days), steps: [1, 2, 3, 5, 7, 10, 14, 21, 30], label: { "\($0)日後" },
+                                tint: .red, symbol: "calendar.badge.minus", title: "終わってから")
                     Toggle("終わっていないタスクも削除", isOn: bind(\.includeUnfinishedTasks))
                 }
             } footer: {

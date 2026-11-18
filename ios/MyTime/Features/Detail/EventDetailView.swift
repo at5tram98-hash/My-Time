@@ -33,6 +33,24 @@ struct EventDetailView: View {
                         Section { header(ev, start: start, end: end, now: now, tint: isStruck(ev, parsed) ? .gray : tint, struck: isStruck(ev, parsed)) }
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                        // 純正カレンダーと同じ、時刻の目盛りに予定を置いたプレビュー。押すと5分ごとの詳細スケジュール
+                        if !ev.allDay && end > start {
+                            Section {
+                                NavigationLink {
+                                    SubScheduleView(eventId: ev.id, start: start, end: end)
+                                } label: {
+                                    EventDayPreview(event: ev, start: start, end: end, tint: tint, struck: isStruck(ev, parsed))
+                                }
+                                .buttonStyle(.plain)
+                            } footer: {
+                                let n = SubSchedule.items(ev.extra)
+                                if let c = SubSchedule.current(n, minute: Int((now - start) / MINUTE)) {
+                                    Text("いま：\(c.title)（\(model.hm(start + EpochMs(c.endMin) * MINUTE))まで）")
+                                } else {
+                                    Text(n.isEmpty ? "押すと、この予定の中の予定・タスクを5分ごとに決められます。" : "押すと詳細スケジュール（\(n.count)件）を開きます。")
+                                }
+                            }
+                        }
                         Section {
                             actions(ev, parsed: parsed, start: start, end: end)
                         }
@@ -51,6 +69,8 @@ struct EventDetailView: View {
                                 _ = model.perform(nil, undo: { try model.repo.saveEvent(ev, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
                             }
                         }
+                        // 場所：地図・自宅からの所要時間・Apple マップの経路
+                        EventMapCard(event: ev, start: start)
                         details(ev, start: start, end: end)
                         // 持ち物：その場で押して確認（回ごとに印が残る）
                         if let occ = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start }) {
@@ -253,9 +273,9 @@ struct EventDetailView: View {
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
             } else if let place = ev.placeName, !place.isEmpty {
-                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", "car.fill") {
-                    let q = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                    if let u = URL(string: "maps://?daddr=\(q)") { openURL(u) }
+                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
+                    let p = PlaceValue(ev.extra?["place"]) ?? PlaceValue(name: place)
+                    Task { await AppleMaps.openDirections(to: p) }
                 }
             }
             Menu {
@@ -342,17 +362,6 @@ struct EventDetailView: View {
                 }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
-            if let place = ev.placeName, !place.isEmpty {
-                Button {
-                    let q = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                    if let url = URL(string: "maps://?q=\(q)") { openURL(url) }
-                } label: {
-                    LabeledContent("場所") {
-                        Label(place, systemImage: "map").foregroundStyle(Color.accentColor)
-                    }
-                }
-                .accessibilityHint("マップで開きます")
-            }
             if let m = ev.travelMinutes, m > 0 {
                 LabeledContent("移動", value: "\(m)分・\(model.hm(start - EpochMs(m) * MINUTE))発")
             }

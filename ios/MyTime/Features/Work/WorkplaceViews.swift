@@ -154,7 +154,7 @@ struct EmployerEditor: View {
                         Text("以上なら").tag(true)
                     }
                     .pickerStyle(.segmented)
-                    Stepper("休憩 \(r.breakMinutes)分", value: $r.breakMinutes, in: 0...180, step: 5)
+                    GlassSlider(value: $r.breakMinutes, steps: Array(stride(from: 0, through: 120, by: 5)), label: { "\($0)分" }, tint: .orange, symbol: "cup.and.saucer.fill", title: "休憩")
                 }
                 .onDelete { p.breakRules.remove(atOffsets: $0) }
                 Button("条件を追加", systemImage: "plus") { p.breakRules.append(BreakRule(overMinutes: 360, breakMinutes: 45)) }
@@ -180,10 +180,7 @@ struct EmployerEditor: View {
                 Text("勤務先の決まりに合わせて登録します（自動では足しません）。複数の割増は足し合わせます（例：深夜25%＋時間外25%＝50%増し）。深夜の割増は勤務の時間帯で計算し、休憩がどこで取られたかは分からないため差し引きません（休憩が深夜にかかる場合は実際より少し多めになります）。")
             }
             Section {
-                Picker("締め日", selection: $p.closingDay) {
-                    Text("月末").tag(0)
-                    ForEach(1...28, id: \.self) { Text("\($0)日").tag($0) }
-                }
+                GlassSlider(value: $p.closingDay, steps: Array(1...28) + [0], label: { $0 == 0 ? "月末" : "\($0)日" }, tint: .green, symbol: "calendar", title: "締め日")
                 Picker("支給", selection: $p.paydayMonthOffset) {
                     Text("当月").tag(0); Text("翌月").tag(1); Text("翌々月").tag(2)
                 }
@@ -196,9 +193,7 @@ struct EmployerEditor: View {
                 Text("いまの勤務は \(model.time.dayLabel(per.from))〜\(model.time.dayLabel(per.closing)) の分として、\(model.time.dayLabel(per.payday)) に支給されます。")
             }
             Section {
-                Picker("勤務の何分前に知らせる", selection: $p.noticeMinutes) {
-                    ForEach([5, 10, 15, 20, 30, 45, 60], id: \.self) { Text("\($0)分前").tag($0) }
-                }
+                GlassSlider(value: $p.noticeMinutes, steps: [5, 10, 15, 20, 30, 45, 60, 90, 120], label: { "\($0)分前" }, tint: .orange, symbol: "bell.fill", title: "勤務の")
             } header: { Text("案内") } footer: { Text("ロック画面とダイナミックアイランドに、この時刻から勤務の終わりまで出します（iOS の状態によっては出ないこともあります。そのときは通知で知らせます）。") }
             Section("場所とメモ") {
                 TextField("住所・場所", text: $p.address)

@@ -89,6 +89,7 @@ struct PlaceTravelEditor: View {
     @State private var query = ""
     @State private var completer = PlaceCompleter()
     @FocusState private var focused: Bool
+    @State private var calculating = false
 
     static let travelChoices = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
 
@@ -149,22 +150,27 @@ struct PlaceTravelEditor: View {
                 suggestionRow(PlaceValue(name: query, address: "このまま使う"), symbol: "text.cursor") { choose(PlaceValue(name: query)) }
             }
 
-            Picker(selection: Binding(get: { travel ?? 0 }, set: { travel = $0 == 0 ? nil : $0 })) {
-                ForEach(Self.travelChoices, id: \.self) { m in
-                    Text(m == 0 ? "なし" : m >= 60 && m % 60 == 0 ? "\(m / 60)時間" : m > 60 ? "\(m / 60)時間\(m % 60)分" : "\(m)分").tag(m)
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    RowIcon(symbol: "tram.fill", tint: .orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("移動時間")
-                        if let t = travel, t > 0 {
-                            Text("\(model.hm(model.time.ms(start) - EpochMs(t) * MINUTE))発").font(.caption).foregroundStyle(.secondary)
-                        }
+            // 移動時間：指でなぞって決める（5分ごと。0 は「なし」）
+            GlassSlider(value: Binding(get: { travel ?? 0 }, set: { travel = $0 == 0 ? nil : $0 }),
+                        steps: Array(stride(from: 0, through: 120, by: 5)),
+                        label: { m in m == 0 ? "なし" : durationLabel(m) + "・" + model.hm(model.time.ms(start) - EpochMs(m) * MINUTE) + "発" },
+                        tint: .orange, symbol: "tram.fill", title: "移動時間")
+            // Apple マップで自宅からの所要時間を調べて、移動時間に入れる
+            if let p = place, AppleMaps.home != nil {
+                Button {
+                    Task {
+                        calculating = true
+                        if let m = await AppleMaps.minutes(to: p, mode: AppleMaps.preferredMode, arrival: start) { travel = (m + 4) / 5 * 5 }
+                        calculating = false
+                    }
+                } label: {
+                    HStack {
+                        Label("自宅から\(AppleMaps.preferredMode.label)の時間を調べて入れる", systemImage: "arrow.triangle.turn.up.right.diamond")
+                        if calculating { Spacer(); ProgressView() }
                     }
                 }
+                .disabled(calculating)
             }
-            .pickerStyle(.menu)
         }
     }
 

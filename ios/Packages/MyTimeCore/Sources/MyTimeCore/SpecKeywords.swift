@@ -71,7 +71,10 @@ let SPEC_KEYWORDS: [SpecTypeId: Rx] = [
     .trip: Rx("(旅行|出張|帰省|泊|旅)"),
     .transit: Rx("(移動|電車|乗り換え|乗換|バスで|車で)"),
     .routine: Rx("(ルーティン|朝の準備|身支度|寝る準備|就寝|帰宅後)"),
-    .chores: Rx("(掃除|洗濯|片付け|家事|ゴミ|皿洗い)"),
+    .chores: Rx("(洗濯|片付け|家事|ゴミ|皿洗い)"),
+    .cleaning: Rx("(掃除|清掃)"),
+    .morning: Rx("(朝の準備|朝の支度|身支度|起床)"),
+    .belongings: Rx("(持ち物|忘れ物|荷物の確認)"),
     .cooking: Rx("(料理|自炊|作り置き|ご飯を作|夕飯を作|お弁当)"),
     .workout: Rx("(運動|筋トレ|ジム|ランニング|ジョギング|ヨガ|ストレッチ)"),
     .project: Rx("(開発|実装|プログラミング|コーディング|制作|アプリ作)"),
@@ -83,13 +86,14 @@ let SPEC_KEYWORDS: [SpecTypeId: Rx] = [
 let SPEC_PREP: [SpecTypeId: [PrepItem]] = [
     .shift: [.init(title: "出勤の準備", minutes: 20, place: .before)],
     .presentation: [.init(title: "スライド準備", minutes: 90, place: .inbox), .init(title: "原稿", minutes: 60, place: .inbox), .init(title: "リハーサル", minutes: 30, place: .inbox), .init(title: "資料提出", minutes: 10, place: .inbox)],
-    .appointment: [.init(title: "持ち物の準備", minutes: 10, place: .before)],
-    .outing: [.init(title: "髪・身支度", minutes: 30, place: .before), .init(title: "持ち物の確認", minutes: 5, place: .before)],
+    // 持ち物は予定の「持ち物」と持ち物の画面で確かめる（準備のタスクを別に作らない）
+    .outing: [.init(title: "髪・身支度", minutes: 30, place: .before)],
     .trip: [.init(title: "荷造り", minutes: 45, place: .inbox), .init(title: "事前の手続き", minutes: 15, place: .inbox)],
 ]
 
 /// 種類の判定順（具体的なものを先に。Web 版と同じ）
-let SPEC_ORDER: [SpecTypeId] = [.shiftRequest, .payday, .shift, .groupWork, .report, .exam, .assignment, .presentation, .language, .certification, .class, .shopping, .appointment, .trip, .transit, .routine, .outing, .chores, .cooking, .workout, .project, .paperwork, .payment, .reading, .leisure]
+/// 廃止した「読書」「朝・帰宅・就寝ルーティン」は判定しない（朝は「朝」、掃除は「清掃」）
+let SPEC_ORDER: [SpecTypeId] = [.shiftRequest, .payday, .shift, .groupWork, .report, .exam, .assignment, .presentation, .language, .certification, .class, .shopping, .appointment, .trip, .transit, .belongings, .morning, .outing, .cleaning, .chores, .cooking, .workout, .project, .paperwork, .payment, .leisure]
 
 public func detectSpec(_ s: String) -> SpecTypeId? {
     SPEC_ORDER.first { SPEC_BY_ID[$0]!.keywords.test(s) }

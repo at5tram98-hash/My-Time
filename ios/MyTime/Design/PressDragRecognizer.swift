@@ -7,6 +7,8 @@ import UIKit
 struct PressDragRecognizer: UIViewRepresentable {
     var minimumDuration: Double = 0.45
     var onTap: (() -> Void)? = nil
+    /// タップした位置も知りたいとき
+    var onTapAt: ((CGPoint) -> Void)? = nil
     var onBegan: ((CGPoint) -> Void)? = nil
     /// 位置・長押しを始めた所からの移動量
     var onChanged: ((CGPoint, CGSize) -> Void)? = nil
@@ -31,7 +33,7 @@ struct PressDragRecognizer: UIViewRepresentable {
             lp.delegate = c
             v.addGestureRecognizer(lp)
         }
-        if onTap != nil {
+        if onTap != nil || onTapAt != nil {
             let t = UITapGestureRecognizer(target: c, action: #selector(Coordinator.tap(_:)))
             t.delegate = c
             v.addGestureRecognizer(t)
@@ -78,7 +80,11 @@ struct PressDragRecognizer: UIViewRepresentable {
             }
         }
 
-        @objc func tap(_ g: UITapGestureRecognizer) { if g.state == .ended { parent.onTap?() } }
+        @objc func tap(_ g: UITapGestureRecognizer) {
+            guard g.state == .ended else { return }
+            parent.onTap?()
+            parent.onTapAt?(g.location(in: g.view))
+        }
 
         @objc func swipe(_ g: UISwipeGestureRecognizer) { parent.onSwipe?(g.direction == .left ? -1 : 1) }
 

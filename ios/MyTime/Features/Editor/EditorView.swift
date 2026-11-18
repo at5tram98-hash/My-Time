@@ -63,7 +63,7 @@ struct EditorView: View {
     /// Create Studio の種類と値（extra.studio = { typeId, version, values }）
     @State private var studioId: String?
     @State private var studioValues: [String: JSONValue] = [:]
-    @State private var bring = ""
+    @State private var bring: [String] = []
     @FocusState private var titleFocused: Bool
     /// 開いたときの入力の内容（変更があるか比べる）
     @State private var initialSignature = ""
@@ -200,8 +200,8 @@ struct EditorView: View {
         .accessibilityLabel("編集の項目")
     }
 
-    private var hasSpecial: Bool { spec != nil || studioType != nil || (kind == .event && calendarKind == .class) }
-    private var specialLabel: String { studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? (calendarKind == .class ? "授業" : "専用") }
+    private var hasSpecial: Bool { spec != nil || studioType != nil }
+    private var specialLabel: String { studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "専用" }
     private var studioType: StudioType? { model.studioType(studioId) }
 
     /// 自分で作った種類を選ぶ（予定かタスクかを合わせ、見本の種類は外す）
@@ -213,8 +213,13 @@ struct EditorView: View {
         if color == nil { color = t.color }
         if kind == .task { icon = t.icon }
     }
-    private var calendarKind: CalendarKind? { model.calendar(calendarId)?.kind }
-    private var tint: Color { Color(hex: color ?? (kind == .event ? model.calendar(calendarId)?.color : nil) ?? "#0A84FF") }
+    /// 授業か（種類が大学の授業。カレンダーは「自分」「みお」だけなので種類で見分ける）
+    private var isClassKind: Bool { kind == .event && spec == .class }
+    private var tint: Color {
+        // 「自分」の授業・勤務は種類の色（今日・カレンダーの表示と同じ）
+        let typed = kind == .event && calendarId == MTCalendar.selfId && (spec == .class || spec == .shift) ? spec.flatMap { SPEC_BY_ID[$0]?.color } : nil
+        return Color(hex: color ?? typed ?? (kind == .event ? model.calendar(calendarId)?.color : nil) ?? "#0A84FF")
+    }
 
     // MARK: 基本
 
@@ -266,10 +271,10 @@ struct EditorView: View {
                 }
             }
             if kind == .task && !isCheck {
-                Picker(selection: Binding(get: { hasEstimate ? estimate : 0 }, set: { v in hasEstimate = v > 0; if v > 0 { estimate = v } })) {
-                    Text("なし").tag(0)
-                    ForEach([10, 15, 20, 30, 45, 60, 90, 120, 180, 240], id: \.self) { Text(durationLabel($0)).tag($0) }
-                } label: { rowLabel("見積時間", "hourglass", .teal) }
+                // 見積時間：指でなぞって決める（0 は「なし」）
+                GlassSlider(value: Binding(get: { hasEstimate ? estimate : 0 }, set: { v in hasEstimate = v > 0; if v > 0 { estimate = v } }),
+                            steps: [0, 5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120, 150, 180, 210, 240],
+                            label: { $0 == 0 ? "なし" : durationLabel($0) }, tint: .teal, symbol: "hourglass", title: "見積時間")
             }
             if isShiftKind {
                 Picker(selection: $employerId) {
@@ -306,6 +311,12 @@ struct EditorView: View {
                 }
             }
         }
+        // 持ち物（予定はここ1か所で入れる。種類に合わせた候補を出す。持ち物チェックのタスクは「専用」のリスト）
+        if kind == .event {
+            Section {
+                BelongingsEditor(items: $bring, spec: spec)
+            } header: { Text("持ち物") } footer: { Text("出かける前に「持ち物」の画面と予定の詳細で、1つずつ確認できます。") }
+        }
         Section("色") { colorStrip }
         if kind == .task {
             Section { iconGrid } header: { Text("アイコン") }
@@ -313,7 +324,7 @@ struct EditorView: View {
     }
 
     /// バイトのシフトか（種類が勤務シフト、またはアルバイトのカレンダー）
-    private var isShiftKind: Bool { kind == .event && (spec == .shift || calendarKind == .job) }
+    private var isShiftKind: Bool { kind == .event && spec == .shift }
 
     private var showsTime: Bool { kind == .event || (!isCheck && hasTime) }
 
@@ -407,7 +418,7 @@ struct EditorView: View {
                 Toggle(isOn: $flagged) { rowLabel("フラグ", "flag.fill", .orange) }
             }
         }
-        if kind == .task {
+        if kind == .task && !(spec?.isExamLike ?? false) {
             Section {
                 Toggle(isOn: $hasDeadline.animation()) { rowLabel("締切", "flag.checkered", .red) }.disabled(spec == nil)
                 if hasDeadline && spec != nil { DatePicker("締切", selection: $deadline) }
@@ -436,12 +447,6 @@ struct EditorView: View {
             .onDelete { links.remove(atOffsets: $0) }
             Button { withAnimation { links.append(LinkItem()) } } label: { Label("リンクを追加", systemImage: "link.badge.plus") }
         } header: { Text("リンク") }
-        Section {
-            HStack(spacing: 12) {
-                RowIcon(symbol: "bag.fill", tint: .mint)
-                TextField("持ち物（読点・カンマで区切る）", text: $bring)
-            }
-        } header: { Text("持ち物") } footer: { Text("今日の時刻軸にも表示します。") }
         Section("メモ") {
             TextField("メモ", text: $notes, axis: .vertical).lineLimit(3...10)
         }
@@ -518,7 +523,7 @@ struct EditorView: View {
 
     @ViewBuilder
     private var specialPage: some View {
-        if kind == .event && calendarKind == .class {
+        if isClassKind {
             Section {
                 HStack(spacing: 12) {
                     RowIcon(symbol: "graduationcap.fill", tint: .indigo)
@@ -528,13 +533,18 @@ struct EditorView: View {
                     RowIcon(symbol: "door.left.hand.open", tint: .gray)
                     TextField("教室（例：3-201）", text: $room)
                 }
-            } header: { Text("授業") } footer: { Text("教室は「今日」の上のカードにも表示します。") }
+            } header: { Text("授業") } footer: { Text("教室は「今日」の上のカードにも表示します。開講の終わりは「繰り返し」の終了で決めます。") }
         }
         if let st = studioType { StudioFieldsForm(type: st, values: $studioValues) }
-        if let spec { SpecFieldsSection(spec: spec, details: $details) }
+        if let spec { SpecFieldsSection(spec: spec, details: $details, hidden: hiddenSpecKeys) }
         if !hasSpecial {
             Section { Text("「基本」の「種類」を選ぶと、その種類だけの項目をここで入力できます。").foregroundStyle(.secondary) }
         }
+    }
+
+    /// 勤務先を選んだシフトは、勤務先の条件（時給・休憩・交通費）を使うので、ここでは入れない
+    private var hiddenSpecKeys: Set<String> {
+        spec == .shift && employerId != nil ? ["hourlyWage", "breakMinutes", "transportFee"] : []
     }
 
     // MARK: 部品
@@ -555,7 +565,7 @@ struct EditorView: View {
         }
     }
 
-    private func durationLabel(_ m: Int) -> String { m < 60 ? "\(m)分" : m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分" }
+
 
     private var notifySummary: String {
         if notifies.isEmpty { return "なし" }
@@ -604,10 +614,8 @@ struct EditorView: View {
         guard isNew else { return }
         kind = d.isEvent ? .event : .task
         isCheck = d.isCheck
-        if d.id == .assignment || d.id == .exam || d.id == .payment { hasDeadline = true }
-        if d.isEvent, d.id == .shift || d.id == .class {
-            calendarId = model.calendars.first { $0.kind == (d.id == .shift ? .job : .class) }?.id ?? calendarId
-        }
+        // 試験系は「試験の日」を専用の項目で入れる（締切と2つにしない）
+        if d.id == .assignment || d.id == .payment { hasDeadline = true }
         // 種類ごとの設定の既定（所要時間・通知・繰り返し）
         let st = model.specSetting(d.id)
         if let m = st.defaultMinutes { end = start.addingTimeInterval(TimeInterval(m * 60)) }
@@ -715,8 +723,14 @@ struct EditorView: View {
         } ?? []
         color = extra?["color"]?.stringValue
         alarm = extra?["alarm"]?.boolValue ?? false
-        bring = (extra?["bring"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "、")
         details = extra?["spec"]?["details"]?.objectValue ?? [:]
+        // 持ち物は1か所に：以前の種類の項目（授業・通院の「持ち物」、旅行の「持ち物」）もここへまとめる
+        var names = (extra?["bring"]?.arrayValue ?? []).compactMap(\.stringValue)
+        for k in ["bring", "packing"] {
+            names += (details[k]?.arrayValue ?? []).compactMap { $0.stringValue ?? $0["name"]?.stringValue ?? $0["title"]?.stringValue }
+            details[k] = nil
+        }
+        bring = BelongingSuggest.split(names.joined(separator: "、"))
         studioId = extra?["studio"]?["typeId"]?.stringValue
         studioValues = extra?["studio"]?["values"]?.objectValue ?? [:]
     }
@@ -726,7 +740,7 @@ struct EditorView: View {
         [title, notes, spec?.rawValue ?? "", "\(details.count)", "\(start.timeIntervalSince1970)", "\(end.timeIntervalSince1970)", "\(hasTime)", "\(allDay)", "\(isCheck)",
          "\(hasDeadline)", "\(deadline.timeIntervalSince1970)", "\(estimate)", "\(hasEstimate)", calendarId, "\(String(describing: rule))", place?.name ?? "", "\(travel ?? -1)",
          "\(notifies)", meetingUrl, "\(links.map { $0.title + $0.url })", color ?? "", category, hideAfterEnd ? "1" : "0", subjectName, room, flagged ? "1" : "0", icon,
-         alarm ? "1" : "0", employerId ?? "", shiftPending ? "1" : "0", studioId ?? "", "\(studioValues.count)", bring, "\(kind)"].joined(separator: "|")
+         alarm ? "1" : "0", employerId ?? "", shiftPending ? "1" : "0", studioId ?? "", "\(studioValues.count)", bring.joined(separator: "、"), "\(kind)"].joined(separator: "|")
     }
     private var hasChanges: Bool { loaded && !initialSignature.isEmpty && signature != initialSignature }
 
@@ -794,7 +808,7 @@ struct EditorView: View {
         }
         if kind == .event { extra["shiftPending"] = isShiftKind && shiftPending ? .bool(true) : nil }
         extra["alarm"] = kind == .task && alarm && (isCheck || hasTime) ? .bool(true) : nil
-        let items = bring.split(whereSeparator: { "、,，・".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let items = BelongingSuggest.split(bring.joined(separator: "、"))
         extra["bring"] = items.isEmpty ? nil : .array(items.map { .string($0) })
         return extra.isEmpty ? (old == nil ? nil : .object([:])) : .object(extra)
     }
@@ -826,7 +840,7 @@ struct EditorView: View {
             e.recurrence = rule
             e.hideAfterEnd = !allDay && rule == nil ? hideAfterEnd : false
             if isShiftKind { e.employerId = employerId }
-            if calendarKind == .class {
+            if isClassKind {
                 var ci = e.classInfo?.objectValue ?? [:]
                 ci["subjectName"] = .string(subjectName.trimmingCharacters(in: .whitespaces).isEmpty ? name : subjectName.trimmingCharacters(in: .whitespaces))
                 ci["room"] = .string(room.trimmingCharacters(in: .whitespaces))

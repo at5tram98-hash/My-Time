@@ -395,11 +395,11 @@ struct DayTimeline: View {
         return t.specType.flatMap { SPEC_BY_ID[$0]?.tint } ?? .accentColor
     }
 
-    /// 持ち物（種類の項目 bring・packing、または extra.bring）
+    /// 持ち物（予定の「持ち物」。以前の種類の項目も読む）
     private func bringList(_ extra: JSONValue?) -> [String] {
-        let d = extra?["spec"]?["details"]
-        let raw = (d?["bring"]?.arrayValue ?? []) + (d?["packing"]?.arrayValue ?? []) + (extra?["bring"]?.arrayValue ?? [])
-        return raw.compactMap { $0.stringValue ?? $0["title"]?.stringValue ?? $0["text"]?.stringValue }.filter { !$0.isEmpty }
+        var e = MTEvent.make(title: "", calendarId: "", start: 0, end: 0, now: 0)
+        e.extra = extra
+        return BelongingsList.eventItems(e)
     }
 
     private func firstLine(_ s: String) -> String? {
@@ -415,6 +415,9 @@ struct DayTimeline: View {
             let scope = e.extra?["spec"]?["details"]?["quizScope"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
             m.insert(Meta(symbol: "pencil.and.list.clipboard", text: "小テスト" + (scope.map { "・\($0)" } ?? "")), at: 0)
         }
+        // 詳細スケジュール：件数と最初の予定（予定の中の予定）
+        let subs = SubSchedule.items(e.extra)
+        if let f = subs.first { m.append(Meta(symbol: "list.bullet.indent", text: subs.count == 1 ? f.title : "\(f.title) ほか\(subs.count - 1)件")) }
         if let p = e.placeName, !p.isEmpty { m.append(Meta(symbol: "mappin", text: p)) }
         else if e.extra?["meetingUrl"]?.stringValue != nil { m.append(Meta(symbol: "video", text: "オンライン")) }
         let b = bringList(e.extra)

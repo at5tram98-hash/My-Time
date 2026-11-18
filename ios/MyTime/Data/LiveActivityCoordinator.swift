@@ -185,6 +185,19 @@ final class LiveActivityCoordinator {
         func date(_ t: EpochMs) -> Date { time.date(t) }
         /// 時刻で決まる段階：開始前は開始時刻で stale、進行中は終了時刻で stale
         func timed(start: EpochMs, end: EpochMs) -> (phase: String, stale: EpochMs) { now < start ? ("before", start) : ("active", end) }
+        /// 詳細スケジュールの「いま」「次」（人前モードでは出さない）
+        func sub(_ o: EventOccurrence) -> (now: String?, next: String?) {
+            guard !privacy else { return (nil, nil) }
+            let xs = SubSchedule.items(o.event.extra).filter { $0.lane == .event || !$0.done }
+            let m = Int((now - o.start) / MINUTE)
+            let nx = xs.first { $0.startMin > m }
+            return (SubSchedule.current(xs, minute: m)?.title, nx.map { "\($0.title) \(time.hm(o.start + EpochMs($0.startMin) * MINUTE))" })
+        }
+        /// 場所がある予定は、ロック画面から Apple マップの経路を開ける
+        func route(_ o: EventOccurrence) -> String? {
+            guard !privacy, let p = o.event.placeName, !p.isEmpty else { return nil }
+            return "mytime://route/\(o.id)"
+        }
 
         // 授業：次の授業を1つ（休講＝取り消し・削除した回は occ に入らない。教室の変更はそのまま反映される）
         let isClass: (MTEvent) -> Bool = { e in e.specType == .class || e.classInfo != nil || model.calendar(e.calendarId)?.kind == .class }
@@ -200,7 +213,8 @@ final class LiveActivityCoordinator {
                 content: .init(title: privacy ? "授業" : c.title, headline: privacy ? nil : room?.full, detail: range(c.start, c.end),
                                countdownTo: date(c.start), status: quiz && !privacy ? "小テストあり" : nil, endsAt: date(c.end),
                                tint: model.eventColor(c.event), symbol: "graduationcap.fill", url: "mytime://event/\(c.id)", canComplete: false,
-                               compactLeading: privacy ? nil : room?.code, phase: t.phase),
+                               compactLeading: privacy ? nil : room?.code, phase: t.phase,
+                               subNow: sub(c).now, subNext: sub(c).next, routeURL: route(c)),
                 staleAt: t.stale))
         }
 
@@ -218,7 +232,8 @@ final class LiveActivityCoordinator {
                                headline: "\(time.hm(o.start)) 出勤", detail: range(o.start, o.end),
                                countdownTo: date(o.start), endsAt: date(o.end),
                                tint: emp.map { $0.pay.color } ?? model.eventColor(o.event), symbol: p.symbol, url: "mytime://event/\(o.id)", canComplete: false,
-                               compactLeading: privacy ? nil : Self.short(name, 4), phase: t.phase),
+                               compactLeading: privacy ? nil : Self.short(name, 4), phase: t.phase,
+                               subNow: sub(o).now, subNext: sub(o).next, routeURL: route(o)),
                 staleAt: t.stale))
         }
 
@@ -233,7 +248,7 @@ final class LiveActivityCoordinator {
                 content: .init(title: privacy ? "出発" : "\(o.title)へ出発", headline: "\(time.hm(leave))発", detail: privacy ? nil : (o.event.placeName.map { "\($0)・" } ?? "") + "\(time.hm(o.start))開始",
                                countdownTo: date(leave), endsAt: date(leave + 5 * MINUTE),
                                tint: model.eventColor(o.event), symbol: "figure.walk", url: "mytime://event/\(o.id)", canComplete: false,
-                               compactLeading: time.hm(leave), phase: "before"),
+                               compactLeading: time.hm(leave), phase: "before", routeURL: route(o)),
                 staleAt: leave))
         }
 

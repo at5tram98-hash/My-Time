@@ -15,7 +15,7 @@ final class RepositoryTests: XCTestCase {
     func testCreateEditPersistWithLogAndOutbox() throws {
         try repo.ensureDefaults()
         try repo.ensureDefaults()
-        XCTAssertEqual(repo.calendars().map(\.id), ["cal-general", "cal-class", "cal-job"])
+        XCTAssertEqual(repo.calendars().map(\.name), ["自分", "みお"])
         var t = MTTask.make(title: "課題", now: now)
         t.plannedStart = now; t.plannedEnd = now + HOUR
         try repo.saveTask(t, isNew: true)

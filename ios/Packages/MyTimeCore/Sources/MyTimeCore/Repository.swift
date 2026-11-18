@@ -84,6 +84,64 @@ public final class Repository {
         }
     }
 
+    /// カレンダーを「自分」「みお」の2つにまとめる（何度呼んでも同じ結果）。
+    /// 授業・アルバイトのカレンダーの予定は「自分」へ移し、見分けられるよう種類（大学の授業・勤務シフト）を付ける。
+    /// 名前が「みお」のカレンダー（取り込みなど）の予定は「みお」へ移す。ほかのカレンダーは消す（予定は消さない）
+    @discardableResult
+    public func consolidateCalendars() throws -> (moved: Int, removed: Int) {
+        let now = clock()
+        let cals = calendars()
+        let keep: Set<String> = [MTCalendar.selfId, MTCalendar.mioId]
+        if Set(cals.map(\.id)) == keep, cals.first(where: { $0.id == MTCalendar.selfId })?.name == "自分" { return (0, 0) }
+        var moved = 0, removed = 0
+        let byId = Dictionary(cals.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func target(_ id: String?) -> String? {
+            guard let id, !keep.contains(id) else { return nil }
+            return byId[id]?.name.trimmingCharacters(in: .whitespaces) == "みお" ? MTCalendar.mioId : MTCalendar.selfId
+        }
+        try store.transaction {
+            for d in MTCalendar.defaults(now: now) {
+                if var c = byId[d.id] {
+                    c.name = d.name
+                    c.kind = .general; c.order = d.order; c.visible = true; c.updatedAt = now
+                    store.put(.calendar, id: c.id, json: c.json)
+                } else {
+                    store.put(.calendar, id: d.id, json: d.json)
+                }
+            }
+            for var e in events() {
+                guard let to = target(e.calendarId) else { continue }
+                let kind = byId[e.calendarId]?.kind
+                if e.specType == nil, kind == .class || kind == .job {
+                    var o = e.extra?.objectValue ?? [:]
+                    var sp = o["spec"]?.objectValue ?? [:]
+                    sp["type"] = .string(kind == .class ? SpecTypeId.class.rawValue : SpecTypeId.shift.rawValue)
+                    if sp["details"] == nil { sp["details"] = .object([:]) }
+                    o["spec"] = .object(sp)
+                    e.extra = .object(o)
+                }
+                e.calendarId = to
+                e.updatedAt = now
+                store.put(.event, id: e.id, json: e.json)
+                record(.event, e.id, op: "put", action: "moveCalendar")
+                moved += 1
+            }
+            for var t in tasks() {
+                guard let to = target(t.calendarId) else { continue }
+                t.calendarId = to
+                t.updatedAt = now
+                store.put(.task, id: t.id, json: t.json)
+                moved += 1
+            }
+            for c in cals where !keep.contains(c.id) {
+                store.delete(.calendar, id: c.id)
+                record(.calendar, c.id, op: "delete", action: "consolidate")
+                removed += 1
+            }
+        }
+        return (moved, removed)
+    }
+
     // MARK: タスク
 
     public func saveTask(_ task: MTTask, isNew: Bool) throws {

@@ -301,6 +301,14 @@ struct RootView: View {
         case "checkpoint":
             guard validId, let c = model.checkpoints.first(where: { $0.id == id }) else { return fallback() }
             router.tab = .today; router.open(.checkpoint(c))
+        case "route":
+            // ロック画面の「経路」：予定の場所への経路を Apple マップで開く（アプリでは予定の詳細を出しておく）
+            let master = parseOccurrenceId(id)?.masterId ?? id
+            guard validId, let e = model.events.first(where: { $0.id == master }) else { return fallback() }
+            router.tab = .today; router.open(.event(id))
+            if let p = PlaceValue(e.extra?["place"]) ?? e.placeName.map({ PlaceValue(name: $0) }) {
+                Task { await AppleMaps.openDirections(to: p) }
+            }
         case "morning": router.openTasks(model.morning.active != nil ? .morningRun : .morning)
         case "cleaning": router.openTasks(model.cleaning.active != nil ? .cleaningRun : .cleaning)
         case "payroll": router.openMore(.payroll)

@@ -87,7 +87,7 @@ struct DayPlanView: View {
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.green)
             } else {
                 SlideToConfirm(title: plan.items.isEmpty ? "計画を入れると承認できます" : "スライドして承認（\(plan.items.count)件）",
-                               symbol: "checkmark.seal.fill", tint: .green, enabled: !plan.items.isEmpty) {
+                               symbol: "checkmark.seal.fill", tint: .green, enabled: !plan.items.isEmpty, doneText: "承認しました") {
                     if model.approveDayPlan(day) > 0 { approvedFeedback += 1 }
                 }
                 Text("左の予定・右のタスクの空いている所を長押ししてなぞると追加。承認すると本当の予定・タスクになります").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)

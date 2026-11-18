@@ -52,9 +52,9 @@ struct SettingsView: View {
                 Section {
                     Toggle("通知", isOn: Binding(get: { model.notificationsEnabled }, set: setNotify))
                     if model.notificationsEnabled {
-                        Picker("予定の通知", selection: Binding(get: { model.notifyMinutesBefore }, set: { model.setNotifications(minutes: $0) })) {
-                            ForEach([0, 5, 10, 15, 30, 60], id: \.self) { Text($0 == 0 ? "開始時刻" : "\($0)分前").tag($0) }
-                        }
+                        GlassSlider(value: Binding(get: { model.notifyMinutesBefore }, set: { model.setNotifications(minutes: $0) }),
+                                    steps: [0, 5, 10, 15, 20, 30, 45, 60, 90, 120], label: { $0 == 0 ? "開始時刻" : "\($0)分前" },
+                                    tint: .pink, symbol: "bell.fill", title: "予定の通知")
                     }
                 } header: {
                     Text("通知")

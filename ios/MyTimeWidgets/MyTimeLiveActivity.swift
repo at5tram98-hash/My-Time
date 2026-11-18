@@ -28,7 +28,8 @@ struct MyTimeLiveActivity: Widget {
                     Label {
                         Text(kindLabel(k)).font(.caption2.weight(.semibold)).lineLimit(1)
                     } icon: {
-                        Image(systemName: s.symbol).foregroundStyle(accent(s))
+                        Image(systemName: phase(s, stale: stale) == .ended ? "checkmark.circle.fill" : s.symbol).foregroundStyle(accent(s))
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .padding(.leading, 4)
                 }
@@ -46,6 +47,8 @@ struct MyTimeLiveActivity: Widget {
                     // いちばん大事な1つ（授業＝教室、バイト＝出勤時刻、朝・清掃＝いまの工程・場所）
                     Text(s.headline ?? s.title)
                         .font(.title3.weight(.bold)).lineLimit(1).minimumScaleFactor(0.75)
+                        .id(s.headline ?? s.title)
+                        .transition(.push(from: .bottom))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedBottom(kind: k, state: s, stale: stale)
@@ -61,14 +64,18 @@ struct MyTimeLiveActivity: Widget {
                 .frame(maxWidth: 70, alignment: .leading)
             } compactTrailing: {
                 // 右：短い時間か進み具合
-                Group {
-                    if let t = s.compactTrailing, phase(s, stale: stale) == .run { Text(t) }
-                    else { TimeValue(state: s, stale: stale, compact: true) }
+                HStack(spacing: 4) {
+                    Group {
+                        if let t = s.compactTrailing, phase(s, stale: stale) == .run { Text(t).contentTransition(.numericText()) }
+                        else { TimeValue(state: s, stale: stale, compact: true) }
+                    }
+                    .font(.caption.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(accent(s))
+                    .lineLimit(1)
+                    // 進行中は、残りが減っていく小さな丸（OS が動かす）
+                    TimeRing(state: s, stale: stale)
                 }
-                .font(.caption.weight(.semibold)).monospacedDigit()
-                .foregroundStyle(accent(s))
-                .lineLimit(1)
-                .frame(maxWidth: 52, alignment: .trailing)
+                .frame(maxWidth: 74, alignment: .trailing)
             } minimal: {
                 if let d = s.progressDone, let t = s.progressTotal, t > 0 {
                     ZStack {

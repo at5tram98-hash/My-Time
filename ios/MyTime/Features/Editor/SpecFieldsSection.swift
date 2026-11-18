@@ -6,11 +6,13 @@ import MyTimeCore
 struct SpecFieldsSection: View {
     let spec: SpecTypeId
     @Binding var details: [String: JSONValue]
+    /// 出さない項目（勤務先の条件と重なるものなど）
+    var hidden: Set<String> = []
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let def = SPEC_BY_ID[spec]!
-        let fields = def.fields.filter { $0.key != "dueAt" } // 締切は上の「締切」で入力する
+        let fields = def.fields.filter { $0.key != "dueAt" && !hidden.contains($0.key) } // 締切は上の「締切」で入力する
         if !fields.isEmpty {
             Section {
                 ForEach(fields, id: \.key) { f in row(f) }
@@ -56,8 +58,12 @@ struct SpecFieldsSection: View {
             }
         case .checklist:
             ChecklistField(label: f.label, items: Binding(get: { details[f.key]?.arrayValue ?? [] }, set: { details[f.key] = .array($0) }))
-        case .slots, .members, .steps:
-            LabeledContent(f.label, value: "\(details[f.key]?.arrayValue?.count ?? 0)件（Web 版で編集）")
+        case .slots:
+            SlotsField(label: f.label, items: Binding(get: { details[f.key]?.arrayValue ?? [] }, set: { details[f.key] = $0.isEmpty ? nil : .array($0) }))
+        case .members:
+            MembersField(label: f.label, items: Binding(get: { details[f.key]?.arrayValue ?? [] }, set: { details[f.key] = $0.isEmpty ? nil : .array($0) }))
+        case .steps:
+            LabeledContent(f.label, value: "\(details[f.key]?.arrayValue?.count ?? 0)件")
         }
     }
 
@@ -142,5 +148,81 @@ private struct ChecklistField: View {
         guard !name.isEmpty else { return }
         items.append(.object(["id": .string(name), "name": .string(name), "done": .bool(false)]))
         draft = ""
+    }
+}
+
+/// 希望の勤務枠（Web 版と同じ形：`[{ start, end }]`）。日付と時間をなぞって決める
+private struct SlotsField: View {
+    let label: String
+    @Binding var items: [JSONValue]
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        DisclosureGroup("\(label)（\(items.count)件）") {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, v in
+                let s = v["start"]?.intValue ?? model.now, e = v["end"]?.intValue ?? model.now + HOUR
+                VStack(alignment: .leading, spacing: 6) {
+                    DatePicker("日付", selection: Binding(get: { model.time.date(s) }, set: { d in
+                        let shift = model.time.startOfDay(model.time.ms(d)) - model.time.startOfDay(s)
+                        set(i, s + shift, e + shift)
+                    }), displayedComponents: .date)
+                    TimeRangeBar(start: Binding(get: { model.time.date(s) }, set: { set(i, model.time.ms($0), e) }),
+                                 end: Binding(get: { model.time.date(e) }, set: { set(i, s, model.time.ms($0)) }), tint: .orange)
+                    Text("\(model.hm(s))〜\(model.hm(e))").font(.subheadline.weight(.semibold)).monospacedDigit()
+                }
+                .swipeActions { Button("削除", role: .destructive) { items.remove(at: i) } }
+            }
+            Button("勤務枠を追加", systemImage: "plus") {
+                let d = model.time.addDays(model.time.startOfDay(model.now), 7)
+                items.append(.object(["start": .number(Double(d + 17 * HOUR)), "end": .number(Double(d + 22 * HOUR))]))
+            }
+        }
+    }
+
+    private func set(_ i: Int, _ s: EpochMs, _ e: EpochMs) {
+        guard e > s, items.indices.contains(i) else { return }
+        var o = items[i].objectValue ?? [:]
+        o["start"] = .number(Double(s)); o["end"] = .number(Double(e))
+        items[i] = .object(o)
+    }
+}
+
+/// グループ課題の分担（Web 版と同じ形：`[{ name, part, mine, status }]`）
+private struct MembersField: View {
+    let label: String
+    @Binding var items: [JSONValue]
+    static let statuses: [(String, String)] = [("todo", "まだ"), ("waiting", "待ち"), ("done", "済み")]
+
+    var body: some View {
+        DisclosureGroup("\(label)（\(items.count)人）") {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, v in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        TextField("名前", text: bind(i, "name"))
+                        Toggle("自分", isOn: Binding(get: { items[i]["mine"]?.boolValue ?? false }, set: { put(i, "mine", .bool($0)) }))
+                            .toggleStyle(.button).font(.caption)
+                    }
+                    TextField("担当", text: bind(i, "part")).font(.subheadline)
+                    Picker("状態", selection: Binding(get: { items[i]["status"]?.stringValue ?? "todo" }, set: { put(i, "status", .string($0)) })) {
+                        ForEach(Self.statuses, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .swipeActions { Button("削除", role: .destructive) { items.remove(at: i) } }
+            }
+            Button("人を追加", systemImage: "person.badge.plus") {
+                items.append(.object(["name": .string(""), "part": .string(""), "mine": .bool(false), "status": .string("todo")]))
+            }
+        }
+    }
+
+    private func bind(_ i: Int, _ k: String) -> Binding<String> {
+        Binding(get: { items.indices.contains(i) ? items[i][k]?.stringValue ?? "" : "" }, set: { put(i, k, .string($0)) })
+    }
+    private func put(_ i: Int, _ k: String, _ v: JSONValue) {
+        guard items.indices.contains(i) else { return }
+        var o = items[i].objectValue ?? [:]
+        o[k] = v
+        items[i] = .object(o)
     }
 }

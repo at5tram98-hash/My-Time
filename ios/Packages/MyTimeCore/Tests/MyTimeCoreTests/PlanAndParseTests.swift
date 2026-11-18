@@ -126,7 +126,7 @@ final class PlanAndParseTests: XCTestCase {
         guard case .create(let cs, _) = parseInput("17時に出かける", ctx: ctx()) else { return XCTFail() }
         let c = cs[0]
         XCTAssertEqual(c.entity, .event); XCTAssertEqual(c.spec, .outing); XCTAssertEqual(c.title, "外出"); XCTAssertEqual(c.start, at(17))
-        XCTAssertEqual(c.prep.map(\.title), ["髪・身支度", "持ち物の確認"])
+        XCTAssertEqual(c.prep.map(\.title), ["髪・身支度"])
         XCTAssertEqual(c.prep.last?.end, at(17))
         XCTAssertTrue(c.reasons.joined().contains("移動時間は分からない"))
     }

@@ -416,7 +416,7 @@ struct CleaningItemEditor: View {
                         ForEach(CleanFrequency.Unit.allCases, id: \.self) { Text($0 == .day ? "日" : $0 == .week ? "週" : "月").tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Stepper("\(f.every)\(f.unit.label)ごとに", value: Binding(get: { f.every }, set: { item.frequency?.every = max(1, $0) }), in: 1...12)
+                    GlassSlider(value: Binding(get: { f.every }, set: { item.frequency?.every = max(1, $0) }), steps: Array(1...12), label: { "\($0)\(f.unit.label)ごと" }, tint: .teal, symbol: "repeat", title: "間隔")
                     Stepper("\(f.times)回", value: Binding(get: { f.times }, set: { item.frequency?.times = max(1, $0) }), in: 1...14)
                     LabeledContent("目標", value: item.frequency?.label ?? "")
                 }

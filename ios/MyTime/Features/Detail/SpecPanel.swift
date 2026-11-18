@@ -322,9 +322,7 @@ struct StudyPlanSection: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("試験の日まで、毎日の学習を自動で置きます。範囲を順番に回し、前日は総復習にします。")
                         .font(.subheadline).foregroundStyle(.secondary)
-                    Stepper(value: $minutes, in: 15...240, step: 15) {
-                        Label("1日 \(minutes)分", systemImage: "timer").monospacedDigit()
-                    }
+                    GlassSlider(value: $minutes, steps: Array(stride(from: 15, through: 240, by: 15)), label: { durationLabel($0) }, tint: .indigo, symbol: "timer", title: "1日の学習")
                     Button { generate() } label: {
                         Label("学習計画を作る", systemImage: "wand.and.stars").font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 48)

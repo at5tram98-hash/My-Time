@@ -90,10 +90,12 @@ public struct MTCalendar: Record {
         return .object(o)
     }
 
-    /// Web 版 `defaultCalendars()` と同じ3つ（ID も同じなので、Web 版との往復で重複しない）
+    /// カレンダーは「自分」と「みお」の2つ（自分は Web 版の一般と同じ ID なので、往復で重複しない）
+    public static let selfId = "cal-general"
+    public static let mioId = "cal-mio"
     public static func defaults(now: EpochMs) -> [MTCalendar] {
-        [("cal-general", "一般", "#0A84FF", "calendar", "general", 0), ("cal-class", "授業", "#5E5CE6", "graduation", "class", 1), ("cal-job", "アルバイト", "#FF9F0A", "briefcase", "job", 2)].map {
-            MTCalendar(json: .object(["id": $0.0.json, "name": $0.1.json, "color": $0.2.json, "icon": $0.3.json, "kind": $0.4.json, "visible": .bool(true), "order": .number(Double($0.5)), "createdAt": now.json, "updatedAt": now.json]))
+        [(selfId, "自分", "#0A84FF", "person", 0), (mioId, "みお", "#FF2D55", "heart", 1)].map {
+            MTCalendar(json: .object(["id": $0.0.json, "name": $0.1.json, "color": $0.2.json, "icon": $0.3.json, "kind": "general".json, "visible": .bool(true), "order": .number(Double($0.4)), "createdAt": now.json, "updatedAt": now.json]))
         }
     }
 }

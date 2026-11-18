@@ -21,7 +21,7 @@ final class RepoPlanTests: XCTestCase {
         let made = try repo.createFromCandidates(a + b)
         XCTAssertEqual(made, 3) // 勤務・出勤の準備・レポート
         let ev = repo.events().first!
-        XCTAssertEqual(ev.calendarId, "cal-job")
+        XCTAssertEqual(ev.calendarId, "cal-general")
         XCTAssertEqual(ev.specType, .shift)
         XCTAssertEqual(ev.extra?["spec"]?["details"]?["hourlyWage"]?.doubleValue, 1300)
         let prep = repo.tasks().first { $0.sourceEventId == ev.id }!

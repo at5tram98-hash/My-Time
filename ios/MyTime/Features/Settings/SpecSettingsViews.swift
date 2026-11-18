@@ -196,10 +196,10 @@ struct LiveActivitySettingsView: View {
             } header: { Text("出す種類（上から重要な順）") }
             Section {
                 Picker("同時に出す数", selection: $p.maxConcurrent) { Text("1つ").tag(1); Text("2つ").tag(2) }
-                Picker("授業：開始の何分前から", selection: $p.classLeadMinutes) { ForEach([10, 15, 30, 45, 60, 90, 120], id: \.self) { Text("\($0)分前").tag($0) } }
+                GlassSlider(value: $p.classLeadMinutes, steps: [10, 15, 20, 30, 45, 60, 90, 120], label: { "\($0)分前" }, tint: .indigo, symbol: "graduationcap.fill", title: "授業：開始の")
                 Picker("授業：開始の何分後に終える", selection: $p.classEndAfterStart) { ForEach([0, 5, 10, 15, 30], id: \.self) { Text($0 == 0 ? "開始時刻" : "\($0)分後").tag($0) } }
-                Picker("移動：出発の何分前から", selection: $p.transitLeadMinutes) { ForEach([10, 15, 30, 45, 60], id: \.self) { Text("\($0)分前").tag($0) } }
-                Picker("チェックポイント：何分前から", selection: $p.checkpointLeadMinutes) { ForEach([5, 10, 15, 30, 60], id: \.self) { Text("\($0)分前").tag($0) } }
+                GlassSlider(value: $p.transitLeadMinutes, steps: [5, 10, 15, 20, 30, 45, 60], label: { "\($0)分前" }, tint: .gray, symbol: "figure.walk", title: "移動：出発の")
+                GlassSlider(value: $p.checkpointLeadMinutes, steps: [5, 10, 15, 20, 30, 45, 60], label: { "\($0)分前" }, tint: .orange, symbol: "flag.checkered", title: "チェックポイント：")
                 NavigationLink { EmployersView() } label: { Text("バイト：勤務先ごとに設定") }
             } header: { Text("タイミング") } footer: {
                 Text("iOS 26 以降は、これからの授業・バイトを予約しておき、アプリを開いていなくても時刻になると出ます。それより前の iOS では、アプリを開いたときに出し、通知で代わりに知らせます。終わる時刻を過ぎると「終了」と表示し、次にアプリを開いたときに消えます。")

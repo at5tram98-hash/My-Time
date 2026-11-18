@@ -17,10 +17,9 @@ public extension SpecDef { var fields: [SpecField] { SPEC_FIELDS[id] ?? [] } }
 
 let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
     .shift: [
-        .init(key: "workplace", label: "勤務先", kind: .text, unit: nil, options: [], placeholder: "例：GU", hint: nil),
         .init(key: "hourlyWage", label: "時給", kind: .money, unit: "円", options: [], placeholder: nil, hint: nil),
         .init(key: "breakMinutes", label: "休憩", kind: .minutes, unit: "分", options: [], placeholder: nil, hint: nil),
-        .init(key: "transportFee", label: "交通費", kind: .money, unit: "円", options: [], placeholder: nil, hint: "給与とは別に扱います")
+        .init(key: "transportFee", label: "交通費", kind: .money, unit: "円", options: [], placeholder: nil, hint: "給与とは別に扱います。勤務先を選ぶと勤務先の条件を使います")
     ],
     .shiftRequest: [
         .init(key: "workplace", label: "勤務先", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
@@ -36,11 +35,8 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
     ],
     .`class`: [
         .init(key: "period", label: "時限", kind: .text, unit: nil, options: [], placeholder: "例：2限", hint: nil),
-        .init(key: "room", label: "教室", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
-        .init(key: "termEnd", label: "開講の終わり", kind: .date, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "quizAt", label: "小テストの日", kind: .datetime, unit: nil, options: [], placeholder: nil, hint: "次の小テストの日時"),
-        .init(key: "quizScope", label: "小テストの範囲", kind: .text, unit: nil, options: [], placeholder: "例：第5〜6回", hint: nil),
-        .init(key: "bring", label: "持ち物", kind: .list, unit: nil, options: [], placeholder: nil, hint: nil)
+        .init(key: "quizScope", label: "小テストの範囲", kind: .text, unit: nil, options: [], placeholder: "例：第5〜6回", hint: nil)
     ],
     .assignment: [
         .init(key: "course", label: "授業", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
@@ -91,13 +87,11 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
         .init(key: "storeHours", label: "営業時間", kind: .text, unit: nil, options: [], placeholder: "分からなければ空欄", hint: "空欄のときは「未確認」と表示します")
     ],
     .appointment: [
-        .init(key: "bring", label: "持ち物", kind: .list, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "prep", label: "事前にすること", kind: .multiline, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "arriveEarly", label: "早めに着く", kind: .minutes, unit: "分", options: [], placeholder: nil, hint: nil)
     ],
     .outing: [
         .init(key: "companions", label: "一緒に行く人", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
-        .init(key: "meetPlace", label: "集合場所", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "purpose", label: "目的", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "prepMinutes", label: "身支度", kind: .minutes, unit: "分", options: [], placeholder: nil, hint: nil)
     ],
@@ -105,8 +99,7 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
         .init(key: "transport", label: "交通", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "lodging", label: "宿泊", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
         .init(key: "meetTime", label: "集合時刻", kind: .datetime, unit: nil, options: [], placeholder: nil, hint: nil),
-        .init(key: "destTimeZone", label: "現地のタイムゾーン", kind: .select, unit: nil, options: ["Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Taipei", "Asia/Singapore", "Asia/Bangkok", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Pacific/Honolulu", "Australia/Sydney"], placeholder: nil, hint: nil),
-        .init(key: "packing", label: "持ち物", kind: .checklist, unit: nil, options: [], placeholder: nil, hint: nil)
+        .init(key: "destTimeZone", label: "現地のタイムゾーン", kind: .select, unit: nil, options: ["Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Taipei", "Asia/Singapore", "Asia/Bangkok", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Pacific/Honolulu", "Australia/Sydney"], placeholder: nil, hint: nil)
     ],
     .transit: [
         .init(key: "from", label: "出発", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),
@@ -118,7 +111,7 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
         .init(key: "steps", label: "工程", kind: .steps, unit: nil, options: [], placeholder: nil, hint: nil)
     ],
     .chores: [
-        .init(key: "area", label: "場所・内容", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil)
+        .init(key: "area", label: "内容", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil)
     ],
     .cooking: [
         .init(key: "dish", label: "料理", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil),

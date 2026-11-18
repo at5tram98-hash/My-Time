@@ -9,7 +9,7 @@ struct LifeTaskRows: View {
     var body: some View {
         let m = model.morning
         let b = model.cleaning
-        let bring = BelongingsList.items(model: model)
+        let bring = BelongingsList.leftCount(model: model)
         row(title: "朝", symbol: "sunrise.fill", tint: .orange, line: morningLine(m), running: m.active != nil,
             progress: m.active.map { Double($0.doneCount) / Double(max(1, $0.steps.count)) }) {
             router.tasksPath = [m.active != nil ? .morningRun : .morning]
@@ -18,9 +18,8 @@ struct LifeTaskRows: View {
             progress: b.active.map { CleaningSession.completion($0.statuses(in: b.areas).map(\.status)).ratio ?? 0 }) {
             router.tasksPath = [b.active != nil ? .cleaningRun : .cleaning]
         }
-        let left = bring.reduce(0) { $0 + $1.items.filter { !$0.done }.count }
-        row(title: "持ち物", symbol: "bag.fill", tint: .indigo,
-            line: bring.isEmpty ? "今日・明日の持ち物はありません" : left == 0 ? "すべて確認しました" : "まだ \(left)個（\(bring.count)件の予定・リスト）",
+        row(title: "持ち物", symbol: "bag.fill", tint: .brown,
+            line: bring.groups == 0 ? "いつもの持ち物・今日と明日の予定の持ち物" : bring.left == 0 ? "すべてそろいました" : "まだ \(bring.left)個（\(bring.groups)件）",
             running: false, progress: nil) {
             router.tasksPath = [.belongings]
         }

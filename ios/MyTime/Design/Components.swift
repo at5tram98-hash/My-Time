@@ -133,6 +133,8 @@ struct SlideToConfirm: View {
     var symbol: String = "chevron.right.2"
     var tint: Color = .green
     var enabled = true
+    /// 実行した直後に出す文字
+    var doneText = "できました"
     var action: () -> Void
 
     @State private var offset: CGFloat = 0
@@ -151,7 +153,7 @@ struct SlideToConfirm: View {
                 Capsule().fill(tint.gradient)
                     .frame(width: knob + 8 + offset)
                     .opacity(enabled ? 1 : 0)
-                Text(done ? "承認しました" : title)
+                Text(done ? doneText : title)
                     .font(.headline)
                     .foregroundStyle(enabled ? tint : .secondary)
                     .opacity(done ? 1 : 1 - Double(progress) * 1.4)
