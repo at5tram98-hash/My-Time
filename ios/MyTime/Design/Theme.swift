@@ -45,9 +45,11 @@ extension View {
     }
 }
 
-/// アニメーションの共通値。動きを減らす設定では呼び出し側で nil にする
+/// アニメーションの共通値。「視差効果を減らす」がオンのときは、動かさずに短いクロスフェード（0.15秒）にする
 enum Motion {
-    static let sheet = Animation.spring(response: 0.42, dampingFraction: 0.86)
-    static let pop = Animation.spring(response: 0.32, dampingFraction: 0.78)
-    static let value = Animation.spring(response: 0.5, dampingFraction: 0.9)
+    private static var reduce: Bool { UIAccessibility.isReduceMotionEnabled }
+    private static let fade = Animation.easeInOut(duration: 0.15)
+    static var sheet: Animation { reduce ? fade : .spring(response: 0.42, dampingFraction: 0.86) }
+    static var pop: Animation { reduce ? fade : .spring(response: 0.32, dampingFraction: 0.78) }
+    static var value: Animation { reduce ? fade : .spring(response: 0.5, dampingFraction: 0.9) }
 }

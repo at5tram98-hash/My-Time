@@ -54,7 +54,9 @@ struct TasksScreen: View {
                     ContentUnavailableView {
                         Label(query.isEmpty ? emptyTitle : "見つかりません", systemImage: query.isEmpty ? filter.symbol : "magnifyingglass")
                     } description: {
-                        if query.isEmpty { Text(emptyHint) }
+                        if query.isEmpty { Text(emptyHint) } else { Text("「\(query)」を含むタスクはありません") }
+                    } actions: {
+                        if !query.isEmpty { Button("検索をやめる") { query = "" } }
                     }
                     .listRowBackground(Color.clear)
                 } else if filter == .open && query.isEmpty && grouping != "none" {
@@ -70,6 +72,11 @@ struct TasksScreen: View {
                             .textCase(nil)
                         }
                     }
+                } else if !query.isEmpty {
+                    // 検索の結果（件数を見出しに）
+                    Section {
+                        ForEach(list, id: \.id) { taskRow($0) }
+                    } header: { Text("検索結果 \(list.count)件").textCase(nil) }
                 } else {
                     ForEach(list, id: \.id) { taskRow($0) }
                 }
@@ -379,21 +386,35 @@ struct TasksScreen: View {
     }
     private func count(_ f: Filter) -> Int { model.tasks.filter { matches($0, f) }.count }
 
+    /// 検索の文字をそろえる（全角・半角、大文字・小文字、ひらがな・カタカナを同じに）
+    static func normalize(_ s: String) -> String {
+        let w = s.precomposedStringWithCompatibilityMapping.lowercased()
+        return w.applyingTransform(.hiraganaToKatakana, reverse: false) ?? w
+    }
+
     private var filtered: [MTTask] {
-        let q = query.trimmingCharacters(in: .whitespaces)
+        // 空白で区切った語をすべて含むもの
+        let words = Self.normalize(query).split(whereSeparator: { $0 == " " || $0 == "　" }).map(String.init)
         return model.tasks
             .filter { matches($0, filter) }
-            .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || $0.notes.localizedCaseInsensitiveContains(q) }
+            .filter { t in
+                guard !words.isEmpty else { return true }
+                let hay = Self.normalize(t.title + " " + t.notes + " " + (t.category ?? ""))
+                return words.allSatisfy { hay.contains($0) }
+            }
             .sorted { a, b in
                 switch sort {
                 case "deadline":
                     let x = a.deadline ?? .max, y = b.deadline ?? .max
                     return x != y ? x < y : (taskAnchor(a) ?? .max) < (taskAnchor(b) ?? .max)
-                case "created": return a.createdAt > b.createdAt
-                case "title": return a.title.localizedStandardCompare(b.title) == .orderedAscending
+                // 同じ値のときは追加順 → ID で並びを固定（揺れない）
+                case "created": return a.createdAt != b.createdAt ? a.createdAt > b.createdAt : a.id < b.id
+                case "title":
+                    let c = a.title.localizedStandardCompare(b.title)
+                    return c != .orderedSame ? c == .orderedAscending : (a.createdAt, a.id) < (b.createdAt, b.id)
                 default:
                     let x = taskAnchor(a) ?? a.deadline ?? .max, y = taskAnchor(b) ?? b.deadline ?? .max
-                    return x != y ? x < y : a.createdAt < b.createdAt
+                    return x != y ? x < y : (a.createdAt, a.id) < (b.createdAt, b.id)
                 }
             }
     }

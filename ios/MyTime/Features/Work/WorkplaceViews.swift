@@ -176,7 +176,9 @@ struct EmployerEditor: View {
                 }
                 .onDelete { p.premiums.remove(atOffsets: $0) }
                 Button("割増を追加", systemImage: "plus") { p.premiums.append(PremiumRule(kind: .night, rate: 0.25)) }
-            } header: { Text("割増") } footer: { Text("勤務先の決まりに合わせて登録します（自動では足しません）。") }
+            } header: { Text("割増") } footer: {
+                Text("勤務先の決まりに合わせて登録します（自動では足しません）。複数の割増は足し合わせます（例：深夜25%＋時間外25%＝50%増し）。深夜の割増は勤務の時間帯で計算し、休憩がどこで取られたかは分からないため差し引きません（休憩が深夜にかかる場合は実際より少し多めになります）。")
+            }
             Section {
                 Picker("締め日", selection: $p.closingDay) {
                     Text("月末").tag(0)
@@ -197,7 +199,7 @@ struct EmployerEditor: View {
                 Picker("勤務の何分前に知らせる", selection: $p.noticeMinutes) {
                     ForEach([5, 10, 15, 20, 30, 45, 60], id: \.self) { Text("\($0)分前").tag($0) }
                 }
-            } header: { Text("案内") } footer: { Text("ロック画面とダイナミックアイランドに、この時刻から勤務の終わりまで出します。") }
+            } header: { Text("案内") } footer: { Text("ロック画面とダイナミックアイランドに、この時刻から勤務の終わりまで出します（iOS の状態によっては出ないこともあります。そのときは通知で知らせます）。") }
             Section("場所とメモ") {
                 TextField("住所・場所", text: $p.address)
                 TextField("メモ", text: $p.memo, axis: .vertical).lineLimit(2...6)
@@ -392,10 +394,15 @@ struct PayrollView: View {
             } header: { Text("今月の勤務") }
 
             Section {
+                // 書き出す前に、対象の期間と件数を見せる
+                let t = model.time
+                let from = t.addMonths(t.startOfDay(model.now), -3), to = t.addMonths(t.startOfDay(model.now), 2)
+                let n = PayrollMath.lines(model: model, from: from, to: to).count
+                LabeledContent("対象", value: "\(t.dayLabel(from))〜\(t.dayLabel(to))・勤務 \(n)件・確定 \(model.confirmedPays.count)件")
                 ShareLink(item: exportText(), preview: SharePreview("給与データ（JSON）")) {
                     Label("給与データを書き出す", systemImage: "square.and.arrow.up")
                 }
-            } footer: { Text("MyMoney などで使えるように、勤務・見込み・確定額を JSON で書き出します。自動では送りません。") }
+            } footer: { Text("MyMoney などで使えるように、勤務・見込み・確定額を JSON で書き出します（見込みと確定は分けて入ります）。自動では送りません。") }
         }
         .navigationTitle("給与の見込み")
         .alert("給与明細の金額", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {

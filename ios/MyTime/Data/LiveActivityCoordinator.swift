@@ -279,7 +279,7 @@ final class LiveActivityCoordinator {
                 content: .init(title: privacy ? (study ? "勉強" : "タスク") : t.title, headline: nil, detail: t.plannedEnd.map { "\(time.hm($0))までの予定" },
                                elapsedFrom: date(now - worked), status: study ? "集中" : "実行中",
                                tint: study ? "#5E5CE6" : "#34C759", symbol: study ? "book.fill" : "checklist", url: "mytime://task/\(t.id)", canComplete: false,
-                               compactLeading: nil, phase: "run"),
+                               token: privacy ? nil : t.id, compactLeading: nil, phase: "run"),
                 staleAt: until))
         }
 

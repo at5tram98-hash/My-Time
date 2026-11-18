@@ -101,7 +101,7 @@ struct MorningHomeView: View {
 
     private var alarmFooter: String {
         let st = AlarmService.stateText
-        if st == "許可済み" { return "時計アプリと同じアラーム（AlarmKit）で鳴らします。マナーモードでも鳴り、スヌーズできます。" }
+        if st == "許可済み" { return "時計アプリと同じアラーム（AlarmKit）で鳴らします。マナーモードでも鳴り、スヌーズできます。起床アラームは曜日ごとにくり返し予約します（タスクのアラームは7日先までを予約し、アプリを開くたびに足します）。" }
         return "アラームの許可：\(st)。許可が無いときは通知で代わりに知らせますが、通知は目覚ましのアラームと同じではありません（マナーモード・集中モードでは鳴らないことがあります）。"
     }
 
@@ -237,6 +237,7 @@ struct MorningAlarmEditor: View {
                     Picker("サウンド", selection: $alarm.sound) {
                         ForEach(AlarmService.sounds, id: \.label) { s in Text(s.label).tag(s.name) }
                     }
+                    Button("音を試しに聞く", systemImage: "speaker.wave.2") { SoundPreview.play(alarm.sound) }
                     Picker("スヌーズ", selection: $alarm.snoozeMinutes) {
                         Text("なし").tag(0)
                         ForEach([3, 5, 9, 10, 15], id: \.self) { Text("\($0)分").tag($0) }
@@ -455,7 +456,15 @@ struct MorningRunView: View {
                         .symbolEffect(.bounce, options: .nonRepeating, value: f.id)
                         .transition(.scale.combined(with: .opacity))
                     Text("準備ができました").font(.title3.weight(.bold))
-                    Text("合計 \(formatSeconds(f.elapsed(now: f.finishedAt ?? model.now)))").foregroundStyle(.secondary)
+                    let total = f.elapsed(now: f.finishedAt ?? model.now)
+                    Text("合計 \(formatSeconds(total))").foregroundStyle(.secondary)
+                    // 実測の平均からの見込みとの差（実測が無い工程があるときは比べない）
+                    let est = model.morning.estimate()
+                    if est.unknown == 0 && est.planned == 0 && est.minutes > 0 {
+                        let diff = Int(total / MINUTE) - est.minutes
+                        Text(diff == 0 ? "いつもどおり" : diff > 0 ? "いつもより\(diff)分長い" : "いつもより\(-diff)分短い")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(diff > 0 ? .orange : .green)
+                    }
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
             }

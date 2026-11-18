@@ -62,4 +62,20 @@ final class MyTimeUITests: XCTestCase {
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
     }
+
+    /// ロック画面の表示の見本（8種類）に行ける
+    func testLivePreviewReachable() {
+        app.tabBars.buttons["その他"].tap()
+        let cell = app.staticTexts["ロック画面の表示"]
+        var tries = 0
+        while !cell.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
+        cell.tap()
+        let preview = app.buttons["表示の見本（8種類）"]
+        tries = 0
+        while !preview.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
+        XCTAssertTrue(preview.isHittable)
+        preview.tap()
+        XCTAssertTrue(app.navigationBars["表示の見本"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["5302教室"].exists || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "5302")).firstMatch.exists)
+    }
 }

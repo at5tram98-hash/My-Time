@@ -26,9 +26,22 @@ struct TodayView: View {
             .navigationTitle(model.dayTitle(day))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // 日付と今の時刻を5秒ごとに入れ替える
+                // 日付（固定）。押すと日付を選ぶ。今日以外を見ているときは「今日」へ1回で戻れる
                 ToolbarItem(placement: .principal) {
-                    DateClockTitle(title: model.dayTitle(day), isToday: model.time.isSameDay(day, model.now)) { showDatePicker = true }
+                    HStack(spacing: 8) {
+                        DateClockTitle(title: model.dayTitle(day), isToday: model.time.isSameDay(day, model.now)) { showDatePicker = true }
+                        if !model.time.isSameDay(day, model.now) {
+                            Button { go(to: model.time.startOfDay(model.now)) } label: {
+                                Text("今日").font(.caption.weight(.bold)).padding(.horizontal, 10).frame(minHeight: 28)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                            }
+                            .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                            .contentShape(Rectangle().inset(by: -8))
+                            .accessibilityLabel("今日へ戻る")
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                    }
+                    .animation(Motion.pop, value: model.time.isSameDay(day, model.now))
                 }
             }
             .toolbar {

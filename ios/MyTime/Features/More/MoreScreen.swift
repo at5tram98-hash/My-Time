@@ -57,7 +57,7 @@ struct MoreScreen: View {
                     }
                 }
 
-                Section("バイト") {
+                Section("勤務先") {
                     NavigationLink(value: MoreRoute.employers) {
                         row("勤務先と給与", "yensign.circle.fill", .green, model.employers.isEmpty ? "時給・交通費・締め日を登録" : "勤務先 \(model.employers.count)・給与の見込み")
                     }
@@ -66,7 +66,7 @@ struct MoreScreen: View {
                     }
                 }
 
-                Section("カスタマイズ") {
+                Section("表示と種類") {
                     NavigationLink(value: MoreRoute.specSettings) {
                         row("種類ごとの設定", "square.stack.3d.up.fill", .blue, "授業・バイト・試験など27種類の見た目と既定")
                     }
@@ -86,9 +86,12 @@ struct MoreScreen: View {
                     NavigationLink(value: MoreRoute.autoDelete) {
                         row("自動削除", "trash.slash.fill", .red, model.autoDeletePrefs.enabled ? "終わって\(model.autoDeletePrefs.days)日後に削除" : "オフ")
                     }
+                    NavigationLink { DiagnosticsView() } label: {
+                        row("診断", "stethoscope", .gray, "許可・予約の件数・最近の失敗")
+                    }
                 }
 
-                Section("通知と表示") {
+                Section("通知・アラーム・表示") {
                     Toggle(isOn: Binding(get: { model.notificationsEnabled }, set: setNotify)) {
                         row("通知", "bell.badge.fill", .red, model.notificationsEnabled ? "予定の\(model.notifyMinutesBefore == 0 ? "開始時刻" : "\(model.notifyMinutesBefore)分前")に知らせる" : "オフ")
                     }

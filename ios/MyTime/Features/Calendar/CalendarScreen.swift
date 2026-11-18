@@ -96,7 +96,7 @@ struct CalendarScreen: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassGroup(spacing: 6) {
                     HStack(spacing: 6) {
-                        ForEach(allDay) { o in
+                        ForEach(allDay.prefix(allDay.count > 3 ? 2 : 3)) { o in
                             let c = model.occurrenceColor(o)
                             Button { router.open(.event(o.id)) } label: {
                                 HStack(spacing: 5) {
@@ -108,6 +108,19 @@ struct CalendarScreen: View {
                                 .glass(Capsule(), interactive: true)
                             }
                             .buttonStyle(.plain)
+                        }
+                        // 4件以上は「ほか N件」にまとめる（時刻のある予定の場所を取らない）
+                        if allDay.count > 3 {
+                            Menu {
+                                ForEach(allDay.dropFirst(2)) { o in
+                                    Button(o.title) { router.open(.event(o.id)) }
+                                }
+                            } label: {
+                                Text("ほか\(allDay.count - 2)件").font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .glass(Capsule(), interactive: true)
+                            }
+                            .accessibilityLabel("終日の予定 ほか\(allDay.count - 2)件")
                         }
                     }
                 }
@@ -179,7 +192,18 @@ struct AgendaList: View {
                     if !(hideEmpty && items.isEmpty) {
                         Section {
                             if items.isEmpty {
-                                Text("予定はありません").font(.subheadline).foregroundStyle(.tertiary)
+                                // 空の日：その日に予定を追加できる
+                                Button { router.open(.editor(EditorSeed(kind: .event, start: d + 9 * HOUR, end: d + 10 * HOUR))) } label: {
+                                    HStack {
+                                        Text("予定はありません").foregroundStyle(.tertiary)
+                                        Spacer()
+                                        Label("追加", systemImage: "plus").font(.subheadline.weight(.semibold))
+                                    }
+                                    .font(.subheadline)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(model.time.dayLabel(d))に予定を追加")
                             }
                             ForEach(items) { row($0) }.tint(.primary)
                         } header: {

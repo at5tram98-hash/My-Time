@@ -802,7 +802,8 @@ struct EditorView: View {
         error = nil
         let now = model.now
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { page = .basic; error = "タイトルを入力してください"; return }
+        // 入力が足りないときは、その欄へ移って知らせる（閉じない・入力は消さない）
+        guard !name.isEmpty else { page = .basic; error = "タイトルを入力してください"; titleFocused = true; return }
         if showsTime && !(kind == .event && allDay) && end <= start { page = .basic; error = "終了は開始より後にしてください"; return }
         if !meetingUrl.isEmpty && !validURL(meetingUrl) { page = .option; error = "会議の URL は https:// から始めてください"; return }
         if let st = studioType, let miss = st.visibleFields.first(where: { $0.required && studioValues[$0.id] == nil }) {

@@ -405,3 +405,59 @@ final class BreakBoundaryTests: XCTestCase {
         XCTAssertFalse(old.inclusive)
     }
 }
+
+final class TransferRoundTripTests: XCTestCase {
+    /// iOS → ファイル → 空の端末：取り消し・繰り返しの例外・勤務先の給与条件・iOS 独自の設定・知らない項目が残る。2回読み込んでも増えない
+    func testRoundTripKeepsIOSFieldsAndIsIdempotent() throws {
+        let src = InMemoryStore()
+        let repo = Repository(store: src, clock: { 1_700_000_000_000 })
+        try repo.ensureDefaults()
+        var rep = MTEvent.make(title: "ゼミ", calendarId: "cal-general", start: 10 * HOUR, end: 11 * HOUR, now: 0, id: "rep")
+        rep.recurrence = RecurrenceRule(freq: .weekly)
+        rep.extra = .object(["webOnly": .string("残す")])
+        try repo.saveEvent(rep, isNew: true)
+        try repo.setStruck(eventId: "rep", originalStart: 10 * HOUR, struck: true)
+        let emp = try repo.saveEmployer(name: "GU", id: "gu")
+        var pay = PayProfile(); pay.hourlyWage = 1200; pay.breakRules = [BreakRule(overMinutes: 240, breakMinutes: 15, inclusive: true)]
+        try repo.updateEmployer(emp.id, name: "GU", pay: pay)
+        repo.updateSettings { s in s.raw = s.raw.merging(.object(["iosCleaning": .object(["areas": .array([])]), "iosMorning": .object(["bufferMinutes": .number(5)])])) }
+
+        let file = try DeviceTransfer.read(DeviceTransfer.export(store: src, now: 1))
+        let dst = InMemoryStore()
+        let added = try DeviceTransfer.importAddOnly(file, into: dst, now: 2)
+        XCTAssertGreaterThan(added, 0)
+        XCTAssertEqual(try DeviceTransfer.importAddOnly(file, into: dst, now: 3), 0)   // 2回目は増えない
+        let r2 = Repository(store: dst)
+        let e = try XCTUnwrap(r2.events().first { $0.id == "rep" })
+        XCTAssertEqual(e.extra?["webOnly"]?.stringValue, "残す")
+        XCTAssertEqual(expandAll([e], from: 0, to: 15 * DAY).map(\.isStruck).prefix(2), [true, false])
+        XCTAssertEqual(r2.employers().first?.pay.hourlyWage, 1200)
+        XCTAssertEqual(r2.employers().first?.pay.breakRules.first?.inclusive, true)
+        XCTAssertEqual(r2.settings().raw["iosMorning"]?["bufferMinutes"]?.intValue, 5)
+    }
+}
+
+final class LiveConflictTests: XCTestCase {
+    /// 8組の競合：同時に出せるのが1つのとき、どちらを先に始めるか
+    func testConflictPairs() {
+        func c(_ k: LiveKind, start: EpochMs = 50, priority: Int? = nil) -> LiveCandidate {
+            LiveCandidate(id: k.rawValue, kind: k, showFrom: 0, showUntil: 100, start: start, priority: priority)
+        }
+        let pairs: [(LiveCandidate, LiveCandidate, String)] = [
+            (c(.morning), c(.classNext), "morning"),          // 自分で進めている朝が先
+            (c(.cleaning), c(.shift), "cleaning"),
+            (c(.shift), c(.classNext), "shift"),
+            (c(.transit), c(.classNext), "transit"),          // 出発は授業より先
+            (c(.classNext), c(.study), "classNext"),
+            (c(.study), c(.task), "study"),
+            (c(.task), c(.checkpoint), "task"),
+            (c(.classNext), c(.checkpoint, priority: 74), "checkpoint"),   // 10分以内のチェックポイントは授業より先
+        ]
+        for (a, b, want) in pairs {
+            XCTAssertEqual(LivePlanner.select([a, b], now: 10, limit: 1).first?.id, want, "\(a.kind) vs \(b.kind)")
+            XCTAssertEqual(LivePlanner.select([b, a], now: 10, limit: 1).first?.id, want, "順番を変えても同じ")
+        }
+        // 同じ重要度なら開始の早いほう
+        XCTAssertEqual(LivePlanner.select([c(.classNext, start: 60), LiveCandidate(id: "early", kind: .classNext, showFrom: 0, showUntil: 100, start: 40)], now: 10, limit: 1).first?.id, "early")
+    }
+}
