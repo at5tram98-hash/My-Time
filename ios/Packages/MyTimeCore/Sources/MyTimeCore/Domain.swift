@@ -334,3 +334,21 @@ public func parseOccurrenceId(_ id: String) -> (masterId: String, originalStart:
     guard let at = id.lastIndex(of: "@"), let s = EpochMs(id[id.index(after: at)...]) else { return nil }
     return (String(id[..<at]), s)
 }
+
+// MARK: - 取り消し（削除せずに灰色で「取り消し」と出す）
+//
+// 繰り返しでない予定：`extra.struck = true`。繰り返しの予定：その回だけなら例外（override）に `struck: true`、
+// すべての回なら元の予定の `extra.struck`。Web 版は知らない項目を残したまま無視する（予定はそのまま見える）。
+
+public extension MTEvent {
+    var isStruckAll: Bool { extra?["struck"]?.boolValue == true }
+}
+
+public extension EventOccurrence {
+    /// この回が取り消されているか
+    var isStruck: Bool {
+        if event.isStruckAll { return true }
+        guard let s = originalStart else { return false }
+        return event.exceptions.first { $0.originalStart == s }?.raw["struck"]?.boolValue == true
+    }
+}

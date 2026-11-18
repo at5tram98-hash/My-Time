@@ -88,7 +88,7 @@ struct TodayView: View {
     @ViewBuilder
     private func content(now: EpochMs) -> some View {
         let d1 = model.time.addDays(day, 1)
-        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2))
+        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
         let dayTasks = orderHomeTasks(tasksForDay(model.tasks, day: day, time: model.time), now: now)
         let done = dayTasks.filter(\.isDone).count
         let busy = busyItems(events: occ, tasks: model.tasks)

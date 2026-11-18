@@ -91,17 +91,17 @@ struct CalendarScreen: View {
     /// 終日の予定（ガラスの札）
     @ViewBuilder
     private func allDayChips(_ day: EpochMs) -> some View {
-        let allDay = model.visibleEvents(from: day, to: model.time.addDays(day, 1)).filter { $0.event.allDay }
+        let allDay = model.visibleEvents(from: day, to: model.time.addDays(day, 1), includeStruck: true).filter { $0.event.allDay }
         if !allDay.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassGroup(spacing: 6) {
                     HStack(spacing: 6) {
                         ForEach(allDay) { o in
-                            let c = Color(hex: model.eventColor(o.event))
+                            let c = model.occurrenceColor(o)
                             Button { router.open(.event(o.id)) } label: {
                                 HStack(spacing: 5) {
                                     Circle().fill(c).frame(width: 7, height: 7)
-                                    Text(o.title).font(.caption.weight(.semibold)).lineLimit(1)
+                                    Text(o.title).strikethrough(o.isStruck).font(.caption.weight(.semibold)).lineLimit(1)
                                 }
                                 .foregroundStyle(.primary)
                                 .padding(.horizontal, 10).padding(.vertical, 6)
@@ -118,7 +118,7 @@ struct CalendarScreen: View {
 
     /// 日の表示：予定が主、右にタスクの細いレーン（今日の画面より細く）
     private func dayView(day: EpochMs, now: EpochMs) -> some View {
-        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2))
+        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
         return VStack(spacing: 0) {
             GeometryReader { geo in
                 let w = geo.size.width - DayTimeline.gutter
@@ -170,7 +170,7 @@ struct AgendaList: View {
 
     var body: some View {
         let to = model.time.addDays(from, days)
-        let occ = model.visibleEvents(from: from, to: to)
+        let occ = model.visibleEvents(from: from, to: to, includeStruck: true)
         let dayList = (0..<days).map { model.time.addDays(from, $0) }
         ScrollViewReader { proxy in
             List {
@@ -218,14 +218,15 @@ struct AgendaList: View {
         case .event(let o):
             Button { router.open(.event(o.id)) } label: {
                 HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 2).fill(Color(hex: model.eventColor(o.event))).frame(width: 4, height: 34)
+                    RoundedRectangle(cornerRadius: 2).fill(model.occurrenceColor(o)).frame(width: 4, height: 34)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(o.title).foregroundStyle(.primary).lineLimit(1)
+                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(.primary).lineLimit(1)
                         HStack(spacing: 6) {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
                             if o.event.recurrence != nil { Image(systemName: "repeat").accessibilityLabel("繰り返し") }
                             if isShiftPending(o.event) { PendingBadge() }
+                            if o.isStruck { StruckBadge() }
                         }
                         .font(.caption).foregroundStyle(.secondary)
                     }

@@ -85,6 +85,8 @@ struct DayTimeline: View {
         var late = false
         /// シフトの調整中
         var pending = false
+        /// 取り消した予定（灰色で「取り消し」）
+        var struck = false
         var movable: Bool { !tomorrow && (kind == .event || kind == .task) }
         static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late && a.pending == b.pending }
     }
@@ -307,7 +309,7 @@ struct DayTimeline: View {
             let symbol = e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar"
             let id = "event:\(e.id)"
             add(0, Draft(item: TimedItem(id: id, start: e.start, end: e.end)) { p in
-                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event), pending: isShiftPending(e.event))
+                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event), pending: isShiftPending(e.event), struck: e.isStruck)
             })
         }
         let byId = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -556,20 +558,22 @@ struct TimelineBlock: View {
         let bottomShift = drag.active ? px(g.end - block.plannedEnd) : 0
         let h = CGFloat(block.placed.height) / 60 * hourHeight
         // 予定＝色で塗った札、タスク＝白い札に色の帯、確認＝丸い札、翌日計画＝灰色
-        let filled = block.kind == .event && !block.tomorrow
-        let fg: Color = block.tomorrow ? .secondary : filled ? .white : .primary
-        let sub: Color = block.tomorrow ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
+        // 取り消した予定は計画と同じく灰色（塗らずに枠だけ）
+        let filled = block.kind == .event && !block.tomorrow && !block.struck
+        let fg: Color = block.tomorrow || block.struck ? .secondary : filled ? .white : .primary
+        let sub: Color = block.tomorrow || block.struck ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
         let metaRows = max(0, Int((h - 36) / 15))
         HStack(alignment: .top, spacing: 0) {
             if !filled && block.kind != .check {
-                Rectangle().fill(block.tomorrow ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
+                Rectangle().fill(block.tomorrow || block.struck ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Image(systemName: statusSymbol).imageScale(.small)
                         .foregroundStyle(block.tomorrow ? Color.secondary : filled ? Color.white : block.running ? Color.green : block.late ? Color.red : block.color)
                     Text(block.title).lineLimit(h > 60 ? 2 : 1)
-                        .strikethrough(block.faded && block.kind != .event)
+                        .strikethrough((block.faded && block.kind != .event) || block.struck)
+                    if block.struck { StruckBadge(compact: h < 40) }
                     if block.pending { PendingBadge(compact: h < 40) }
                 }
                 .font(.caption.weight(.semibold))
@@ -594,8 +598,9 @@ struct TimelineBlock: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(fg)
         .background {
-            if block.tomorrow {
+            if block.tomorrow || block.struck {
                 shape.fill(Color(.tertiarySystemFill))
+                    .overlay { if block.struck { shape.strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
             } else if filled {
                 shape.fill(block.color.gradient.opacity(block.faded ? 0.45 : 0.92))
             } else {
@@ -660,7 +665,7 @@ struct TimelineBlock: View {
         case .check: kind = "確認"
         case .session: kind = "作業枠"
         }
-        return (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + (block.pending ? "、調整中" : "") + block.meta.map { "、\($0.text)" }.joined()
+        return (block.struck ? "取り消した" : "") + (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + (block.pending ? "、調整中" : "") + block.meta.map { "、\($0.text)" }.joined()
     }
 
     /// 上端・下端のつかむ所（見た目は細い線、触れる範囲は高さ12）

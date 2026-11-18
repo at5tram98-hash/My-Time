@@ -14,6 +14,9 @@ struct EventDetailView: View {
     @State private var confirmDelete = false
     @State private var deleted = 0
     @State private var copyOccurrence: EventOccurrence?
+    /// 繰り返しの予定の取り消しで「この回のみ／すべての回」を選ぶ
+    @State private var askStrike = false
+    @State private var struckTick = 0
 
     var body: some View {
         let parsed = parseOccurrenceId(occurrenceId)
@@ -27,7 +30,7 @@ struct EventDetailView: View {
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
                     let now = model.time.ms(ctx.date)
                     List {
-                        Section { header(ev, start: start, end: end, now: now, tint: tint) }
+                        Section { header(ev, start: start, end: end, now: now, tint: isStruck(ev, parsed) ? .gray : tint, struck: isStruck(ev, parsed)) }
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                         Section {
@@ -128,13 +131,34 @@ struct EventDetailView: View {
 
     // MARK: 見出し
 
-    private func header(_ ev: MTEvent, start: EpochMs, end: EpochMs, now: EpochMs, tint: Color) -> some View {
+    /// この回が取り消されているか（繰り返しはその回の印、またはすべての回）
+    private func isStruck(_ ev: MTEvent, _ parsed: (masterId: String, originalStart: EpochMs)?) -> Bool {
+        if ev.isStruckAll { return true }
+        guard let p = parsed else { return false }
+        return ev.exceptions.first { $0.originalStart == p.originalStart }?.raw["struck"]?.boolValue == true
+    }
+
+    /// 取り消す・取り消しを戻す（削除はしない。振ると元に戻せる）
+    private func setStruck(_ ev: MTEvent, originalStart: EpochMs?, _ on: Bool) {
+        let snapshot = ev
+        if model.perform(on ? "予定を取り消しました" : "取り消しを戻しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }, {
+            try model.repo.setStruck(eventId: ev.id, originalStart: originalStart, struck: on)
+        }) { struckTick += 1 }
+    }
+
+    private func header(_ ev: MTEvent, start: EpochMs, end: EpochMs, now: EpochMs, tint: Color, struck: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 3, style: .continuous).fill(tint).frame(width: 6)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28) }
                     Text(ev.title).font(.title2.weight(.bold)).lineLimit(3)
+                        .strikethrough(struck)
+                        .foregroundStyle(struck ? .secondary : .primary)
+                }
+                if struck {
+                    StruckBadge()
+                        .transition(.scale.combined(with: .opacity))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dateText(start, end, allDay: ev.allDay)).font(.subheadline.weight(.medium))
@@ -211,14 +235,34 @@ struct EventDetailView: View {
             Menu {
                 Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
                 Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
-                    copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
+                    copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
                 }
             } label: { roundLabel("複製", "plus.square.on.square") }
             .buttonStyle(PressableStyle())
             ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
                 .buttonStyle(PressableStyle())
+            let struck = isStruck(ev, parsed)
+            Button {
+                if struck {
+                    // 取り消しを戻す：すべての回の取り消しならすべて、その回だけならその回
+                    setStruck(ev, originalStart: ev.isStruckAll ? nil : parsed?.originalStart, false)
+                } else if ev.recurrence != nil && parsed != nil {
+                    askStrike = true
+                } else {
+                    setStruck(ev, originalStart: nil, true)
+                }
+            } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward.circle" : "xmark.circle") }
+            .buttonStyle(PressableStyle())
+            .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに灰色で「取り消し」と表示します")
+            .confirmationDialog("繰り返しの予定を取り消します", isPresented: $askStrike, titleVisibility: .visible) {
+                Button("この回のみ取り消す") { setStruck(ev, originalStart: parsed?.originalStart, true) }
+                Button("すべての回を取り消す") { setStruck(ev, originalStart: nil, true) }
+                Button("キャンセル", role: .cancel) {}
+            } message: { Text("削除はせず、灰色で「取り消し」と表示します。") }
         }
         .padding(.vertical, 2)
+        .animation(Motion.pop, value: isStruck(ev, parsed))
+        .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
     }
 
     private func primaryButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {

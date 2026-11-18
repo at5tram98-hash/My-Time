@@ -257,6 +257,31 @@ public final class Repository {
         try store.transaction { store.put(.event, id: masterId, json: m.json); record(.event, masterId, op: "put", action: "occurrence-cancel", detail: ["originalStart": originalStart.json]) }
     }
 
+    /// 取り消し・取り消しの解除。originalStart を渡すと繰り返しのその回だけ（例外に印を付ける）
+    public func setStruck(eventId: String, originalStart: EpochMs?, struck: Bool) throws {
+        guard var m = event(eventId) else { throw RepositoryError("予定が見つかりません") }
+        let prev = store.get(.event, id: eventId)
+        if let s = originalStart, m.recurrence != nil {
+            if let i = m.exceptions.firstIndex(where: { $0.originalStart == s }) {
+                guard m.exceptions[i].kind == .override else { throw RepositoryError("この回は削除されています") }
+                m.exceptions[i].raw = m.exceptions[i].raw.merging(.object(["struck": .bool(struck)]))
+            } else if struck {
+                var x = RecurrenceException(originalStart: s, kind: .override)
+                x.raw = .object(["struck": .bool(true)])
+                m.exceptions.append(x)
+            }
+        } else {
+            var o = m.extra?.objectValue ?? [:]
+            o["struck"] = struck ? .bool(true) : nil
+            m.extra = .object(o)
+        }
+        m.updatedAt = clock()
+        try store.transaction {
+            store.put(.event, id: eventId, json: m.json)
+            record(.event, eventId, op: "put", action: struck ? "strike" : "unstrike", detail: prev.map { ["snapshot": $0] })
+        }
+    }
+
     // MARK: 設定
 
     public func settings() -> AppSettings { AppSettings(json: store.settings()) }

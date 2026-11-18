@@ -111,7 +111,7 @@ struct WeekTimeline: View {
                 ForEach(0..<7, id: \.self) { i in
                     let d = model.time.addDays(weekStart, i)
                     let today = model.time.isSameDay(d, now)
-                    let allDay = model.visibleEvents(from: d, to: model.time.addDays(d, 1)).filter(\.event.allDay)
+                    let allDay = model.visibleEvents(from: d, to: model.time.addDays(d, 1), includeStruck: true).filter(\.event.allDay)
                     Button { onOpenDay(d) } label: {
                         VStack(spacing: 2) {
                             HStack(spacing: 3) {
@@ -194,10 +194,10 @@ struct WeekTimeline: View {
 
     private func items(_ d: EpochMs) -> [Item] {
         let d1 = model.time.addDays(d, 1)
-        var out: [Item] = model.visibleEvents(from: d, to: d1).filter { !$0.event.allDay && $0.start < d1 && $0.end > d }.map { o in
-            Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: Color(hex: model.eventColor(o.event)), isEvent: true, done: false, pending: isShiftPending(o.event), open: .event(o.id),
+        var out: [Item] = model.visibleEvents(from: d, to: d1, includeStruck: true).filter { !$0.event.allDay && $0.start < d1 && $0.end > d }.map { o in
+            Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: o.isStruck ? .gray : Color(hex: model.eventColor(o.event)), isEvent: true, done: o.isStruck, pending: isShiftPending(o.event), open: .event(o.id),
                  symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
-                 sub: o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName)
+                 sub: o.isStruck ? "取り消し" : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName))
         }
         for t in model.tasks {
             if t.kind == .do, let s = t.plannedStart, let e = t.plannedEnd, s < d1, e > d {

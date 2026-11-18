@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Observation
 import SwiftData
 import MyTimeCore
@@ -122,16 +123,21 @@ final class AppModel {
 
     func subtasks(of taskId: String) -> [MTSubtask] { subtasks.filter { $0.taskId == taskId } }
     func calendar(_ id: String?) -> MTCalendar? { calendars.first { $0.id == id } }
-    func visibleEvents(from: EpochMs, to: EpochMs, includeArchived: Bool = false) -> [EventOccurrence] {
+    /// 表示する予定。取り消した予定は既定で含めない（通知・ロック画面・給与・計画・分析に使わない）。
+    /// カレンダーと今日の時間軸だけ includeStruck: true で灰色に出す
+    func visibleEvents(from: EpochMs, to: EpochMs, includeArchived: Bool = false, includeStruck: Bool = false) -> [EventOccurrence] {
         let hidden = Set(calendars.filter { !$0.visible }.map(\.id))
         // 種類の設定で「出さない」にした種類は出さない
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
-        return expandAll((includeArchived ? analysisEvents : events).filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        let all = expandAll((includeArchived ? analysisEvents : events).filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        return includeStruck ? all : all.filter { !$0.isStruck }
     }
     /// 予定の色：自分で決めた色 → 勤務先の色（勤務先の画面で決めたとき）→ カレンダーの色
     func eventColor(_ e: MTEvent) -> String {
         e.colorOverride ?? employer(e.employerId).flatMap { $0.raw["pay"] != nil ? $0.pay.color : nil } ?? calendar(e.calendarId)?.color ?? "#0A84FF"
     }
+    /// 回の色（取り消した回は灰色）
+    func occurrenceColor(_ o: EventOccurrence) -> Color { o.isStruck ? Color.gray : Color(hex: eventColor(o.event)) }
     func employer(_ id: String?) -> MTEmployer? { employers.first { $0.id == id } }
     func studioType(_ id: String?) -> StudioType? { studioTypes.first { $0.id == id } }
 

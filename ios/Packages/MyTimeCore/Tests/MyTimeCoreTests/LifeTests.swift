@@ -287,3 +287,31 @@ final class AutoDeleteTests: XCTestCase {
         XCTAssertEqual(AutoDeleteRules.purgeable(archivedAt: ["a": now - 31 * DAY, "b": now - 29 * DAY], now: now), ["a"])
     }
 }
+
+final class StrikeTests: XCTestCase {
+    func testStrikeSingleAndOccurrence() throws {
+        let store = InMemoryStore()
+        let repo = Repository(store: store, clock: { 1000 })
+        let one = MTEvent.make(title: "授業", calendarId: "c", start: 10 * HOUR, end: 11 * HOUR, now: 0, id: "one")
+        try repo.saveEvent(one, isNew: true)
+        try repo.setStruck(eventId: "one", originalStart: nil, struck: true)
+        let occ1 = expandAll(repo.events(), from: 0, to: DAY)
+        XCTAssertEqual(occ1.count, 1)                       // 消えずに残る
+        XCTAssertTrue(occ1[0].isStruck)
+        try repo.setStruck(eventId: "one", originalStart: nil, struck: false)
+        XCTAssertFalse(expandAll(repo.events(), from: 0, to: DAY)[0].isStruck)
+
+        var rep = MTEvent.make(title: "ゼミ", calendarId: "c", start: 10 * HOUR, end: 11 * HOUR, now: 0, id: "rep")
+        rep.recurrence = RecurrenceRule(freq: .daily)
+        try repo.saveEvent(rep, isNew: true)
+        let first = expandAll(repo.events().filter { $0.id == "rep" }, from: 0, to: 3 * DAY)
+        XCTAssertEqual(first.count, 3)
+        try repo.setStruck(eventId: "rep", originalStart: first[1].originalStart, struck: true)
+        let after = expandAll(repo.events().filter { $0.id == "rep" }, from: 0, to: 3 * DAY)
+        XCTAssertEqual(after.count, 3)                      // その回も残る
+        XCTAssertEqual(after.map(\.isStruck), [false, true, false])
+        // Web 版との互換：JSON を通しても印が残る
+        let reread = MTEvent(json: repo.events().first { $0.id == "rep" }!.json)
+        XCTAssertEqual(expandAll([reread], from: 0, to: 3 * DAY).map(\.isStruck), [false, true, false])
+    }
+}

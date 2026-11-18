@@ -258,7 +258,7 @@ enum PayrollMath {
     }
 
     static func lines(model: AppModel, from: EpochMs, to: EpochMs) -> [ShiftLine] {
-        Payroll.lines(occurrences: expandAll(model.events, from: from, to: to, time: model.time).filter { !$0.event.allDay }, employers: model.employers, time: model.time)
+        Payroll.lines(occurrences: expandAll(model.events, from: from, to: to, time: model.time).filter { !$0.event.allDay && !$0.isStruck }, employers: model.employers, time: model.time)
     }
 
     static func payment(model: AppModel, employer e: MTEmployer, period per: PayPeriod) -> Payment {

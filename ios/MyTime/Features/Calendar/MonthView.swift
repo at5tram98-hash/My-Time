@@ -113,7 +113,7 @@ struct MonthView: View {
         let days = cal.range(of: .day, in: .month, for: start)?.count ?? 30
         let weeks = Int(ceil(Double(lead + days) / 7))
         let isCurrent = offset == 0
-        let events = model.visibleEvents(from: first, to: model.time.addDays(first, days))
+        let events = model.visibleEvents(from: first, to: model.time.addDays(first, days), includeStruck: true)
         var byDay: [EpochMs: [EventOccurrence]] = [:]
         for o in events {
             var d = model.time.startOfDay(max(o.start, first))
@@ -184,7 +184,7 @@ struct MonthView: View {
                 .padding(.horizontal, 1)
             } else if !events.isEmpty {
                 HStack(spacing: 2) {
-                    ForEach(events.prefix(3), id: \.id) { o in Circle().fill(Color(hex: model.eventColor(o.event))).frame(width: 5, height: 5) }
+                    ForEach(events.prefix(3), id: \.id) { o in Circle().fill(model.occurrenceColor(o)).frame(width: 5, height: 5) }
                 }
             }
             Spacer(minLength: 0)
@@ -230,7 +230,7 @@ struct MonthView: View {
 
     /// 予定の1行。タップで予定の詳細。高さに合わせて、名前→時刻→場所・教室まで出す
     private func eventRow(_ o: EventOccurrence, level: Int, height: CGFloat) -> some View {
-        let c = Color(hex: model.eventColor(o.event))
+        let c = model.occurrenceColor(o)
         let filled = o.event.allDay
         let room = o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : "\($0)教室" }
         let sub = room ?? o.event.placeName
@@ -239,7 +239,8 @@ struct MonthView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 2) {
                     if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 7, weight: .bold)) }
-                    Text(o.title).font(.system(size: level >= 2 ? 10 : 9, weight: .semibold)).lineLimit(1)
+                    if o.isStruck { Image(systemName: "xmark.circle.fill").font(.system(size: 7, weight: .bold)).accessibilityLabel("取り消し") }
+                    Text(o.title).strikethrough(o.isStruck).font(.system(size: level >= 2 ? 10 : 9, weight: .semibold)).lineLimit(1)
                 }
                 if level >= 2 && !filled {
                     Text(model.hm(o.start)).font(.system(size: 9)).monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
@@ -250,7 +251,7 @@ struct MonthView: View {
             }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(filled ? Color.white : Color.primary)
+        .foregroundStyle(o.isStruck ? Color.secondary : filled ? Color.white : Color.primary)
         .padding(.horizontal, 2).padding(.vertical, level >= 2 ? 2 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height)
@@ -259,7 +260,7 @@ struct MonthView: View {
         .onTapGesture { router.open(.event(o.id)) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(o.title)、\(o.event.allDay ? "終日" : model.hm(o.start))")
+        .accessibilityLabel((o.isStruck ? "取り消し、" : "") + "\(o.title)、\(o.event.allDay ? "終日" : model.hm(o.start))")
     }
 }
 
@@ -274,9 +275,9 @@ struct DayPreview: View {
             if events.isEmpty { Text("予定はありません").foregroundStyle(.secondary) }
             ForEach(events.prefix(8), id: \.id) { o in
                 HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 2).fill(Color(hex: model.eventColor(o.event))).frame(width: 4, height: 28)
+                    RoundedRectangle(cornerRadius: 2).fill(model.occurrenceColor(o)).frame(width: 4, height: 28)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(o.title).font(.subheadline.weight(.medium)).lineLimit(1)
+                        Text(o.title).strikethrough(o.isStruck).font(.subheadline.weight(.medium)).lineLimit(1)
                         Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
@@ -305,7 +306,7 @@ struct CopyToDaysSheet: View {
     private var sources: [EventOccurrence] {
         if let occurrence { return [occurrence] }
         guard let d = sourceDay else { return [] }
-        return model.visibleEvents(from: d, to: model.time.addDays(d, 1)).filter { model.time.isSameDay($0.start, d) || $0.event.allDay }
+        return model.visibleEvents(from: d, to: model.time.addDays(d, 1), includeStruck: true).filter { model.time.isSameDay($0.start, d) || $0.event.allDay }
     }
 
     var body: some View {
@@ -319,9 +320,9 @@ struct CopyToDaysSheet: View {
                             HStack(spacing: 10) {
                                 Image(systemName: chosen.contains(o.id) ? "checkmark.circle.fill" : "circle")
                                     .font(.title3).foregroundStyle(chosen.contains(o.id) ? Color.accentColor : .secondary)
-                                RoundedRectangle(cornerRadius: 2).fill(Color(hex: model.eventColor(o.event))).frame(width: 4, height: 30)
+                                RoundedRectangle(cornerRadius: 2).fill(model.occurrenceColor(o)).frame(width: 4, height: 30)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(o.title).foregroundStyle(.primary)
+                                    Text(o.title).strikethrough(o.isStruck).foregroundStyle(.primary)
                                     Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                                 }
                                 Spacer()
