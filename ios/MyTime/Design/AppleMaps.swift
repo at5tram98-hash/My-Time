@@ -54,6 +54,64 @@ enum AppleMaps {
         return Int((eta.expectedTravelTime / 60).rounded(.up))
     }
 
+    /// 場所の近くの乗り場（バス停・駅）。近い順
+    static func nearbyStops(_ p: PlaceValue, radius: Double = 700) async -> [(name: String, meters: Double)] {
+        guard let item = await mapItem(p) else { return [] }
+        let c = item.placemark.coordinate
+        let r = MKLocalPointsOfInterestRequest(center: c, radius: radius)
+        r.pointOfInterestFilter = MKPointOfInterestFilter(including: [.publicTransport])
+        guard let items = try? await MKLocalSearch(request: r).start().mapItems else { return [] }
+        let here = CLLocation(latitude: c.latitude, longitude: c.longitude)
+        var seen = Set<String>()
+        return items.compactMap { i -> (String, Double)? in
+            guard let n = i.name, seen.insert(n).inserted else { return nil }
+            let l = i.placemark.coordinate
+            return (n, here.distance(from: CLLocation(latitude: l.latitude, longitude: l.longitude)))
+        }
+        .sorted { $0.1 < $1.1 }
+    }
+
+    /// 2つの場所の間の所要時間（分）
+    static func minutes(from a: PlaceValue, to b: PlaceValue, mode: Mode, arrival: Date? = nil) async -> Int? {
+        guard let from = await mapItem(a), let to = await mapItem(b) else { return nil }
+        let r = MKDirections.Request()
+        r.source = from; r.destination = to; r.transportType = mode.transport
+        if let arrival { r.arrivalDate = arrival }
+        guard let eta = try? await MKDirections(request: r).calculateETA() else { return nil }
+        return max(1, Int((eta.expectedTravelTime / 60).rounded(.up)))
+    }
+
+    /// 移動の段取りの下書き：自宅 →（歩き）→ 最寄りの乗り場 →（バス・電車）→ 着く場所の最寄りの乗り場 →（歩き）→ 着く場所。
+    /// Apple マップは乗り換えの経路そのものを渡さないため、電車の所要時間（時刻表から）と、周りの乗り場の名前と歩く時間から組み立てる。
+    /// 乗り物の名前（系統・路線）は入らないので、必要なら自分で直す
+    static func draftLegs(to dest: PlaceValue, arrival: Date, newId: () -> String) async -> [TravelLeg]? {
+        guard let h = home else { return nil }
+        let walkAll = await minutes(from: h, to: dest, mode: .walking, arrival: arrival)
+        guard let total = await minutes(from: h, to: dest, mode: .transit, arrival: arrival) else {
+            // 電車・バスで行けない（近い）ときは歩きだけ
+            guard let w = walkAll else { return nil }
+            return TravelPlan.chain([TravelLeg(id: newId(), mode: .walk, from: "自宅", to: dest.name, departMin: 0, arriveMin: w)])
+        }
+        if let w = walkAll, w <= total + 5 {
+            return TravelPlan.chain([TravelLeg(id: newId(), mode: .walk, from: "自宅", to: dest.name, departMin: 0, arriveMin: w)])
+        }
+        let a = await nearbyStops(h).first
+        let b = await nearbyStops(dest).first
+        guard let a, let b, a.name != b.name else {
+            return TravelPlan.chain([TravelLeg(id: newId(), mode: .bus, from: "自宅", to: dest.name, departMin: 0, arriveMin: total)])
+        }
+        let w1 = await minutes(from: h, to: PlaceValue(name: a.name), mode: .walking) ?? max(1, Int(a.meters / 70))
+        let w2 = await minutes(from: PlaceValue(name: b.name), to: dest, mode: .walking) ?? max(1, Int(b.meters / 70))
+        let ride = max(3, total - w1 - w2)
+        let station = { (n: String) in n.hasSuffix("駅") || n.contains("駅") }
+        let mode: TravelLeg.Mode = station(a.name) && station(b.name) ? .train : .bus
+        return TravelPlan.chain([
+            TravelLeg(id: newId(), mode: .walk, from: "自宅", to: a.name, departMin: 0, arriveMin: w1),
+            TravelLeg(id: newId(), mode: mode, from: a.name, to: b.name, departMin: 0, arriveMin: ride),
+            TravelLeg(id: newId(), mode: .walk, from: b.name, to: dest.name, departMin: 0, arriveMin: w2),
+        ])
+    }
+
     /// Apple マップで経路を開く（出発は現在地）
     @MainActor
     static func openDirections(to p: PlaceValue, mode: Mode = preferredMode) async {
@@ -128,6 +186,8 @@ struct EventMapCard: View {
                     GlassSegmented(items: AppleMaps.Mode.allCases.map { .init(value: $0, title: $0.label, symbol: $0.symbol) }, selection: $mode)
                     etaRow
                 }
+                // 家を出てから着くまでの区間（乗り場・路線・時刻）。移動中はロック画面に今の区間を出す
+                TravelPlanSummary(event: event, start: start)
             } header: { Text("場所") }
             .task(id: place.name) { loading = true; item = await AppleMaps.mapItem(place); loading = false }
             .task(id: "\(place.name)-\(mode.rawValue)") {

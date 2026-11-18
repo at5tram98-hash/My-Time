@@ -26,6 +26,8 @@ struct MyTimeApp: App {
         UNUserNotificationCenter.current().delegate = NotificationTapHandler.shared
         // ロック画面のボタンから裏で起動されたときも動くように、画面より先に受け口を用意する
         LiveActionRouter.handler = { kind, value in await LiveActions.handle(kind: kind, value: value, model: model) }
+        // 閉じている間の Live Activity の更新（移動の区間の切り替わりなど）
+        LiveBackground.register(model: model)
     }
 
     var body: some Scene {

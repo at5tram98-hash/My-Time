@@ -1,7 +1,7 @@
 import SwiftUI
 import MyTimeCore
 
-/// ロック画面・ダイナミックアイランドの見本（8種類）。本物の Live Activity は始めない
+/// ロック画面・ダイナミックアイランドの見本（9種類）。本物の Live Activity は始めない
 struct LivePreviewView: View {
     @State private var showActive = false
 
@@ -14,7 +14,7 @@ struct LivePreviewView: View {
                 }
                 .pickerStyle(.segmented)
             } footer: { Text("見本の表示です（本物の表示は始めません）。実際にどれをダイナミックアイランドに出すかは iPhone が決めます。") }
-            ForEach(Self.samples(), id: \.kind) { s in
+            ForEach(Array(Self.samples().enumerated()), id: \.offset) { _, s in
                 Section(kindLabel(s.kind)) {
                     VStack(alignment: .leading, spacing: 12) {
                         // ダイナミックアイランド（Compact：左右の短い表示）
@@ -72,6 +72,18 @@ struct LivePreviewView: View {
             Sample(kind: "morning", state: st("洗顔", detail: "顔・全11工程中 2工程目", from: now - 6 * m, done: 1, total: 11, next: "化粧水・乳液", tint: "#FF9F0A", symbol: "sunrise.fill", lead: "洗顔", trail: "2/11", phase: "run", canComplete: true, token: "sample:1")),
             Sample(kind: "cleaning", state: st("清掃", headline: "浴室・排水口", detail: "残り 5箇所", from: now - 12 * m, done: 3, total: 8, tint: "#30B0C7", symbol: "bubbles.and.sparkles.fill", trail: "3/8", phase: "run")),
             Sample(kind: "transit", state: st("ゼミへ出発", headline: "16:25発", detail: "本館・16:50開始", to: now + 5 * m, ends: now + 10 * m, tint: "#0A84FF", symbol: "figure.walk", lead: "16:25", phase: "before")),
+            // 移動の段取りあり：家を出る前は、最初に乗るバス停と時刻を大きく。区間ごとに残りの分
+            Sample(kind: "transit", state: {
+                var x = st("企業経済論Bへ出発", headline: "丸太町智恵光院 \(Date(timeIntervalSinceNow: 11 * 60).formatted(date: .omitted, time: .shortened))発", detail: "大学・13:15開始", to: now + 4 * m, ends: now + 9 * m, status: "家を出るまで", tint: "#5E5CE6", symbol: "figure.walk", lead: "丸太町智恵", phase: "before")
+                x.legs = [
+                    .init(symbol: "figure.walk", from: "自宅", to: "丸太町智恵光院", line: nil, depart: Date(timeIntervalSinceNow: 4 * 60), arrive: Date(timeIntervalSinceNow: 10 * 60), ride: false),
+                    .init(symbol: "bus.fill", from: "丸太町智恵光院", to: "烏丸丸太町", line: "市バス10", depart: Date(timeIntervalSinceNow: 11 * 60), arrive: Date(timeIntervalSinceNow: 23 * 60), ride: true),
+                    .init(symbol: "tram.fill.tunnel", from: "丸太町", to: "今出川", line: "烏丸線", depart: Date(timeIntervalSinceNow: 26 * 60), arrive: Date(timeIntervalSinceNow: 29 * 60), ride: true),
+                    .init(symbol: "figure.walk", from: "今出川", to: "大学", line: nil, depart: Date(timeIntervalSinceNow: 29 * 60), arrive: Date(timeIntervalSinceNow: 36 * 60), ride: false),
+                ]
+                x.routeURL = "mytime://route/sample"
+                return x
+            }()),
             Sample(kind: "study", state: st("統計学：第3章", detail: "21:00までの予定", from: now - 25 * m, status: "集中", tint: "#5E5CE6", symbol: "book.fill", phase: "run", token: "sample")),
             Sample(kind: "task", state: st("レポートの下書き", detail: "17:00までの予定", from: now - 40 * m, status: "実行中", tint: "#34C759", symbol: "checklist", phase: "run", token: "sample")),
             Sample(kind: "checkpoint", state: st("バスに乗る", headline: "12:45", to: now + 10 * m, ends: now + 10 * m, tint: "#FF9F0A", symbol: "flag.checkered", phase: "before")),

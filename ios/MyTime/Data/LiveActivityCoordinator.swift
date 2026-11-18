@@ -134,6 +134,9 @@ final class LiveActivityCoordinator {
             r.scheduled += schedule.filter { running.contains($0.candidate.id) }.count
         }
         if r.failed == 0 { Diagnostics.record("live", ok: true, "表示 \(r.active)件・予約 \(r.scheduled)件") }
+        // 次に表示が変わる時刻（移動の区間の切り替わりなど）に、裏でもう一度照合を頼む（OS の都合で遅れることがある）
+        let next = items.filter { keep.contains($0.candidate.id) }.map(\.staleAt).filter { $0 > now }.min()
+        LiveBackground.schedule(at: next.map { model.time.date($0) })
         #endif
         lastReport = r
         return r
@@ -237,19 +240,60 @@ final class LiveActivityCoordinator {
                 staleAt: t.stale))
         }
 
-        // 移動：出発の何分前から出発まで（移動時間が入っている予定だけ。根拠のない出発時刻は出さない）
+        // 移動：出発の何分前から出発まで（移動時間が入っている予定だけ。根拠のない出発時刻は出さない）。
+        // 移動の段取りがあれば、家を出る前から着くまで出し、今の区間と次の乗り場（バス停・駅）を時刻に合わせて出す
         for o in occ where !o.event.allDay {
             guard let tm = o.event.travelMinutes, tm > 0 else { continue }
             let leave = o.start - EpochMs(tm) * MINUTE
-            guard leave + 5 * MINUTE > now else { continue }
+            let legs = TravelPlan.legs(o.event.extra)
+            let until = legs.isEmpty ? leave + 5 * MINUTE : o.start + EpochMs(legs.last?.arriveMin ?? 0) * MINUTE
+            guard until > now else { continue }
             let from = leave - EpochMs(prefs.transitLeadMinutes) * MINUTE
+            let at = { (m: Int) in o.start + EpochMs(m) * MINUTE }
+            var title = privacy ? "出発" : "\(o.title)へ出発"
+            var headline = "\(time.hm(leave))発"
+            var countdown = leave, ends = leave + 5 * MINUTE, phase = "before", stale = leave
+            var leading = time.hm(leave)
+            var status: String? = nil
+            if !legs.isEmpty {
+                let m = Int((now - o.start) / MINUTE)
+                let pos = TravelPlan.position(legs, minute: m)
+                let ride = legs.first { $0.mode.isRide && $0.departMin >= (pos.current?.departMin ?? m) }
+                if now < leave {
+                    // 家を出る前：最初に乗る所と時刻を大きく
+                    if let r = ride, !privacy { headline = "\(r.from) \(time.hm(at(r.departMin)))発"; leading = Self.short(r.from, 5) }
+                    status = "家を出るまで"
+                } else if let c = pos.current {
+                    title = privacy ? "移動中" : "\(c.mode.label)・\(c.to)へ"
+                    countdown = at(c.departMin); ends = at(c.arriveMin); phase = "active"; stale = ends
+                    if c.mode.isRide {
+                        headline = privacy ? "\(time.hm(ends))着" : "\(c.to)で降りる \(time.hm(ends))"
+                        leading = Self.short(c.to, 5)
+                    } else if let r = ride, !privacy {
+                        // 歩いている間は、次に乗る所と時刻
+                        headline = "\(r.from) \(time.hm(at(r.departMin)))発"; leading = Self.short(r.from, 5)
+                    } else {
+                        headline = "\(time.hm(ends))着"
+                    }
+                } else if let n = pos.next {
+                    // 乗り場で待っている
+                    title = privacy ? "移動中" : "\(n.from)で待つ"
+                    headline = privacy ? "\(time.hm(at(n.departMin)))発" : "\(n.from) \(time.hm(at(n.departMin)))発"
+                    countdown = at(n.departMin); ends = at(n.arriveMin); stale = countdown
+                    leading = Self.short(n.from, 5)
+                }
+            }
+            let legStates: [MyTimeActivityAttributes.LegState]? = legs.isEmpty || privacy ? nil : legs.map {
+                .init(symbol: $0.mode.symbol, from: $0.from, to: $0.to, line: $0.line, depart: date(at($0.departMin)), arrive: date(at($0.arriveMin)), ride: $0.mode.isRide)
+            }
             out.append(Item(
-                candidate: LiveCandidate(id: "transit:\(o.id)@\(from)", kind: .transit, showFrom: from, showUntil: leave + 5 * MINUTE, start: leave),
-                content: .init(title: privacy ? "出発" : "\(o.title)へ出発", headline: "\(time.hm(leave))発", detail: privacy ? nil : (o.event.placeName.map { "\($0)・" } ?? "") + "\(time.hm(o.start))開始",
-                               countdownTo: date(leave), endsAt: date(leave + 5 * MINUTE),
-                               tint: model.eventColor(o.event), symbol: "figure.walk", url: "mytime://event/\(o.id)", canComplete: false,
-                               compactLeading: time.hm(leave), phase: "before", routeURL: route(o)),
-                staleAt: leave))
+                candidate: LiveCandidate(id: "transit:\(o.id)@\(from)", kind: .transit, showFrom: from, showUntil: until, start: leave),
+                content: .init(title: title, headline: headline, detail: privacy ? nil : (o.event.placeName.map { "\($0)・" } ?? "") + "\(time.hm(o.start))開始",
+                               countdownTo: date(countdown), status: status, endsAt: date(ends),
+                               tint: model.eventColor(o.event), symbol: legs.isEmpty ? "figure.walk" : (TravelPlan.position(legs, minute: Int((now - o.start) / MINUTE)).current?.mode.symbol ?? "figure.walk"),
+                               url: "mytime://event/\(o.id)", canComplete: false,
+                               compactLeading: leading, phase: phase, routeURL: route(o), legs: legStates),
+                staleAt: stale))
         }
 
         // 朝：実行中の朝

@@ -88,3 +88,24 @@ final class ConsistencyTests: XCTestCase {
         XCTAssertFalse(BelongingSuggest.forSpec(.class).isEmpty)
     }
 }
+
+final class TravelPlanTests: XCTestCase {
+    func testChainPositionAndWrite() {
+        let raw = [TravelLeg(id: "a", mode: .walk, from: "自宅", to: "丸太町智恵光院", departMin: 0, arriveMin: 6),
+                   TravelLeg(id: "b", mode: .bus, from: "丸太町智恵光院", to: "烏丸丸太町", line: "市バス10", departMin: 0, arriveMin: 14),
+                   TravelLeg(id: "c", mode: .subway, from: "丸太町", to: "四条", departMin: 0, arriveMin: 4),
+                   TravelLeg(id: "d", mode: .walk, from: "四条", to: "教室", departMin: 0, arriveMin: 8)]
+        let xs = TravelPlan.chain(raw)
+        XCTAssertEqual(xs.map(\.departMin), [-32, -26, -12, -8])
+        XCTAssertEqual(xs.last?.arriveMin, 0)
+        let p = TravelPlan.position(xs, minute: -20)
+        XCTAssertEqual(p.current?.id, "b")
+        XCTAssertEqual(p.next?.id, "c")
+        XCTAssertNil(TravelPlan.position(xs, minute: -40).current)
+        XCTAssertEqual(TravelPlan.position(xs, minute: -40).next?.id, "a")
+        let extra = TravelPlan.write(xs, into: nil)
+        XCTAssertEqual(extra["travelMinutes"]?.intValue, 32, "移動時間は最初の出発に合わせる")
+        XCTAssertEqual(TravelPlan.legs(extra).map(\.id), ["a", "b", "c", "d"])
+        XCTAssertEqual(TravelPlan.legs(extra)[1].line, "市バス10")
+    }
+}

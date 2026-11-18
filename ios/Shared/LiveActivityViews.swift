@@ -50,7 +50,7 @@ func kindLabel(_ k: String) -> String {
 func phaseLabel(_ k: String, _ p: Phase) -> String {
     switch p {
     case .before: return k == "shift" ? "出勤まで" : k == "transit" ? "出発まで" : k == "classNext" ? "開始まで" : "あと"
-    case .active: return k == "shift" ? "勤務中" : k == "classNext" ? "授業中" : k == "transit" ? "出発の時刻" : "進行中"
+    case .active: return k == "shift" ? "勤務中" : k == "classNext" ? "授業中" : k == "transit" ? "移動中" : "進行中"
     case .ended: return "終了"
     case .run: return k == "study" ? "集中" : "経過"
     }
@@ -168,6 +168,38 @@ struct SubScheduleLine: View {
     }
 }
 
+// MARK: - 移動の段取り（区間を時刻の順に。まだ来ていない区間には残りの分を出す）
+
+struct LegsList: View {
+    var state: MyTimeActivityAttributes.ContentState
+    var limit = 4
+    var body: some View {
+        if let legs = state.legs, !legs.isEmpty {
+            // 終わった区間は出さない（アプリが更新したとき）。乗り物の区間を目立たせる
+            let rest = legs.filter { $0.arrive > .now }
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array((rest.isEmpty ? legs : rest).prefix(limit).enumerated()), id: \.offset) { _, l in
+                    HStack(spacing: 6) {
+                        Image(systemName: l.symbol).font(.caption.weight(.bold))
+                            .foregroundStyle(l.ride ? accent(state) : .secondary)
+                            .frame(width: 18)
+                        Text(l.depart, style: .time).font(.caption.weight(.semibold)).monospacedDigit()
+                        Text(l.ride ? "\(l.from) → \(l.to)" : "\(l.to)へ").font(.caption.weight(l.ride ? .bold : .regular)).lineLimit(1)
+                        if let line = l.line { Text(line).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                        Spacer(minLength: 4)
+                        if l.depart > .now {
+                            MinuteCountdown(from: .now, to: l.depart, compact: true)
+                                .font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(accent(state))
+                                .frame(maxWidth: 52, alignment: .trailing)
+                        }
+                    }
+                    .transition(.push(from: .bottom))
+                }
+            }
+        }
+    }
+}
+
 // MARK: - 拡張表示の下段
 
 struct ExpandedBottom: View {
@@ -194,6 +226,7 @@ struct ExpandedBottom: View {
                 TimeProgressBar(state: state, stale: stale)
             }
             SubScheduleLine(state: state)
+            LegsList(state: state, limit: 3)
             HStack(spacing: 8) {
                 if (kind == "task" || kind == "study"), let tid = state.token, phase(state, stale: stale) == .run {
                     Button(intent: FinishTaskIntent(taskId: tid)) { Label("完了", systemImage: "checkmark") }
@@ -279,6 +312,7 @@ struct LockScreenView: View {
                 TimeProgressBar(state: state, stale: stale)
             }
             SubScheduleLine(state: state)
+            LegsList(state: state)
             if let r = state.routeURL, let u = URL(string: r), p == .before {
                 Link(destination: u) {
                     Label("Apple マップで経路を開く", systemImage: "arrow.triangle.turn.up.right.diamond.fill")

@@ -213,7 +213,7 @@ struct LiveActivitySettingsView: View {
                     }
                 }
                 if let result { Text(result).font(.footnote).foregroundStyle(.secondary).transition(.opacity) }
-                NavigationLink { LivePreviewView() } label: { Label("表示の見本（8種類）", systemImage: "eye") }
+                NavigationLink { LivePreviewView() } label: { Label("表示の見本（9種類）", systemImage: "eye") }
                 NavigationLink { DiagnosticsView() } label: { Label("診断", systemImage: "stethoscope") }
                 Button("いま出ているものをすべて終える", systemImage: "xmark.circle", role: .destructive) { confirmEnd = true }
             }

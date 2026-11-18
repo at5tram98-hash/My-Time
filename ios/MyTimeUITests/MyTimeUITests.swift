@@ -63,19 +63,29 @@ final class MyTimeUITests: XCTestCase {
         }
     }
 
-    /// ロック画面の表示の見本（8種類）に行ける
+    /// ロック画面の表示の見本（9種類）に行ける
     func testLivePreviewReachable() {
         app.tabBars.buttons["その他"].tap()
         let cell = app.staticTexts["ロック画面の表示"]
         var tries = 0
         while !cell.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
         cell.tap()
-        let preview = app.buttons["表示の見本（8種類）"]
+        let preview = app.buttons["表示の見本（9種類）"]
         tries = 0
-        while !preview.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
-        XCTAssertTrue(preview.isHittable)
+        // 一番下の行は浮いたタブバーに隠れることがあるので、少しずつ上へ送る
+        while !preview.isHittable && tries < 12 { app.swipeUp(velocity: .slow); tries += 1 }
+        XCTAssertTrue(preview.exists)
         preview.tap()
         XCTAssertTrue(app.navigationBars["表示の見本"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["5302教室"].exists || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "5302")).firstMatch.exists)
+        // 移動の段取りの見本：バス停の名前が出る
+        let stop = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "丸太町智恵光院")).firstMatch
+        tries = 0
+        while !stop.isHittable && tries < 12 { app.swipeUp(); tries += 1 }
+        XCTAssertTrue(stop.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "transit-legs"
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 }

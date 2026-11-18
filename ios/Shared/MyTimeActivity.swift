@@ -48,6 +48,19 @@ struct MyTimeActivityAttributes: ActivityAttributes {
         var subNext: String? = nil
         /// 経路を開くリンク（場所がある予定。mytime://route/ID → アプリから Apple マップの経路を開く）
         var routeURL: String? = nil
+        /// 移動の段取り（家を出てから着くまでの区間）。時刻が来るとそれぞれの行の残りが0になる
+        var legs: [LegState]? = nil
+    }
+
+    /// 移動の1区間
+    struct LegState: Codable, Hashable {
+        var symbol: String
+        var from: String
+        var to: String
+        var line: String?
+        var depart: Date
+        var arrive: Date
+        var ride: Bool
     }
 
     /// 種類（LiveKind の rawValue）

@@ -4,6 +4,14 @@
 <dict>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>タスクの開始・確認の時刻と、朝の起床に、時計のアラームと同じように鳴らすために使います。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.fujiiyuuki.mytime.live</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>CFBundleURLTypes</key>
