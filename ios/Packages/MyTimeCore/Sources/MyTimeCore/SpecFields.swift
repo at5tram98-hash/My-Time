@@ -148,4 +148,8 @@ let SPEC_FIELDS: [SpecTypeId: [SpecField]] = [
     .leisure: [
         .init(key: "wish", label: "やりたいこと", kind: .text, unit: nil, options: [], placeholder: nil, hint: nil)
     ],
+    .belongings: [
+        .init(key: "items", label: "持ち物", kind: .checklist, unit: nil, options: [], placeholder: nil, hint: nil),
+        .init(key: "destination", label: "行き先", kind: .text, unit: nil, options: [], placeholder: "例：大学・バイト先", hint: nil)
+    ],
 ]

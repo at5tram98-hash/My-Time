@@ -452,7 +452,21 @@ struct TaskRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(task.checked ? "未確認に戻す" : "確認した")
             } else {
-                ProgressRing(value: scrub ?? actual, ideal: nil, symbol: IconMap.symbol(task.icon), size: 32, running: task.status == .running, done: task.isDone)
+                // 輪を押すだけで完了（もう一度押すと戻す）。純正リマインダーの丸と同じ
+                Button {
+                    feedback += 1
+                    if task.isDone {
+                        model.perform("未完了に戻しました", undo: { try model.repo.taskAction(task.id, .finish) }) { try model.repo.taskAction(task.id, .undoFinish) }
+                    } else {
+                        model.perform("完了しました", undo: { try model.repo.taskAction(task.id, .undoFinish) }) { try model.repo.taskAction(task.id, .finish) }
+                    }
+                } label: {
+                    ProgressRing(value: scrub ?? actual, ideal: nil, symbol: IconMap.symbol(task.icon), size: 32, running: task.status == .running, done: task.isDone)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(task.isDone ? "未完了に戻す" : "完了にする")
             }
             Group {
                 VStack(alignment: .leading, spacing: 2) {

@@ -86,26 +86,31 @@ struct CheckpointLine: View {
     var gutter: CGFloat = 0
     /// 現在時刻の札と重なるとき（時刻の列ではなく、その右に出す）
     var nearNow = false
+    /// 線の色（チェックポイントはオレンジ、起床アラームは黄色）
+    var tint: Color = .orange
+    /// 名前の前のアイコン（起床アラームなど）
+    var symbol: String? = nil
     var onTap: () -> Void
     @Environment(AppModel.self) private var model
 
     var body: some View {
         ZStack(alignment: .leading) {
-            Rectangle().fill(Color.orange).frame(height: 1.5).padding(.leading, gutter)
+            Rectangle().fill(tint).frame(height: 1.5).padding(.leading, gutter)
             HStack(spacing: 0) {
                 Text(model.hm(checkpoint.at))
                     .font(.caption2.weight(.bold)).monospacedDigit()
                     .padding(.leading, 5).padding(.trailing, 4)
                 if !checkpoint.title.isEmpty {
                     Rectangle().fill(.white.opacity(0.5)).frame(width: 1, height: 10)
+                    if let symbol { Image(systemName: symbol).font(.system(size: 8, weight: .bold)).padding(.leading, 4) }
                     Text(checkpoint.title)
                         .font(.caption2.weight(.semibold)).lineLimit(1)
                         .padding(.leading, 4).padding(.trailing, 6)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(tint == .yellow ? Color.black : .white)
             .padding(.vertical, 1)
-            .background(Capsule().fill(Color.orange))
+            .background(Capsule().fill(tint))
             .fixedSize()
             // 時刻の部分が目盛りの列の右端にそろうように置く
             .offset(x: gutter > 0 ? (nearNow ? gutter + 2 : max(0, gutter - 40)) : 1)

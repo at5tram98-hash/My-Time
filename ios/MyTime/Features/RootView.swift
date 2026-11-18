@@ -7,7 +7,7 @@ enum AppTab: Hashable { case today, calendar, tasks, more }
 /// その他タブの中で開く画面
 enum MoreRoute: Hashable { case review, settings, dayPlan, employers, payroll, specSettings, live, autoDelete }
 /// タスクタブの中の画面（朝・清掃はタスクとして扱う）
-enum TasksRoute: Hashable { case morning, morningRun, cleaning, cleaningRun }
+enum TasksRoute: Hashable { case morning, morningRun, cleaning, cleaningRun, belongings }
 
 /// 開くシート（下から出る画面）
 enum SheetRoute: Identifiable, Hashable {
@@ -112,6 +112,8 @@ struct EditorSeed: Hashable {
     var start: EpochMs?
     var end: EpochMs?
     var spec: SpecTypeId?
+    /// 新しく作るときの名前（タスクの入力欄から「詳しく」で開いたとき）
+    var title: String? = nil
 }
 
 @MainActor

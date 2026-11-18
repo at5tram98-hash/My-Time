@@ -52,6 +52,32 @@ struct EventDetailView: View {
                             }
                         }
                         details(ev, start: start, end: end)
+                        // 持ち物：その場で押して確認（回ごとに印が残る）
+                        if let occ = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start }) {
+                            let names = BelongingsList.eventItems(ev)
+                            if !names.isEmpty {
+                                let k = BelongingsList.key(occ)
+                                let checked = BelongingsList.checked(ev, key: k)
+                                let g = BelongingGroup(id: "e:\(occ.id)", title: ev.title, when: start, source: .event(occurrenceId: occ.id, masterId: ev.id, key: k), items: names.map { ($0, checked.contains($0)) })
+                                Section {
+                                    ForEach(names, id: \.self) { n in
+                                        let on = checked.contains(n)
+                                        Button { BelongingsList.set(model: model, group: g, names: [n], on: !on) } label: {
+                                            HStack(spacing: 12) {
+                                                Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(on ? Color.green : Color.secondary)
+                                                    .contentTransition(.symbolEffect(.replace))
+                                                Text(n).strikethrough(on).foregroundStyle(on ? .secondary : .primary)
+                                                Spacer()
+                                            }
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                } header: {
+                                    HStack { Text("持ち物"); Spacer(); Text("\(checked.intersection(names).count)/\(names.count)").monospacedDigit() }
+                                }
+                            }
+                        }
                         if let st = model.studioType(ev.extra?["studio"]?["typeId"]?.stringValue) {
                             let rows = studioInfoRows(st, values: ev.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
                             if !rows.isEmpty {

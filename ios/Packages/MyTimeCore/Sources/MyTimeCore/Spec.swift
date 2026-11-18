@@ -8,6 +8,8 @@ public enum SpecTypeId: String, CaseIterable, Sendable {
     case workout, project, paperwork, payment, leisure
     /// iOS 版で追加（S26 清掃・S27 朝）。Web 版は知らない種類を「種類なし」として扱う
     case cleaning, morning
+    /// S28 持ち物チェック（出かける前に持ち物を1つずつ確認する）
+    case belongings
 }
 
 public enum SpecGroup: String, CaseIterable, Sendable {
@@ -64,10 +66,11 @@ public let SPEC_DEFS: [SpecDef] = [
     .init(id: .leisure, code: "S25", name: "自由時間・趣味・休息", group: .self, symbol: "music.note", color: "#BF5AF2", isEvent: false, isCheck: false, blurb: "空いた時間に候補を出すだけです"),
     .init(id: .cleaning, code: "S26", name: "清掃", group: .life, symbol: "bubbles.and.sparkles.fill", color: "#30B0C7", isEvent: false, isCheck: false, blurb: "場所を選び、箇所ごとに Yes・No・対象外を記録します"),
     .init(id: .morning, code: "S27", name: "朝", group: .life, symbol: "sunrise.fill", color: "#FF9F0A", isEvent: false, isCheck: false, blurb: "起床アラームと身支度の工程を順に案内します"),
+    .init(id: .belongings, code: "S28", name: "持ち物チェック", group: .life, symbol: "bag.fill", color: "#5E5CE6", isEvent: false, isCheck: false, blurb: "出かける前に、持ち物を1つずつ確認します"),
 ]
 
-/// 種類を選ぶ画面に出すもの（読書は廃止。既存のデータは読めるように定義は残す）
-public let SPEC_PICKABLE: [SpecDef] = SPEC_DEFS.filter { $0.id != .reading }
+/// 種類を選ぶ画面に出すもの（読書と「朝・帰宅・就寝ルーティン」は廃止。朝は S27「朝」に一本化。既存のデータは読めるように定義は残す）
+public let SPEC_PICKABLE: [SpecDef] = SPEC_DEFS.filter { $0.id != .reading && $0.id != .routine }
 
 /// 試験系（学習計画を立てる）
 public extension SpecTypeId { var isExamLike: Bool { self == .exam || self == .language || self == .certification } }

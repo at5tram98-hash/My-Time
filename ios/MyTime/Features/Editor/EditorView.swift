@@ -740,6 +740,7 @@ struct EditorView: View {
         start = model.time.date(base)
         end = model.time.date(seed.end ?? base + HOUR)
         spec = seed.spec
+        if let t = seed.title, !t.isEmpty { title = t }
         if let id = seed.taskId, let t = model.tasks.first(where: { $0.id == id }) {
             isNew = false; kind = .task; task = t
             title = t.title; notes = t.notes; spec = t.specType; isCheck = t.kind == .check

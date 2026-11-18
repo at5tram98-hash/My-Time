@@ -68,7 +68,7 @@ struct MoreScreen: View {
 
                 Section("表示と種類") {
                     NavigationLink(value: MoreRoute.specSettings) {
-                        row("種類ごとの設定", "square.stack.3d.up.fill", .blue, "授業・バイト・試験など27種類の見た目と既定")
+                        row("種類ごとの設定", "square.stack.3d.up.fill", .blue, "授業・バイト・試験など種類ごとの見た目と既定")
                     }
                     NavigationLink(value: MoreRoute.live) {
                         row("ロック画面の表示", "platter.filled.top.iphone", .indigo, "Live Activity・ダイナミックアイランドに出すもの")

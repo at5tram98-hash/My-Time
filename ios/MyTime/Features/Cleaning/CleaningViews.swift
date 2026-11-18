@@ -194,7 +194,7 @@ struct CleaningSessionView: View {
                                 Text("\(c.done) / \(c.total) 箇所").font(.title2.weight(.bold)).monospacedDigit()
                                     .contentTransition(.numericText())
                                     .animation(Motion.value, value: c.done)
-                                Text("Yes＝清掃した・No＝まだ・対象外＝今回はしない（数えない）").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                Text("名前を押すと Yes。Yes＝清掃した・No＝まだ・対象外＝今回はしない（数えない）").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                                 Text(Date(timeIntervalSince1970: Double(s.startedAt) / 1000), style: .timer).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(.teal)
                             }
                             Spacer()
@@ -252,10 +252,17 @@ struct CleaningSessionView: View {
 
     private func card(_ i: CleaningItem, status: CleaningStatus) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(i.name).font(.body.weight(.semibold)).strikethrough(status == .skip).foregroundStyle(status == .skip ? .secondary : .primary)
-                Text(i.lastDone.map { "前回 \(model.time.dayLabel($0))" } ?? "未記録").font(.caption).foregroundStyle(.secondary)
+            // 名前を押すだけで「Yes」（もう一度押すと「No」に戻す）
+            Button { set(i.id, status == .yes ? .no : .yes) } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(i.name).font(.body.weight(.semibold)).strikethrough(status == .skip).foregroundStyle(status == .skip ? .secondary : .primary)
+                    Text(i.lastDone.map { "前回 \(model.time.dayLabel($0))" } ?? "未記録").font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHint("押すと清掃した（Yes）にします")
             Spacer(minLength: 4)
             HStack(spacing: 4) {
                 ForEach(CleaningStatus.allCases, id: \.self) { x in

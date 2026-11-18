@@ -5,7 +5,8 @@ import MyTimeCore
 struct TasksScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
-    @State private var filter: Filter = .open
+    /// 選んだ絞り込みは次に開いたときも同じ
+    @AppStorage("tasks.filter") private var filter: Filter = .open
     /// 並び：time（時刻）・deadline（締切）・created（追加順）・title（名前）
     @AppStorage("tasks.sort") private var sort = "time"
     /// まとめ方：when（いつ）・category（カテゴリー）・none
@@ -36,18 +37,17 @@ struct TasksScreen: View {
         NavigationStack(path: $router.tasksPath) {
             let list = filtered
             List {
+                // 上：次にやること（1行）と、生活（朝・清掃・持ち物）。検索中は出さない
+                if query.isEmpty {
+                    Section { nextRow }
+                    Section { LifeTaskRows() } header: { Text("生活") }
+                }
                 Section {
                 } header: {
-                    VStack(spacing: 10) {
-                        todayCard
-                        LifeTaskCards()
-                        summaryTiles
-                        filterBar
-                    }
-                    .textCase(nil)
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, -4)
-                    .padding(.bottom, 4)
+                    filterBar
+                        .textCase(nil)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, -16)
                 }
 
                 if list.isEmpty {
@@ -57,6 +57,9 @@ struct TasksScreen: View {
                         if query.isEmpty { Text(emptyHint) } else { Text("「\(query)」を含むタスクはありません") }
                     } actions: {
                         if !query.isEmpty { Button("検索をやめる") { query = "" } }
+                        else if filter == .open || filter == .today || filter == .inbox {
+                            Button("タスクを追加") { quickFocused = true }.buttonStyle(.borderedProminent)
+                        }
                     }
                     .listRowBackground(Color.clear)
                 } else if filter == .open && query.isEmpty && grouping != "none" {
@@ -112,50 +115,45 @@ struct TasksScreen: View {
                 case .morningRun: MorningRunView()
                 case .cleaning: CleaningHomeView()
                 case .cleaningRun: CleaningSessionView()
+                case .belongings: BelongingsView()
                 }
             }
         }
     }
 
-    // MARK: ガラスの部品
+    // MARK: 上の部品
 
-    /// 上のまとめ（今日・期限切れ・フラグ）。押すとその絞り込みへ
-    /// 今日の進み：完了の割合・作業した時間・次にやること（すぐ開始できる）
-    private var todayCard: some View {
+    /// 次にやること（1行）：今日の進み・次のタスク・開始／完了のボタン。押すとそのタスクを開く
+    private var nextRow: some View {
         let d0 = model.time.startOfDay(model.now)
         let today = tasksForDay(model.tasks, day: d0, time: model.time)
         let done = today.filter(\.isDone).count
-        let worked = model.tasks.reduce(EpochMs(0)) { sum, t in
-            sum + t.intervals.reduce(0) { $0 + max(0, min($1.end ?? model.now, model.now) - max($1.start, d0)) }
-        }
         let running = model.tasks.first { $0.status == .running }
         // 次にやること：今日の画面と同じく、今日これから（今日の中で時刻の早い順）。前の日の遅れは「期限切れ」で見る
         let cands = today.filter { !$0.isDone && $0.kind == .do && ($0.plannedStart ?? d0) >= d0 }
         let upcoming = cands.filter { ($0.plannedEnd ?? .max) > model.now }
         let next = running ?? (upcoming.isEmpty ? cands : upcoming).min { (taskAnchor($0) ?? .max) < (taskAnchor($1) ?? .max) }
         let ratio = today.isEmpty ? 0 : Double(done) / Double(today.count)
-        return HStack(spacing: 14) {
+        return HStack(spacing: 12) {
             ZStack {
-                Circle().stroke(Color.secondary.opacity(0.18), lineWidth: 7)
-                Circle().trim(from: 0, to: ratio).stroke(Color.green.gradient, style: StrokeStyle(lineWidth: 7, lineCap: .round)).rotationEffect(.degrees(-90))
-                VStack(spacing: 0) {
-                    Text("\(done)/\(today.count)").font(.subheadline.weight(.bold)).monospacedDigit()
-                    Text("今日").font(.system(size: 9)).foregroundStyle(.secondary)
-                }
+                Circle().stroke(Color.secondary.opacity(0.18), lineWidth: 4)
+                Circle().trim(from: 0, to: ratio).stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round)).rotationEffect(.degrees(-90))
+                Text("\(done)/\(today.count)").font(.system(size: 11, weight: .bold)).monospacedDigit()
             }
-            .frame(width: 62, height: 62)
+            .frame(width: 40, height: 40)
             .animation(Motion.value, value: ratio)
-            VStack(alignment: .leading, spacing: 4) {
-                Label("作業 \(formatDuration(worked))", systemImage: "timer").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            .accessibilityLabel("今日のタスク \(today.count)件中 \(done)件完了")
+            VStack(alignment: .leading, spacing: 2) {
                 if let t = next {
-                    Text(t.status == .running ? "実行中" : "次にやること").font(.caption2.weight(.bold)).foregroundStyle(t.status == .running ? .green : .accentColor)
-                    Text(t.title).font(.headline).lineLimit(1)
+                    Text(t.status == .running ? "実行中" : "次にやること").font(.caption.weight(.semibold)).foregroundStyle(t.status == .running ? .green : .secondary)
+                    Text(t.title).font(.body.weight(.semibold)).lineLimit(1)
                     if let s = t.plannedStart {
                         Text((model.time.isSameDay(s, model.now) ? "" : model.time.dayLabel(s) + " ") + "\(model.hm(s))〜\(t.plannedEnd.map(model.hm) ?? "")")
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 } else {
-                    Text(today.isEmpty ? "今日のタスクはありません" : "今日のタスクはすべて完了").font(.headline)
+                    Text("今日").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(today.isEmpty ? "今日のタスクはありません" : "今日のタスクはすべて完了").font(.body.weight(.semibold))
                 }
             }
             Spacer(minLength: 0)
@@ -166,16 +164,14 @@ struct TasksScreen: View {
                         try model.repo.taskAction(t.id, a)
                     }
                 } label: {
-                    Image(systemName: t.status == .running ? "checkmark" : "play.fill").font(.title3.weight(.bold)).foregroundStyle(.white)
-                        .frame(width: 48, height: 48)
-                        .background(Circle().fill(t.status == .running ? Color.green.gradient : Color.accentColor.gradient))
+                    Image(systemName: t.status == .running ? "checkmark" : "play.fill").font(.body.weight(.bold)).foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(t.status == .running ? Color.green : Color.accentColor))
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel(t.status == .running ? "完了" : "開始")
             }
         }
-        .padding(14)
-        .glass(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { if let t = next { router.open(.task(t.id)) } }
     }
@@ -186,37 +182,10 @@ struct TasksScreen: View {
         return dict.keys.sorted { a, b in a.isEmpty ? false : b.isEmpty ? true : a < b }.map { k in (k.isEmpty ? "カテゴリーなし" : k, dict[k]!, Color.secondary) }
     }
 
-    private var summaryTiles: some View {
-        let late = model.tasks.filter { !$0.isDone && $0.kind == .do && ($0.plannedEnd.map { $0 < model.now } ?? false) }.count
-        return Group {
-            HStack(spacing: 10) {
-                tile("今日", "\(count(.today))", "sun.max.fill", .orange) { filter = .today }
-                tile("期限切れ", "\(late)", "exclamationmark.circle.fill", late > 0 ? .red : .secondary) { filter = .open }
-                tile("フラグ", "\(count(.flagged))", "flag.fill", .orange) { filter = .flagged }
-                tile("完了", "\(count(.done))", "checkmark.seal.fill", .green) { filter = .done }
-            }
-        }
-    }
-
-    private func tile(_ title: String, _ value: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
-        Button { withAnimation(Motion.pop) { action() } } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
-                Text(value).font(.title3.weight(.bold)).monospacedDigit().contentTransition(.numericText())
-                Text(title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .glass(RoundedRectangle(cornerRadius: 16, style: .continuous), interactive: true)
-        }
-        .buttonStyle(PressableStyle())
-        .accessibilityLabel("\(title) \(value)件")
-    }
-
-    /// 絞り込み：ガラスの帯の上を、選んだ印がなめらかに移動する
+    /// 絞り込み：平らなチップ。選んだものだけ塗る（印はなめらかに移動する）
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 ForEach(Filter.allCases) { f in
                     let on = filter == f
                     Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { filter = f } } label: {
@@ -231,9 +200,10 @@ struct TasksScreen: View {
                         .padding(.horizontal, 12).frame(minHeight: 34)
                         .background {
                             if on {
-                                Capsule().fill(Color.accentColor.opacity(0.16))
-                                    .overlay(Capsule().strokeBorder(.white.opacity(0.5), lineWidth: 0.6))
+                                Capsule().fill(Color.accentColor.opacity(0.14))
                                     .matchedGeometryEffect(id: "filter", in: filterNS)
+                            } else {
+                                Capsule().fill(Color(.tertiarySystemFill))
                             }
                         }
                         .contentShape(Capsule())
@@ -242,8 +212,7 @@ struct TasksScreen: View {
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
-            .padding(3)
-            .glass(Capsule(), interactive: true)
+            .padding(.horizontal, 16)
             .padding(.vertical, 4)
         }
         .scrollClipDisabled()
@@ -259,14 +228,23 @@ struct TasksScreen: View {
                 .submitLabel(.next)
                 .onSubmit(addQuick)
             if !quickTitle.isEmpty {
+                // 時刻や種類も決めたいとき：書いた名前のまま入力画面へ
+                Button {
+                    let t = quickTitle.trimmingCharacters(in: .whitespaces)
+                    quickTitle = ""; quickFocused = false
+                    router.open(.editor(EditorSeed(kind: .task, title: t)))
+                } label: { Image(systemName: "square.and.pencil").font(.title3) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .accessibilityLabel("詳しく入力")
+                    .transition(.scale.combined(with: .opacity))
                 Button { addQuick() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                     .buttonStyle(.plain).foregroundStyle(Color.accentColor)
                     .transition(.scale.combined(with: .opacity))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .glass(Capsule(), interactive: true)
-        .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5))
         .padding(.horizontal).padding(.bottom, 6)
         .animation(.snappy, value: quickTitle.isEmpty)
     }
@@ -282,6 +260,13 @@ struct TasksScreen: View {
             .swipeActions(edge: .leading) {
                 if t.kind == .do && t.status != .done {
                     Button("完了", systemImage: "checkmark") { finish(t) }.tint(.green)
+                    // まだ始めていなければ、右へなぞって開始
+                    if t.status == .notStarted {
+                        Button("開始", systemImage: "play.fill") {
+                            model.perform("開始しました", undo: { try model.repo.taskAction(t.id, .undoStart) }) { try model.repo.taskAction(t.id, .start) }
+                        }
+                        .tint(.blue)
+                    }
                 }
             }
             // 長押しのメニュー（純正リマインダーと同じく、よく使う操作をまとめる）

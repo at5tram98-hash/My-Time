@@ -82,6 +82,25 @@ struct MorningHomeView: View {
                 Text("「編集」で並べ替え（ドラッグ）、左へなぞって削除。オフにした工程は飛ばします。平均は実際に計った時間だけで出し、目安は実測として扱いません。")
             }
 
+            if !r.history.isEmpty {
+                Section("最近の朝") {
+                    let recent = Array(r.history.prefix(7))
+                    let maxMs = max(1, recent.map { $0.elapsed(now: $0.finishedAt ?? 0) }.max() ?? 1)
+                    ForEach(recent) { run in
+                        let ms = run.elapsed(now: run.finishedAt ?? run.startedAt)
+                        HStack(spacing: 10) {
+                            Text(model.time.dayLabel(run.startedAt)).font(.caption).foregroundStyle(.secondary).frame(width: 92, alignment: .leading)
+                            GeometryReader { g in
+                                Capsule().fill(Color.orange.gradient).frame(width: max(6, g.size.width * CGFloat(ms) / CGFloat(maxMs)))
+                            }
+                            .frame(height: 8)
+                            Text(formatSeconds(ms)).font(.caption.weight(.semibold)).monospacedDigit().frame(width: 64, alignment: .trailing)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+
             Section {
                 Stepper("出発の \(r.bufferMinutes)分前に準備を終える", value: Binding(get: { r.bufferMinutes }, set: { v in var x = model.morning; x.bufferMinutes = v; model.saveMorning(x) }), in: 0...60, step: 5)
             }
@@ -360,7 +379,20 @@ struct MorningRunView: View {
                         if let n = run.next {
                             Label("次：\(n.name)", systemImage: "arrow.turn.down.right").font(.headline).foregroundStyle(.secondary)
                         }
+                        // 今日の持ち物（あれば）：準備の途中で確かめられる
+                        let bring = BelongingsList.items(model: model).filter { $0.when.map { model.time.isSameDay($0, now) } ?? true }
+                        let left = bring.reduce(0) { $0 + $1.items.filter { !$0.done }.count }
+                        if !bring.isEmpty {
+                            NavigationLink { BelongingsView() } label: {
+                                Label(left == 0 ? "今日の持ち物はそろっています" : "今日の持ち物 あと\(left)個", systemImage: "bag.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 14).padding(.vertical, 8)
+                                    .background(Capsule().fill(Color.indigo.opacity(0.12)))
+                                    .foregroundStyle(left == 0 ? Color.green : Color.indigo)
+                            }
+                        }
                         Spacer(minLength: 0)
+                        Text("左へなぞると完了・右へなぞると前の工程").font(.caption2).foregroundStyle(.tertiary)
                         Text("準備の経過 \(clock(run.elapsed(now: now)))" + (run.isPaused ? "（一時停止中）" : "")).font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
                         Button { act { $0.complete(now: model.now) } } label: {
                             Label("完了", systemImage: "checkmark").font(.title3.weight(.bold))
@@ -379,6 +411,13 @@ struct MorningRunView: View {
                         }
                     }
                     .padding()
+                    // 画面のどこでも：左へなぞると完了、右へなぞると前の工程へ（ボタンを探さなくてよい）
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 40).onEnded { v in
+                        guard abs(v.translation.width) > abs(v.translation.height) * 1.5 else { return }
+                        if v.translation.width < 0 { act { $0.complete(now: model.now) } }
+                        else if run.index > 0 { act { $0.back(now: model.now) } }
+                    })
                     .background(alignment: .top) {
                         // 進むほど上から暖かい色が広がる（朝日のイメージ）
                         LinearGradient(colors: [Color.orange.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)

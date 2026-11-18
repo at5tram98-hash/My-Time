@@ -207,7 +207,21 @@ struct TodayView: View {
             !t.isDone && t.kind == .do && (t.plannedEnd.map { $0 < now } ?? false)
         }.count
         let dueSoon = model.tasks.filter { t in !t.isDone && (t.deadline.map { $0 >= now && $0 < now + 48 * HOUR } ?? false) }.count
+        let m = model.morning
+        let hour = model.time.minutesOfDay(now) / 60
+        // 朝：準備中なら進み具合、朝（4〜11時）なら「朝の準備」、それ以外は出さない
+        let morningValue: String? = m.active.map { "\($0.index + 1)/\($0.steps.count)" } ?? (isToday && (4..<11).contains(hour) && !m.enabledSteps.isEmpty && !m.history.contains { r in r.finishedAt.map { model.time.isSameDay($0, now) } ?? false } ? "始める" : nil)
+        let bring = BelongingsList.items(model: model).filter { $0.when.map { model.time.isSameDay($0, day) } ?? true }
+        let bringLeft = bring.reduce(0) { $0 + $1.items.filter { !$0.done }.count }
         return HStack(spacing: 6) {
+            if let v = morningValue {
+                StatusChip(symbol: "sunrise.fill", label: "朝", value: v, tint: .orange) {
+                    router.openTasks(m.active != nil ? .morningRun : .morning)
+                }
+            }
+            if bringLeft > 0 {
+                StatusChip(symbol: "bag", label: "持ち物", value: "\(bringLeft)", tint: .indigo) { router.openTasks(.belongings) }
+            }
             if overdue > 0 {
                 StatusChip(symbol: "exclamationmark.circle", label: "遅れ", value: "\(overdue)", tint: .red) { router.tab = .tasks }
             }

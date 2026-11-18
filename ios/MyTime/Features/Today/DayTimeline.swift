@@ -138,6 +138,13 @@ struct DayTimeline: View {
                                 CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width)), gutter: Self.gutter, nearNow: nearNow) { router.open(.checkpoint(c)) }
                                     .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
                             }
+                            // 起床アラーム：その曜日に鳴るアラームを「起床」の線で。押すと朝の画面
+                            ForEach(wakeMarks, id: \.id) { c in
+                                CheckpointLine(checkpoint: c, width: max(40, laneWidth(0, width)), gutter: Self.gutter, tint: .yellow, symbol: "alarm.fill") {
+                                    router.openTasks(model.morning.active != nil ? .morningRun : .morning)
+                                }
+                                .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
+                            }
                             if model.time.isSameDay(day, now) { nowLine(width: geo.size.width) }
                         }
                     }
@@ -296,6 +303,21 @@ struct DayTimeline: View {
 
     // MARK: 予定・タスク・確認・作業枠の配置
 
+    /// この日に鳴る起床アラーム（時刻の線として出す）。30分以内に続くアラームは1本にまとめる
+    private var wakeMarks: [Checkpoint] {
+        let d0 = model.time.startOfDay(day)
+        let times = model.morning.alarms.filter(\.enabled)
+            .filter { $0.weekdays.isEmpty || $0.weekdays.contains(model.time.weekday(d0)) }
+            .map { $0.hour * 60 + $0.minute }.sorted()
+        var groups: [[Int]] = []
+        for m in times {
+            if let last = groups.last?.last, m - last <= 30 { groups[groups.count - 1].append(m) } else { groups.append([m]) }
+        }
+        return groups.map { g in
+            Checkpoint(id: "wake-\(g[0])", title: g.count > 1 ? "起床（アラーム\(g.count)つ）" : "起床", at: d0 + EpochMs(g[0]) * MINUTE)
+        }
+    }
+
     private func makeBlocks() -> [Block] {
         let d0 = model.time.startOfDay(day), d1 = model.time.addDays(d0, 1)
         /// 配置前の下書き（配置は layoutDay がレーンごとに決める）
@@ -333,6 +355,21 @@ struct DayTimeline: View {
             let id = "session:\(s.id)"
             add(taskLane, Draft(item: TimedItem(id: id, start: st, end: en)) { p in
                 Block(id: id, kind: .session, refId: parent.id, title: "\(parent.title)・\(s.title)", start: st, end: en, plannedEnd: en, color: .accentColor, symbol: "square.stack", lane: taskLane, placed: p, faded: s.done || parent.status == .done, running: false)
+            })
+        }
+        // 朝の準備：実際に準備した時間（履歴）と、いま準備中の時間をタスクのレーンに。押すと朝の画面
+        let mr = model.morning
+        var runs = mr.history.filter { $0.finishedAt != nil }
+        if let a = mr.active { runs.append(a) }
+        for r in runs {
+            let st = r.startedAt, en = r.finishedAt ?? max(now, r.startedAt + 5 * MINUTE)
+            guard st < d1, en > d0 else { continue }
+            let id = "morning:\(r.id)"
+            let running = r.finishedAt == nil
+            add(taskLane, Draft(item: TimedItem(id: id, start: st, end: max(en, st + 15 * MINUTE))) { p in
+                Block(id: id, kind: .session, refId: "morning:", title: running ? "朝の準備 \(r.index + 1)/\(r.steps.count)" : "朝の準備 \(Int((en - st) / MINUTE))分",
+                      start: st, end: max(en, st + 15 * MINUTE), plannedEnd: en, color: .orange, symbol: "sunrise.fill", lane: taskLane, placed: p,
+                      faded: !running, running: running, meta: running ? [Meta(symbol: "arrow.turn.down.right", text: r.current?.name ?? "")] : [])
             })
         }
         // 計画：前の日に立てたこの日の計画（承認済みなら承認した時点のまま）を灰色で並べる
@@ -403,6 +440,8 @@ struct DayTimeline: View {
         if b.tomorrow { onPlanTap?(b.refId); return }
         switch b.kind {
         case .event: router.open(.event(b.refId))
+        case .session where b.refId == "morning:":
+            router.openTasks(model.morning.active != nil ? .morningRun : .morning)
         case .task, .check, .session: router.open(.task(b.refId))
         }
     }
@@ -648,7 +687,7 @@ struct TimelineBlock: View {
         switch block.kind {
         case .event: return block.symbol
         case .check: return block.faded ? "checkmark.circle.fill" : "circle"
-        case .session: return "square.stack"
+        case .session: return block.symbol
         case .task:
             if block.faded { return "checkmark.circle.fill" }
             if block.running { return "play.circle.fill" }
