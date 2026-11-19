@@ -92,6 +92,31 @@ public enum SubSchedule {
     public static func current(_ items: [SubItem], minute: Int) -> SubItem? {
         items.first { $0.startMin <= minute && minute < $0.endMin && !$0.done }
     }
+
+    /// あるレーンの空いた時間（`minimum` 分以上のものだけ。予定の初めから終わりまで）
+    public static func gaps(_ items: [SubItem], lane: SubItem.Lane, total: Int, minimum: Int = 15) -> [(startMin: Int, endMin: Int)] {
+        let xs = items.filter { $0.lane == lane }.sorted { $0.startMin < $1.startMin }
+        var out: [(startMin: Int, endMin: Int)] = []
+        var cursor = 0
+        for it in xs {
+            if it.startMin - cursor >= minimum { out.append((cursor, it.startMin)) }
+            cursor = max(cursor, it.endMin)
+        }
+        if total - cursor >= minimum { out.append((cursor, total)) }
+        return out
+    }
+
+    /// 前回の詳細スケジュールを、この回の長さに合わせて写す（新しい ID、未完了に戻す。はみ出す分は切る）
+    public static func copy(_ source: [SubItem], total: Int, newId: () -> String) -> [SubItem] {
+        source.compactMap { it in
+            guard it.startMin < total else { return nil }
+            var x = it
+            x.id = newId()
+            x.done = false
+            x.endMin = min(it.endMin, total)
+            return x.endMin > x.startMin ? x : nil
+        }
+    }
 }
 
 /// 持ち物の候補（種類ごとのよく使う物）

@@ -26,6 +26,14 @@ struct CalendarScreen: View {
                         .init(value: "month", title: "月"), .init(value: "list", title: "一覧"),
                     ], selection: $mode.animation(reduceMotion ? nil : Motion.sheet))
                     .padding(.horizontal)
+                    // 人ごとのカレンダー（自分・みお）。押すとその人の予定を出す・隠す（予定は消えない）
+                    if model.calendars.count > 1 {
+                        PersonPicker(calendars: model.calendars, selected: nil, dimmed: Set(model.calendars.filter { !$0.visible }.map(\.id))) { c in
+                            model.setCalendarVisible(c.id, !c.visible)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    }
                     if mode == "day" || mode == "list" {
                         WeekStrip(selected: $selected)
                             .padding(.horizontal)
@@ -100,7 +108,8 @@ struct CalendarScreen: View {
                             let c = model.occurrenceColor(o)
                             Button { router.open(.event(o.id)) } label: {
                                 HStack(spacing: 5) {
-                                    Circle().fill(c).frame(width: 7, height: 7)
+                                    if o.isStruck { Circle().fill(Color.gray).frame(width: 7, height: 7) }
+                                    else { PersonAvatar(calendar: model.calendar(o.event.calendarId), size: 14) }
                                     Text(o.title).strikethrough(o.isStruck).font(.caption.weight(.semibold)).lineLimit(1)
                                 }
                                 .foregroundStyle(.primary)
@@ -242,15 +251,16 @@ struct AgendaList: View {
         case .event(let o):
             Button { router.open(.event(o.id)) } label: {
                 HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 2).fill(model.occurrenceColor(o)).frame(width: 4, height: 34)
+                    // 人のしるし（取り消した予定は灰色）
+                    PersonAvatar(calendar: model.calendar(o.event.calendarId), size: 24)
+                        .saturation(o.isStruck ? 0 : 1).opacity(o.isStruck ? 0.5 : 1)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(.primary).lineLimit(1)
+                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck ? .secondary : .primary).lineLimit(1)
                         HStack(spacing: 6) {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
                             if o.event.recurrence != nil { Image(systemName: "repeat").accessibilityLabel("繰り返し") }
                             if isShiftPending(o.event) { PendingBadge() }
-                            if o.isStruck { StruckBadge() }
                         }
                         .font(.caption).foregroundStyle(.secondary)
                     }

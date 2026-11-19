@@ -84,6 +84,14 @@ public final class Repository {
         }
     }
 
+    /// 人（カレンダー）ごとの表示・非表示。予定は消さず、隠すだけ（Web 版の visible と同じ項目）
+    public func setCalendarVisible(_ id: String, _ visible: Bool) throws {
+        guard var c = calendars().first(where: { $0.id == id }) else { throw RepositoryError("カレンダーが見つかりません") }
+        guard c.visible != visible else { return }
+        c.visible = visible; c.updatedAt = clock()
+        try store.transaction { store.put(.calendar, id: id, json: c.json); record(.calendar, id, op: "put", action: visible ? "show" : "hide") }
+    }
+
     /// カレンダーを「自分」「みお」の2つにまとめる（何度呼んでも同じ結果）。
     /// 授業・アルバイトのカレンダーの予定は「自分」へ移し、見分けられるよう種類（大学の授業・勤務シフト）を付ける。
     /// 名前が「みお」のカレンダー（取り込みなど）の予定は「みお」へ移す。ほかのカレンダーは消す（予定は消さない）

@@ -42,13 +42,6 @@ struct EventDetailView: View {
                                     EventDayPreview(event: ev, start: start, end: end, tint: tint, struck: isStruck(ev, parsed))
                                 }
                                 .buttonStyle(.plain)
-                            } footer: {
-                                let n = SubSchedule.items(ev.extra)
-                                if let c = SubSchedule.current(n, minute: Int((now - start) / MINUTE)) {
-                                    Text("いま：\(c.title)（\(model.hm(start + EpochMs(c.endMin) * MINUTE))まで）")
-                                } else {
-                                    Text(n.isEmpty ? "押すと、この予定の中の予定・タスクを5分ごとに決められます。" : "押すと詳細スケジュール（\(n.count)件）を開きます。")
-                                }
                             }
                         }
                         Section {
@@ -109,14 +102,6 @@ struct EventDetailView: View {
                         if !ev.notes.isEmpty {
                             Section("メモ") { Text(ev.notes).textSelection(.enabled) }
                         }
-                        Section {
-                            LabeledContent("作成", value: "\(model.time.dayLabel(ev.createdAt)) \(model.hm(ev.createdAt))")
-                            if ev.updatedAt != ev.createdAt {
-                                LabeledContent("最終更新", value: "\(model.time.dayLabel(ev.updatedAt)) \(model.hm(ev.updatedAt))")
-                            }
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                         // 純正カレンダーと同じく、一番下に赤い「予定を削除」（中央ぞろえ）
                         Section {
                             Button(role: .destructive) { confirmDelete = true } label: {
@@ -152,7 +137,7 @@ struct EventDetailView: View {
                     }
                     Button("キャンセル", role: .cancel) {}
                 } message: {
-                    Text("「\(ev.title)」\n間違えたときは iPhone を振ると元に戻せます。")
+                    Text("「\(ev.title)」")
                 }
                 .sensoryFeedback(.warning, trigger: deleted)
             } else {
@@ -202,10 +187,6 @@ struct EventDetailView: View {
                         .strikethrough(struck)
                         .foregroundStyle(struck ? .secondary : .primary)
                 }
-                if struck {
-                    StruckBadge()
-                        .transition(.scale.combined(with: .opacity))
-                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dateText(start, end, allDay: ev.allDay)).font(.subheadline.weight(.medium))
                     if !ev.allDay {
@@ -217,22 +198,23 @@ struct EventDetailView: View {
                     Label("調整中のシフト", systemImage: "hourglass").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.orange.opacity(0.14)))
                 }
-                if let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
-                    HStack(spacing: 4) {
-                        Image(systemName: s.symbol).imageScale(.small)
-                        Text(s.text).lineLimit(1).minimumScaleFactor(0.8)
+                // 人と今の状態を1行に（枠や塗りは付けず、文字だけ）
+                HStack(spacing: 10) {
+                    if model.calendars.count > 1 {
+                        PersonLabel(calendar: model.calendar(ev.calendarId), size: 20)
+                            .font(.subheadline.weight(.medium))
+                            .saturation(struck ? 0 : 1)
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(s.color)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(s.color.opacity(0.14)))
-                    .fixedSize(horizontal: true, vertical: true)
+                    if !struck, let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
+                        Label(s.text, systemImage: s.symbol).labelStyle(CompactLabel())
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(s.color)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 10).padding(.horizontal, 12)
         .accessibilityElement(children: .combine)
     }
 
@@ -297,14 +279,14 @@ struct EventDetailView: View {
                 } else {
                     setStruck(ev, originalStart: nil, true)
                 }
-            } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward.circle" : "xmark.circle") }
+            } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward" : "strikethrough") }
             .buttonStyle(PressableStyle())
-            .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに灰色で「取り消し」と表示します")
+            .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに、灰色にして線を引きます")
             .confirmationDialog("繰り返しの予定を取り消します", isPresented: $askStrike, titleVisibility: .visible) {
                 Button("この回のみ取り消す") { setStruck(ev, originalStart: parsed?.originalStart, true) }
                 Button("すべての回を取り消す") { setStruck(ev, originalStart: nil, true) }
                 Button("キャンセル", role: .cancel) {}
-            } message: { Text("削除はせず、灰色で「取り消し」と表示します。") }
+            } message: { Text("削除はせず、灰色にして線を引きます。") }
         }
         .padding(.vertical, 2)
         .animation(Motion.pop, value: isStruck(ev, parsed))
@@ -353,13 +335,8 @@ struct EventDetailView: View {
     @ViewBuilder
     private func details(_ ev: MTEvent, start: EpochMs, end: EpochMs) -> some View {
         Section {
-            if let cal = model.calendar(ev.calendarId) {
-                LabeledContent("カレンダー") {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: cal.color)).frame(width: 10, height: 10)
-                        Text(cal.name)
-                    }
-                }
+            if let cal = model.calendar(ev.calendarId), model.calendars.count <= 1 {
+                LabeledContent("カレンダー") { PersonLabel(calendar: cal, size: 18) }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
             if let m = ev.travelMinutes, m > 0 {

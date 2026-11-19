@@ -239,7 +239,6 @@ struct MonthView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 2) {
                     if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 7, weight: .bold)) }
-                    if o.isStruck { Image(systemName: "xmark.circle.fill").font(.system(size: 7, weight: .bold)).accessibilityLabel("取り消し") }
                     Text(o.title).strikethrough(o.isStruck).font(.system(size: level >= 2 ? 10 : 9, weight: .semibold)).lineLimit(1)
                 }
                 if level >= 2 && !filled {
