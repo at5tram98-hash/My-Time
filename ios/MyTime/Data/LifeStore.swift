@@ -72,6 +72,7 @@ extension AppModel {
     func saveMorning(_ r: MorningRoutine, message: String? = nil) {
         setLifeValue(.morning, r, message: message)
         Task { await AlarmService.sync(model: self) }
+        finishMorningTasksIfDone()
     }
 
     // MARK: Live Activity の設定

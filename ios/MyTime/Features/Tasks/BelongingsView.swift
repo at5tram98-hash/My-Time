@@ -213,7 +213,7 @@ struct BelongingsView: View {
                 Button("新しい持ち物リスト", systemImage: "plus.circle.fill") { router.open(.editor(EditorSeed(kind: .task, spec: .belongings))) }
                 Button("いつもの持ち物を編集", systemImage: "house") { editingEveryday = true }
             } footer: {
-                Text("右へなぞると確認、左へなぞると「まだ」に戻ります。いつもの持ち物は毎日、予定の持ち物は回ごとに印が残ります。")
+                Text("右へなぞると確認、左へなぞると戻ります。")
             }
         }
         .navigationTitle("持ち物")
@@ -370,8 +370,9 @@ struct BelongingsEditor: View {
                 Button("追加", action: addDraft).font(.subheadline.weight(.semibold))
             }
         }
+        // 候補は、入力中か、まだ何も入れていないときだけ（入れ終わった後は出さない）
         let cands = candidates
-        if !cands.isEmpty {
+        if !cands.isEmpty && (focused || items.isEmpty) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(cands, id: \.self) { n in
@@ -413,5 +414,55 @@ struct BelongingsEditor: View {
         guard !new.isEmpty else { return }
         withAnimation(Motion.pop) { items += new }
         added += 1
+    }
+}
+
+/// 予定の持ち物の確認（予定の詳細の「持ち物」の行から開く）
+struct EventBelongingsScreen: View {
+    var occurrenceId: String
+    var masterId: String
+    var key: String
+    var start: EpochMs
+    @Environment(AppModel.self) private var model
+    @State private var tick = 0
+
+    var body: some View {
+        let ev = model.events.first { $0.id == masterId }
+        let names = ev.map(BelongingsList.eventItems) ?? []
+        let checked = ev.map { BelongingsList.checked($0, key: key) } ?? []
+        let g = BelongingGroup(id: "e:\(occurrenceId)", title: ev?.title ?? "", when: start, source: .event(occurrenceId: occurrenceId, masterId: masterId, key: key),
+                               items: names.map { ($0, checked.contains($0)) })
+        List {
+            Section {
+                ForEach(names, id: \.self) { n in
+                    let on = checked.contains(n)
+                    Button { BelongingsList.set(model: model, group: g, names: [n], on: !on); tick += 1 } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(on ? Color.green : Color.secondary)
+                                .contentTransition(.symbolEffect(.replace))
+                            Text(n).strikethrough(on).foregroundStyle(on ? .secondary : .primary)
+                            Spacer()
+                        }
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        if !on { Button("確認", systemImage: "checkmark") { BelongingsList.set(model: model, group: g, names: [n], on: true); tick += 1 }.tint(.green) }
+                    }
+                }
+                if g.left > 0 && names.count > 1 {
+                    SlideToConfirm(title: "スライドして\(g.left)個まとめて確認", symbol: "bag.fill", tint: .brown, doneText: "そろいました") {
+                        BelongingsList.set(model: model, group: g, names: names, on: true); tick += 1
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                }
+            } header: {
+                Text("\(g.done)/\(names.count)").monospacedDigit()
+            }
+        }
+        .navigationTitle("持ち物")
+        .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.selection, trigger: tick)
     }
 }

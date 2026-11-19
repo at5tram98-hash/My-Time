@@ -244,13 +244,12 @@ struct AgendaList: View {
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 2).fill(model.occurrenceColor(o)).frame(width: 4, height: 34)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(.primary).lineLimit(1)
+                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck ? .secondary : .primary).lineLimit(1)
                         HStack(spacing: 6) {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
                             if o.event.recurrence != nil { Image(systemName: "repeat").accessibilityLabel("繰り返し") }
                             if isShiftPending(o.event) { PendingBadge() }
-                            if o.isStruck { StruckBadge() }
                         }
                         .font(.caption).foregroundStyle(.secondary)
                     }

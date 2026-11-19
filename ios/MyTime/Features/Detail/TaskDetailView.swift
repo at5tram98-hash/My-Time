@@ -282,7 +282,7 @@ struct TaskDetailView: View {
                     if avail.contains(.finish) { BigActionButton(title: "完了", symbol: "checkmark", tint: .green, prominent: false) { run(task, .finish) } }
                 }
             } else if avail.contains(.start) {
-                BigActionButton(title: "開始", symbol: "play.fill", tint: .accentColor, prominent: true) { run(task, .start) }
+                BigActionButton(title: task.specType == .morning ? "朝の準備を始める" : task.specType == .cleaning ? "清掃を始める" : "開始", symbol: "play.fill", tint: .accentColor, prominent: true) { model.startTask(task, router: router) }
             } else if avail.contains(.undoFinish) {
                 BigActionButton(title: "完了を取り消す", symbol: "arrow.uturn.backward", tint: .gray, prominent: false) { run(task, .undoFinish) }
             }

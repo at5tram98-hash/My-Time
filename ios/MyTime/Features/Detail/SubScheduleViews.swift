@@ -12,75 +12,87 @@ struct EventDayPreview: View {
     var struck = false
 
     @Environment(AppModel.self) private var model
-    private let hourH: CGFloat = 52
+    /// プレビューの高さは決まった大きさ（長い予定は目盛りを細かくして全体を入れる。切れないように）
+    private let height: CGFloat = 210
     private let gutter: CGFloat = 52
+    private let pad: CGFloat = 12
 
     var body: some View {
         let t = model.time
-        let firstHour = max(0, t.minutesOfDay(start) / 60 - 1)
-        let d0 = t.startOfDay(start)
-        let winStart = d0 + EpochMs(firstHour) * HOUR
-        let hours = 4
+        // 予定の前後30分を含む、正時から正時まで（3〜10時間）
+        let winStart = t.startOfDay(start) + EpochMs(max(0, t.minutesOfDay(start - 30 * MINUTE) / 60)) * HOUR
+        let rawEnd = end + 30 * MINUTE
+        let endHours = Int((rawEnd - winStart + HOUR - 1) / HOUR)
+        let hours = min(10, max(3, endHours))
+        let hourH = (height - pad * 2) / CGFloat(hours)
+        let labelEvery = hourH < 26 ? 2 : 1
         let items = SubSchedule.items(event.extra)
         let total = Int((end - start) / MINUTE)
         GeometryReader { g in
             let w = g.size.width - gutter - 14
-            let top = CGFloat(start - winStart) / CGFloat(HOUR) * hourH
-            let h = max(24, CGFloat(end - start) / CGFloat(HOUR) * hourH)
+            let y0 = pad + CGFloat(start - winStart) / CGFloat(HOUR) * hourH
+            let h = max(18, min(height - pad - y0, CGFloat(end - start) / CGFloat(HOUR) * hourH))
             ZStack(alignment: .topLeading) {
-                // 時刻の目盛り
-                VStack(spacing: 0) {
-                    ForEach(0..<hours + 1, id: \.self) { i in
-                        HStack(alignment: .center, spacing: 8) {
-                            Text("\((firstHour + i) % 24):00").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                                .frame(width: gutter - 8, alignment: .trailing)
-                            Rectangle().fill(Color(.separator)).frame(height: 0.5)
-                        }
-                        .frame(height: hourH, alignment: .center)
+                // 時刻の目盛り（細かいときは2時間ごとに時刻）
+                ForEach(0...hours, id: \.self) { i in
+                    let y = pad + CGFloat(i) * hourH
+                    HStack(spacing: 8) {
+                        Text(i % labelEvery == 0 ? "\((t.minutesOfDay(winStart) / 60 + i) % 24):00" : "")
+                            .font(hourH < 30 ? .caption : .subheadline).foregroundStyle(.secondary).monospacedDigit()
+                            .frame(width: gutter - 8, alignment: .trailing)
+                        Rectangle().fill(Color(.separator)).frame(height: 0.5)
                     }
+                    .frame(height: 16)
+                    .offset(y: y - 8)
                 }
-                .offset(y: -hourH / 2 + 14)
-                // 予定の札（純正と同じく色で塗り、名前・場所・時刻）
+                // 予定の札（純正と同じく色で塗る。高さに入る分だけ文字を出す）
                 let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
                 HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.title).font(.subheadline.weight(.bold)).lineLimit(1).strikethrough(struck)
-                        if let p = event.placeName, !p.isEmpty { Label(p, systemImage: "location").labelStyle(CompactLabel()).font(.subheadline).lineLimit(1) }
-                        Label("\(model.hm(start))–\(model.hm(end))", systemImage: "clock").labelStyle(CompactLabel()).font(.subheadline).monospacedDigit()
-                        if !items.isEmpty {
-                            Label("詳細スケジュール \(items.count)件", systemImage: "list.bullet.indent").labelStyle(CompactLabel()).font(.caption.weight(.semibold))
-                                .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if h < 34 {
+                            HStack(spacing: 6) {
+                                Text(event.title).font(.caption.weight(.bold)).lineLimit(1).strikethrough(struck)
+                                Text("\(model.hm(start))–\(model.hm(end))").font(.caption2).monospacedDigit().lineLimit(1)
+                            }
+                        } else {
+                            Text(event.title).font(.subheadline.weight(.bold)).lineLimit(1).strikethrough(struck)
+                            if h >= 70, let p = event.placeName, !p.isEmpty {
+                                Label(p, systemImage: "location").labelStyle(CompactLabel()).font(.caption).lineLimit(1)
+                            }
+                            Label("\(model.hm(start))–\(model.hm(end))", systemImage: "clock").labelStyle(CompactLabel()).font(.caption).monospacedDigit().lineLimit(1)
+                            if h >= 90 && !items.isEmpty {
+                                Label("詳細 \(items.count)件", systemImage: "list.bullet.indent").labelStyle(CompactLabel()).font(.caption2.weight(.semibold)).lineLimit(1)
+                            }
                         }
                     }
+                    .minimumScaleFactor(0.85)
                     .foregroundStyle(struck ? Color.secondary : Color.white)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .padding(.horizontal, 8).padding(.vertical, h < 34 ? 2 : 5)
                     Spacer(minLength: 4)
-                    // 中の予定・タスク（右に細い2列）
-                    if total > 0 && !items.isEmpty {
+                    // 中の予定・タスク（右に細い2列。札が小さいときは出さない）
+                    if total > 0 && !items.isEmpty && h >= 40 {
                         HStack(alignment: .top, spacing: 3) {
                             ForEach(SubItem.Lane.allCases, id: \.self) { lane in
                                 ZStack(alignment: .top) {
+                                    Capsule().fill(.white.opacity(0.15)).frame(width: 6)
                                     ForEach(items.filter { $0.lane == lane }) { it in
-                                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                            .fill(.white.opacity(lane == .event ? 0.85 : 0.55))
-                                            .frame(height: max(3, h * CGFloat(it.minutes) / CGFloat(total) - 1))
-                                            .offset(y: h * CGFloat(it.startMin) / CGFloat(total))
+                                        MiniBar(height: h - 8, startMin: it.startMin, minutes: it.minutes, total: total, strong: lane == .event)
                                     }
                                 }
-                                .frame(width: 14, height: h, alignment: .top)
+                                .frame(width: 6, height: h - 8, alignment: .top)
                             }
                         }
-                        .padding(.trailing, 6)
+                        .padding(.vertical, 4).padding(.trailing, 6)
                         .accessibilityHidden(true)
                     }
                 }
                 .frame(width: w, height: h, alignment: .topLeading)
                 .background(struck ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(tint.gradient), in: shape)
                 .clipShape(shape)
-                .offset(x: gutter + 4, y: top + 14)
+                .offset(x: gutter + 4, y: y0)
                 // 今の時刻の赤い線
-                if model.now >= winStart && model.now < winStart + EpochMs(hours) * HOUR && t.isSameDay(model.now, start) {
-                    let y = CGFloat(model.now - winStart) / CGFloat(HOUR) * hourH + 14
+                if model.now >= winStart && model.now < winStart + EpochMs(hours) * HOUR {
+                    let y = pad + CGFloat(model.now - winStart) / CGFloat(HOUR) * hourH
                     HStack(spacing: 0) {
                         Circle().fill(.red).frame(width: 7, height: 7)
                         Rectangle().fill(.red).frame(height: 1.2)
@@ -91,12 +103,27 @@ struct EventDayPreview: View {
             .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
             .clipped()
         }
-        .frame(height: hourH * CGFloat(hours) - 6)
-        .padding(.vertical, 4)
+        .frame(height: height)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(event.title)、\(model.hm(start))から\(model.hm(end))" + (items.isEmpty ? "" : "、詳細スケジュール\(items.count)件"))
         .accessibilityHint("詳細スケジュールを開きます")
+    }
+}
+
+/// プレビューの中の小さな帯（詳細スケジュールの1件）
+private struct MiniBar: View {
+    var height: CGFloat
+    var startMin: Int
+    var minutes: Int
+    var total: Int
+    var strong: Bool
+    var body: some View {
+        let k = height / CGFloat(max(1, total))
+        Capsule()
+            .fill(Color.white.opacity(strong ? 0.9 : 0.6))
+            .frame(width: 6, height: max(3, k * CGFloat(minutes) - 1))
+            .offset(y: k * CGFloat(startMin))
     }
 }
 
@@ -122,6 +149,10 @@ struct SubScheduleView: View {
     @State private var dragging = false
     @State private var createTick = 0
     @State private var snapTick = 0
+    @State private var confirmClear = false
+    /// 下のよく使う名前から足すレーン
+    @State private var quickLane: SubItem.Lane = .event
+    @State private var addTick = 0
 
     static let gutter: CGFloat = 52
 
@@ -157,6 +188,18 @@ struct SubScheduleView: View {
                                             y: CGFloat(it.startMin) / CGFloat(SubSchedule.step) * unit + 1)
                             }
                             if let c = creating { ghost(c, laneW: laneW) }
+                            if items.isEmpty && creating == nil {
+                                // 何もないときの案内（最初の1回だけ目に入る位置に、うすく）
+                                VStack(spacing: 6) {
+                                    Image(systemName: "hand.tap").font(.title2)
+                                    Text("空いた所を押すと15分で追加\n長押しして上下になぞると好きな長さ\n下のよく使う名前からも追加できます")
+                                        .font(.caption).multilineTextAlignment(.center)
+                                }
+                                .foregroundStyle(.tertiary)
+                                .frame(width: laneW * 2)
+                                .offset(x: Self.gutter, y: min(120, CGFloat(total / SubSchedule.step) * unit / 2 - 40))
+                                .allowsHitTesting(false)
+                            }
                             nowLine(width: g.size.width)
                         }
                     }
@@ -182,12 +225,25 @@ struct SubScheduleView: View {
         .background(Color(.systemBackground))
         .navigationTitle("詳細スケジュール")
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) { quickBar }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { addNext() } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("次の空いた時間に追加")
+                Menu {
+                    Button("次の空いた時間に追加", systemImage: "plus") { addNext() }
+                    Button("隙間なく詰める", systemImage: "rectangle.compress.vertical") { pack() }.disabled(items.isEmpty)
+                    Button("済んだタスクを外す", systemImage: "checkmark.circle") {
+                        write(items.filter { !($0.lane == .task && $0.done) }, message: "済んだタスクを外しました")
+                    }
+                    .disabled(!items.contains { $0.lane == .task && $0.done })
+                    Divider()
+                    Button("すべて外す", systemImage: "trash", role: .destructive) { confirmClear = true }.disabled(items.isEmpty)
+                } label: { Image(systemName: "ellipsis") }
+                .accessibilityLabel("詳細スケジュールの操作")
             }
         }
+        .confirmationDialog("詳細スケジュールをすべて外しますか？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("すべて外す", role: .destructive) { write([], message: "詳細スケジュールを外しました") }
+        } message: { Text("iPhone を振ると元に戻せます。") }
         .sensoryFeedback(.impact(weight: .medium), trigger: createTick)
         .sensoryFeedback(.selection, trigger: snapTick)
         .alert("名前を入れてください", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
@@ -205,7 +261,8 @@ struct SubScheduleView: View {
         }
         .sheet(item: $editing) { it in
             SubItemEditor(item: it, base: start, total: total, tint: tint,
-                          onSave: { save(replacing: $0) }, onDelete: { delete(it) })
+                          onSave: { save(replacing: $0) }, onDelete: { delete(it) },
+                          onDuplicate: { x in DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { save(adding: x) } })
                 .environment(model)
                 .presentationDetents([.medium, .large])
         }
@@ -220,17 +277,21 @@ struct SubScheduleView: View {
                     RoundedRectangle(cornerRadius: 2).fill(tint).frame(width: 4, height: 30)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(e.title).font(.headline).lineLimit(1)
-                        Text("\(model.time.dayLabel(start)) \(model.hm(start))〜\(model.hm(end))・5分ごと").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        Text("\(model.time.dayLabel(start)) \(model.hm(start))〜\(model.hm(end))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                     Spacer()
-                    let done = items.filter { $0.lane == .task && $0.done }.count, tasks = items.filter { $0.lane == .task }.count
-                    if tasks > 0 { Text("タスク \(done)/\(tasks)").font(.caption.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit() }
+                    // 予定の時間のうち、まだ何も入れていない時間
+                    let used = Set(items.filter { $0.lane == .event }.flatMap { Array(stride(from: $0.startMin, to: $0.endMin, by: SubSchedule.step)) }).count * SubSchedule.step
+                    Text("空き \(durationLabel(max(0, total - used)))").font(.caption.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
+            nowBar
             HStack(spacing: 4) {
                 Color.clear.frame(width: Self.gutter - 4)
                 ForEach(SubItem.Lane.allCases, id: \.self) { l in
-                    Label(l.label, systemImage: l == .event ? "calendar" : "checklist")
+                    let xs = items.filter { $0.lane == l }
+                    Label(l == .event ? "予定 \(xs.count)" : "タスク \(xs.filter(\.done).count)/\(xs.count)", systemImage: l == .event ? "calendar" : "checklist")
+                        .monospacedDigit()
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
@@ -242,6 +303,101 @@ struct SubScheduleView: View {
         .padding(.vertical, 8)
         .fixedSize(horizontal: false, vertical: true)
         .background(.bar)
+    }
+
+    /// 予定の最中：いまの項目・残り・次（予定の前は、最初の項目まで）
+    @ViewBuilder
+    private var nowBar: some View {
+        let m = Int((model.now - start) / MINUTE)
+        let xs = items.filter { $0.lane == .event || !$0.done }
+        if m >= -60 && m < total && !xs.isEmpty {
+            let cur = SubSchedule.current(xs, minute: m)
+            let next = xs.first { $0.startMin > m }
+            HStack(spacing: 10) {
+                if let c = cur {
+                    ZStack {
+                        Circle().stroke(tint.opacity(0.25), lineWidth: 3)
+                        Circle().trim(from: 0, to: CGFloat(m - c.startMin) / CGFloat(max(1, c.minutes)))
+                            .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(-90))
+                    }
+                    .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("いま：\(c.title)").font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text("あと\(c.endMin - m)分" + (next.map { "・次：\($0.title) \(model.hm(start + EpochMs($0.startMin) * MINUTE))" } ?? ""))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1).monospacedDigit()
+                    }
+                } else if let n = next {
+                    Image(systemName: "arrow.turn.down.right").foregroundStyle(tint)
+                    Text("次：\(n.title) \(model.hm(start + EpochMs(n.startMin) * MINUTE))・あと\(n.startMin - m)分")
+                        .font(.subheadline.weight(.semibold)).lineLimit(1).monospacedDigit()
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.1)))
+        }
+    }
+
+    /// よく使う名前（押すと、選んだレーンの最後の後ろに15分で足す）
+    private var quickBar: some View {
+        let names = quickNames
+        return VStack(spacing: 6) {
+            Picker("足すレーン", selection: $quickLane) {
+                ForEach(SubItem.Lane.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 180)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(names, id: \.self) { n in
+                        Button { quickAdd(n) } label: {
+                            Label(n, systemImage: "plus").font(.subheadline)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .glass(Capsule(), interactive: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(.bar)
+        .sensoryFeedback(.success, trigger: addTick)
+    }
+
+    /// 前に使った名前（ほかの予定の詳細スケジュールから）と、よくある名前
+    private var quickNames: [String] {
+        var count: [String: Int] = [:]
+        for e in model.events { for it in SubSchedule.items(e.extra) where it.lane == quickLane && !it.title.isEmpty { count[it.title, default: 0] += 1 } }
+        let used = count.sorted { $0.value > $1.value }.map(\.key)
+        let base = quickLane == .event ? ["移動", "受付", "準備", "休憩", "昼ごはん", "片付け", "振り返り"] : ["資料を開く", "メモを取る", "質問する", "写真を撮る", "提出する", "連絡する"]
+        var seen = Set<String>()
+        return (used + base).filter { seen.insert($0).inserted }.prefix(12).map { $0 }
+    }
+
+    private func quickAdd(_ name: String) {
+        let last = items.filter { $0.lane == quickLane }.map(\.endMin).max() ?? 0
+        let len = name == "休憩" ? 10 : 15
+        guard last < total else { return }
+        let r = SubSchedule.clamp(last, last + len, total: total)
+        save(adding: SubItem(id: model.repo.newId(), lane: quickLane, title: name, startMin: r.0, endMin: r.1))
+        addTick += 1
+    }
+
+    /// レーンごとに、最初から隙間なく並べ直す（長さは保つ。入りきらない分は最後に詰める）
+    private func pack() {
+        var out: [SubItem] = []
+        for lane in SubItem.Lane.allCases {
+            var t = 0
+            for var it in items.filter({ $0.lane == lane }).sorted(by: { $0.startMin < $1.startMin }) {
+                let r = SubSchedule.clamp(t, t + it.minutes, total: total)
+                it.startMin = r.0; it.endMin = r.1
+                t = r.1
+                out.append(it)
+            }
+        }
+        write(out, message: "隙間なく詰めました")
     }
 
     // MARK: 目盛り（5分ごとの線。15分ごとに時刻、正時は太く）
@@ -526,6 +682,7 @@ struct SubItemEditor: View {
     var tint: Color
     var onSave: (SubItem) -> Void
     var onDelete: () -> Void
+    var onDuplicate: ((SubItem) -> Void)? = nil
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -558,8 +715,28 @@ struct SubItemEditor: View {
                         TextField("場所（任意）", text: Binding(get: { item.place ?? "" }, set: { item.place = $0.isEmpty ? nil : $0 }))
                     }
                 }
+                Section("色") {
+                    HStack(spacing: 10) {
+                        ForEach([nil] + ["#FF3B30", "#FF9500", "#34C759", "#30B0C7", "#0A84FF", "#5E5CE6", "#8E8E93"].map(Optional.some), id: \.self) { c in
+                            Button { item.color = c } label: {
+                                Circle().fill(c.map { Color(hex: $0) } ?? tint).frame(width: 28, height: 28)
+                                    .overlay { if item.color == c { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white) } }
+                                    .overlay { if c == nil { Circle().strokeBorder(.white.opacity(0.6), lineWidth: 1) } }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(c == nil ? "予定と同じ色" : "色")
+                        }
+                    }
+                }
                 Section {
-                    Button("外す", role: .destructive) { onDelete(); dismiss() }.frame(maxWidth: .infinity)
+                    Button("すぐ後に複製", systemImage: "plus.square.on.square") {
+                        var x = item
+                        x.id = UUID().uuidString.lowercased()
+                        let r = SubSchedule.clamp(item.endMin, item.endMin + item.minutes, total: total)
+                        x.startMin = r.0; x.endMin = r.1
+                        onSave(item); onDuplicate?(x); dismiss()
+                    }
+                    Button("外す", role: .destructive) { onDelete(); dismiss() }
                 }
             }
             .navigationTitle(item.lane == .event ? "予定" : "タスク")

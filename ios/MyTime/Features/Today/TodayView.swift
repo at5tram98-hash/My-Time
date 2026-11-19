@@ -104,9 +104,11 @@ struct TodayView: View {
         let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
         let dayTasks = orderHomeTasks(tasksForDay(model.tasks, day: day, time: model.time), now: now)
         let done = dayTasks.filter(\.isDone).count
-        let busy = busyItems(events: occ, tasks: model.tasks)
+        // 取り消した予定は時刻軸に灰色で残すだけ。上のカード・空き時間・次にやることには使わない
+        let active = occ.filter { !$0.isStruck }
+        let busy = busyItems(events: active, tasks: model.tasks)
         let freeMin = freeMinutes(day: day, now: now, busy: busy)
-        let next = nextAction(events: occ, tasks: model.tasks, now: now, time: model.time)
+        let next = nextAction(events: active, tasks: model.tasks, now: now, time: model.time)
         let dayEvents = occ.filter { $0.start < d1 && $0.end > day && !$0.event.allDay }
         let focus = model.settings.laneFocus
         let mainFraction: CGFloat = focus == "main" ? 0.68 : focus == "detail" ? 0.34 : 0.52
@@ -118,7 +120,7 @@ struct TodayView: View {
         VStack(spacing: 8) {
             // 今日を見ているときだけ、状況に合わせたカード（何もなければ時計と明日の最初の予定）
             if !collapsed && model.time.isSameDay(day, now) {
-                NowCard(next: next, now: now, occurrences: occ)
+                NowCard(next: next, now: now, occurrences: active)
                     .padding(.horizontal)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
@@ -215,6 +217,8 @@ struct TodayView: View {
         let all = BelongingsList.items(model: model)
         let dated = all.filter { g in g.when.map { model.time.isSameDay($0, day) } ?? false }
         let bringLeft = dated.isEmpty ? 0 : dated.reduce(0) { $0 + $1.left } + all.filter { $0.when == nil }.reduce(0) { $0 + $1.left }
+        // 札は多くても3〜4個：急ぎの札（朝・持ち物・遅れ・締切）が多い日は、タスク・空き・未割当を出さない
+        let urgent = [morningValue != nil, bringLeft > 0, overdue > 0, dueSoon > 0].filter { $0 }.count
         return HStack(spacing: 6) {
             if let v = morningValue {
                 StatusChip(symbol: "sunrise.fill", label: "朝", value: v, tint: .orange) {
@@ -230,10 +234,14 @@ struct TodayView: View {
             if dueSoon > 0 {
                 StatusChip(symbol: "flag", label: "締切", value: "\(dueSoon)", tint: .orange) { router.tab = .tasks }
             }
-            StatusChip(symbol: "checklist", label: taskLabel, value: taskValue) { router.open(.dayTasks(day)) }
+            if urgent < 3 {
+                StatusChip(symbol: "checklist", label: taskLabel, value: taskValue) { router.open(.dayTasks(day)) }
+            }
             // 「余白◯%」ではなく、この後に自由に使える時間をそのまま出す
-            StatusChip(symbol: "hourglass", label: isToday ? "空き" : "空き時間", value: freeLabel(freeMin)) { router.open(.planAssist) }
-            if !model.inbox.isEmpty {
+            if urgent < 2 {
+                StatusChip(symbol: "hourglass", label: isToday ? "空き" : "空き時間", value: freeLabel(freeMin)) { router.open(.planAssist) }
+            }
+            if urgent < 2 && !model.inbox.isEmpty {
                 StatusChip(symbol: "tray", label: "未割当", value: "\(model.inbox.count)", tint: .indigo) { router.open(.inbox) }
             }
             Spacer(minLength: 0)
@@ -367,7 +375,7 @@ struct NowCard: View {
                     circle("pause.fill", "停止", .secondary) { act(task.id, .pause, "停止しました") }
                     circle("checkmark", "完了", .green) { act(task.id, .finish, "完了しました", undo: .undoFinish) }
                 } else if let task, next.kind == .start {
-                    circle("play.fill", "開始", .accentColor) { act(task.id, .start, "開始しました", undo: .undoStart) }
+                    circle("play.fill", "開始", .accentColor) { feedback += 1; model.startTask(task, router: router) }
                 } else if next.kind == .plan {
                     circle("tray", "未割当を開く", .indigo) { router.open(.inbox) }
                 } else if let c = countdown {

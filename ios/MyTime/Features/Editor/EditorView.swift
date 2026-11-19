@@ -295,7 +295,10 @@ struct EditorView: View {
                 }
                 .tint(.orange)
             }
-            PlaceTravelEditor(place: $place, travel: $travel, expanded: Binding(get: { open == .place }, set: { open = $0 ? .place : .none }), start: start, history: placeHistory)
+            // 場所と移動は別の画面で（検索・地図・移動時間。編集の画面をすっきりさせる）
+            NavigationLink { PlaceTravelScreen(place: $place, travel: $travel, start: start, history: placeHistory) } label: {
+                row("場所と移動", "mappin.and.ellipse", .red, value: [place?.name, travel.map { "移動\($0)分" }].compactMap { $0 }.joined(separator: "・").ifEmpty("なし"))
+            }
             NavigationLink { NotifyPicker(selection: $notifies, base: kind == .event ? "予定の開始" : isCheck ? "確認の時刻" : "開始の時刻") } label: {
                 row("通知", "bell.fill", .pink, value: notifySummary)
             }
@@ -315,7 +318,7 @@ struct EditorView: View {
         if kind == .event {
             Section {
                 BelongingsEditor(items: $bring, spec: spec)
-            } header: { Text("持ち物") } footer: { Text("出かける前に「持ち物」の画面と予定の詳細で、1つずつ確認できます。") }
+            } header: { Text("持ち物") }
         }
         Section("色") { colorStrip }
         if kind == .task {
@@ -533,7 +536,7 @@ struct EditorView: View {
                     RowIcon(symbol: "door.left.hand.open", tint: .gray)
                     TextField("教室（例：3-201）", text: $room)
                 }
-            } header: { Text("授業") } footer: { Text("教室は「今日」の上のカードにも表示します。開講の終わりは「繰り返し」の終了で決めます。") }
+            } header: { Text("授業") }
         }
         if let st = studioType { StudioFieldsForm(type: st, values: $studioValues) }
         if let spec { SpecFieldsSection(spec: spec, details: $details, hidden: hiddenSpecKeys) }
@@ -1047,3 +1050,5 @@ struct NewEmployerAlert: ViewModifier {
         }
     }
 }
+
+extension String { func ifEmpty(_ s: String) -> String { isEmpty ? s : self } }

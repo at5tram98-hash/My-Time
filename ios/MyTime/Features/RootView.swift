@@ -379,6 +379,7 @@ struct AlarmView: View {
     var task: MTTask
     var onClose: () -> Void
     @Environment(AppModel.self) private var model
+    @Environment(Router.self) private var router
     @State private var pulse = false
 
     var body: some View {
@@ -398,8 +399,8 @@ struct AlarmView: View {
                 Spacer()
                 if task.kind == .do && task.status == .notStarted {
                     Button {
-                        model.perform("開始しました", undo: { try model.repo.taskAction(task.id, .undoStart) }) { try model.repo.taskAction(task.id, .start) }
                         onClose()
+                        model.startTask(task, router: router)
                     } label: {
                         Label("開始する", systemImage: "play.fill").font(.title3.weight(.semibold))
                             .frame(maxWidth: .infinity, minHeight: 60)

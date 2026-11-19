@@ -81,6 +81,8 @@ struct PlaceTravelEditor: View {
     @Binding var expanded: Bool
     var start: Date
     var history: [PlaceValue]
+    /// 専用の画面の中で使う（見出しの行を出さず、いつも開いた状態。選んだ場所は地図のカードで出す）
+    var embedded = false
 
     @Environment(AppModel.self) private var model
     @AppStorage(AccountKeys.home) private var homeAddress = ""
@@ -94,6 +96,11 @@ struct PlaceTravelEditor: View {
     static let travelChoices = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
 
     var body: some View {
+        if !embedded { headerRow }
+        if expanded || embedded { expandedContent }
+    }
+
+    private var headerRow: some View {
         Button {
             withAnimation(.snappy) { expanded.toggle() }
             if expanded { focused = place == nil }
@@ -109,9 +116,13 @@ struct PlaceTravelEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
 
-        if expanded {
-            if let p = place {
+    @ViewBuilder
+    private var expandedContent: some View {
+            if let p = place, embedded {
+                PlaceMapHeader(place: p) { withAnimation(.snappy) { place = nil } }
+            } else if let p = place {
                 HStack(spacing: 10) {
                     Image(systemName: "mappin.circle.fill").font(.title2).foregroundStyle(.red)
                     VStack(alignment: .leading, spacing: 1) {
@@ -171,7 +182,6 @@ struct PlaceTravelEditor: View {
                 }
                 .disabled(calculating)
             }
-        }
     }
 
     private var schoolLabel: String { schoolName.isEmpty ? "学校" : schoolName }
@@ -226,5 +236,55 @@ struct RowIcon: View {
             .frame(width: 28, height: 28)
             .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+
+/// 選んだ場所の地図のカード（場所と移動の画面の上）
+struct PlaceMapHeader: View {
+    var place: PlaceValue
+    var onRemove: () -> Void
+    @State private var coord: CLLocationCoordinate2D?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                if let c = coord {
+                    Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 600, longitudinalMeters: 600)), interactionModes: []) {
+                        Marker(place.name, coordinate: c).tint(.red)
+                    }
+                } else {
+                    Color(.tertiarySystemFill)
+                    ProgressView()
+                }
+            }
+            .frame(height: 160)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(place.name).font(.headline)
+                    if !place.address.isEmpty && place.address != "このまま使う" { Text(place.address).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                }
+                Spacer()
+                Button("外す", role: .destructive, action: onRemove).font(.subheadline).buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 4)
+        .task(id: place.name) { coord = await AppleMaps.mapItem(place)?.placemark.coordinate }
+    }
+}
+
+/// 予定の編集の「場所と移動」の画面（検索・地図・移動時間を1つの画面で）
+struct PlaceTravelScreen: View {
+    @Binding var place: PlaceValue?
+    @Binding var travel: Int?
+    var start: Date
+    var history: [PlaceValue]
+    var body: some View {
+        Form {
+            PlaceTravelEditor(place: $place, travel: $travel, expanded: .constant(true), start: start, history: history, embedded: true)
+        }
+        .navigationTitle("場所と移動")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

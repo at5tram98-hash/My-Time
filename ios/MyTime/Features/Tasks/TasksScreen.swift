@@ -159,9 +159,10 @@ struct TasksScreen: View {
             Spacer(minLength: 0)
             if let t = next, t.kind == .do, !t.isDone {
                 Button {
-                    let a: TaskAction = t.status == .running ? .finish : t.status == .paused ? .resume : .start
-                    model.perform(a == .finish ? "完了しました" : "開始しました", undo: { try model.repo.taskAction(t.id, a == .finish ? .undoFinish : .undoStart) }) {
-                        try model.repo.taskAction(t.id, a)
+                    if t.status == .running {
+                        model.perform("完了しました", undo: { try model.repo.taskAction(t.id, .undoFinish) }) { try model.repo.taskAction(t.id, .finish) }
+                    } else {
+                        model.startTask(t, router: router)
                     }
                 } label: {
                     Image(systemName: t.status == .running ? "checkmark" : "play.fill").font(.body.weight(.bold)).foregroundStyle(.white)
@@ -262,9 +263,7 @@ struct TasksScreen: View {
                     Button("完了", systemImage: "checkmark") { finish(t) }.tint(.green)
                     // まだ始めていなければ、右へなぞって開始
                     if t.status == .notStarted {
-                        Button("開始", systemImage: "play.fill") {
-                            model.perform("開始しました", undo: { try model.repo.taskAction(t.id, .undoStart) }) { try model.repo.taskAction(t.id, .start) }
-                        }
+                        Button("開始", systemImage: "play.fill") { model.startTask(t, router: router) }
                         .tint(.blue)
                     }
                 }

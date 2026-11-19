@@ -34,7 +34,9 @@ struct EventDetailView: View {
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                         // 純正カレンダーと同じ、時刻の目盛りに予定を置いたプレビュー。押すと5分ごとの詳細スケジュール
-                        if !ev.allDay && end > start {
+                        // 取り消した予定は、見出し・操作・基本の情報だけ（プレビュー・場所・持ち物などは出さない）
+                        let struckNow = isStruck(ev, parsed)
+                        if !ev.allDay && end > start && !struckNow {
                             Section {
                                 NavigationLink {
                                     SubScheduleView(eventId: ev.id, start: start, end: end)
@@ -46,8 +48,6 @@ struct EventDetailView: View {
                                 let n = SubSchedule.items(ev.extra)
                                 if let c = SubSchedule.current(n, minute: Int((now - start) / MINUTE)) {
                                     Text("いま：\(c.title)（\(model.hm(start + EpochMs(c.endMin) * MINUTE))まで）")
-                                } else {
-                                    Text(n.isEmpty ? "押すと、この予定の中の予定・タスクを5分ごとに決められます。" : "押すと詳細スケジュール（\(n.count)件）を開きます。")
                                 }
                             }
                         }
@@ -60,7 +60,7 @@ struct EventDetailView: View {
                         if isShift(ev, model: model) {
                             ShiftWorkSection(event: ev, start: start, end: end)
                         }
-                        if let spec = ev.specType ?? (ev.classInfo != nil ? .class : nil), SPEC_BY_ID[spec] != nil,
+                        if !struckNow, let spec = ev.specType ?? (ev.classInfo != nil ? .class : nil), SPEC_BY_ID[spec] != nil,
                            !(spec == .shift && model.employer(ev.employerId) != nil) {
                             SpecPanel(spec: spec, details: specDetails(ev), start: start, end: end,
                                       employerName: model.employer(ev.employerId)?.name, task: nil) { d in
@@ -70,31 +70,27 @@ struct EventDetailView: View {
                             }
                         }
                         // 場所：地図・自宅からの所要時間・Apple マップの経路
-                        EventMapCard(event: ev, start: start)
+                        if !struckNow { EventMapCard(event: ev, start: start) }
                         details(ev, start: start, end: end)
-                        // 持ち物：その場で押して確認（回ごとに印が残る）
-                        if let occ = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start }) {
+                        // 持ち物：1行（押すと確認の画面）
+                        if !struckNow, let occ = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start }) {
                             let names = BelongingsList.eventItems(ev)
                             if !names.isEmpty {
                                 let k = BelongingsList.key(occ)
-                                let checked = BelongingsList.checked(ev, key: k)
-                                let g = BelongingGroup(id: "e:\(occ.id)", title: ev.title, when: start, source: .event(occurrenceId: occ.id, masterId: ev.id, key: k), items: names.map { ($0, checked.contains($0)) })
+                                let checked = BelongingsList.checked(ev, key: k).intersection(names)
                                 Section {
-                                    ForEach(names, id: \.self) { n in
-                                        let on = checked.contains(n)
-                                        Button { BelongingsList.set(model: model, group: g, names: [n], on: !on) } label: {
-                                            HStack(spacing: 12) {
-                                                Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(on ? Color.green : Color.secondary)
-                                                    .contentTransition(.symbolEffect(.replace))
-                                                Text(n).strikethrough(on).foregroundStyle(on ? .secondary : .primary)
-                                                Spacer()
+                                    NavigationLink { EventBelongingsScreen(occurrenceId: occ.id, masterId: ev.id, key: k, start: start) } label: {
+                                        HStack(spacing: 12) {
+                                            RowIcon(symbol: "bag.fill", tint: .brown)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text("持ち物")
+                                                Text(names.prefix(4).joined(separator: "・") + (names.count > 4 ? "…" : "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                             }
-                                            .contentShape(Rectangle())
+                                            Spacer()
+                                            Text("\(checked.count)/\(names.count)").font(.subheadline.weight(.semibold)).monospacedDigit()
+                                                .foregroundStyle(checked.count == names.count ? .green : .secondary)
                                         }
-                                        .buttonStyle(.plain)
                                     }
-                                } header: {
-                                    HStack { Text("持ち物"); Spacer(); Text("\(checked.intersection(names).count)/\(names.count)").monospacedDigit() }
                                 }
                             }
                         }
@@ -109,14 +105,6 @@ struct EventDetailView: View {
                         if !ev.notes.isEmpty {
                             Section("メモ") { Text(ev.notes).textSelection(.enabled) }
                         }
-                        Section {
-                            LabeledContent("作成", value: "\(model.time.dayLabel(ev.createdAt)) \(model.hm(ev.createdAt))")
-                            if ev.updatedAt != ev.createdAt {
-                                LabeledContent("最終更新", value: "\(model.time.dayLabel(ev.updatedAt)) \(model.hm(ev.updatedAt))")
-                            }
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                         // 純正カレンダーと同じく、一番下に赤い「予定を削除」（中央ぞろえ）
                         Section {
                             Button(role: .destructive) { confirmDelete = true } label: {
@@ -197,14 +185,10 @@ struct EventDetailView: View {
             RoundedRectangle(cornerRadius: 3, style: .continuous).fill(tint).frame(width: 6)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28) }
+                    if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28).grayscale(struck ? 1 : 0).opacity(struck ? 0.6 : 1) }
                     Text(ev.title).font(.title2.weight(.bold)).lineLimit(3)
                         .strikethrough(struck)
                         .foregroundStyle(struck ? .secondary : .primary)
-                }
-                if struck {
-                    StruckBadge()
-                        .transition(.scale.combined(with: .opacity))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dateText(start, end, allDay: ev.allDay)).font(.subheadline.weight(.medium))
@@ -217,7 +201,7 @@ struct EventDetailView: View {
                     Label("調整中のシフト", systemImage: "hourglass").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.orange.opacity(0.14)))
                 }
-                if let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
+                if !struck, let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
                     HStack(spacing: 4) {
                         Image(systemName: s.symbol).imageScale(.small)
                         Text(s.text).lineLimit(1).minimumScaleFactor(0.8)
@@ -272,21 +256,21 @@ struct EventDetailView: View {
         HStack(spacing: 10) {
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
-            } else if let place = ev.placeName, !place.isEmpty {
+            } else if let place = ev.placeName, !place.isEmpty, !isStruck(ev, parsed) {
                 primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
                     let p = PlaceValue(ev.extra?["place"]) ?? PlaceValue(name: place)
                     Task { await AppleMaps.openDirections(to: p) }
                 }
             }
+            // 複製・コピー・共有は1つのメニューに（ボタンを並べすぎない）
             Menu {
                 Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
                 Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
                     copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
                 }
-            } label: { roundLabel("複製", "plus.square.on.square") }
+                ShareLink(item: shareText(ev, start: start, end: end)) { Label("共有", systemImage: "square.and.arrow.up") }
+            } label: { roundLabel("その他", "ellipsis") }
             .buttonStyle(PressableStyle())
-            ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
-                .buttonStyle(PressableStyle())
             let struck = isStruck(ev, parsed)
             Button {
                 if struck {
@@ -299,12 +283,12 @@ struct EventDetailView: View {
                 }
             } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward.circle" : "xmark.circle") }
             .buttonStyle(PressableStyle())
-            .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに灰色で「取り消し」と表示します")
+            .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに灰色にして線を引きます")
             .confirmationDialog("繰り返しの予定を取り消します", isPresented: $askStrike, titleVisibility: .visible) {
                 Button("この回のみ取り消す") { setStruck(ev, originalStart: parsed?.originalStart, true) }
                 Button("すべての回を取り消す") { setStruck(ev, originalStart: nil, true) }
                 Button("キャンセル", role: .cancel) {}
-            } message: { Text("削除はせず、灰色で「取り消し」と表示します。") }
+            } message: { Text("削除はせず、灰色にして線を引きます。") }
         }
         .padding(.vertical, 2)
         .animation(Motion.pop, value: isStruck(ev, parsed))
@@ -362,9 +346,6 @@ struct EventDetailView: View {
                 }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
-            if let m = ev.travelMinutes, m > 0 {
-                LabeledContent("移動", value: "\(m)分・\(model.hm(start - EpochMs(m) * MINUTE))発")
-            }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 Link(destination: u) { LabeledContent("会議") { Label("参加する", systemImage: "video.fill").foregroundStyle(Color.accentColor) } }
             }

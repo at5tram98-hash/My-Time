@@ -85,7 +85,7 @@ struct DayTimeline: View {
         var late = false
         /// シフトの調整中
         var pending = false
-        /// 取り消した予定（灰色で「取り消し」）
+        /// 取り消した予定（灰色にして線を引くだけ）
         var struck = false
         var movable: Bool { !tomorrow && (kind == .event || kind == .task) }
         static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late && a.pending == b.pending }
@@ -420,9 +420,7 @@ struct DayTimeline: View {
         if let f = subs.first { m.append(Meta(symbol: "list.bullet.indent", text: subs.count == 1 ? f.title : "\(f.title) ほか\(subs.count - 1)件")) }
         if let p = e.placeName, !p.isEmpty { m.append(Meta(symbol: "mappin", text: p)) }
         else if e.extra?["meetingUrl"]?.stringValue != nil { m.append(Meta(symbol: "video", text: "オンライン")) }
-        let b = bringList(e.extra)
-        if !b.isEmpty { m.append(Meta(symbol: "bag", text: b.joined(separator: "・"))) }
-        if let n = firstLine(e.notes) { m.append(Meta(symbol: "note.text", text: n)) }
+        // 持ち物・メモは予定の詳細で見る（時刻軸の札には出さず、すっきりさせる）
         return m
     }
 
@@ -604,7 +602,8 @@ struct TimelineBlock: View {
         let filled = block.kind == .event && !block.tomorrow && !block.struck
         let fg: Color = block.tomorrow || block.struck ? .secondary : filled ? .white : .primary
         let sub: Color = block.tomorrow || block.struck ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
-        let metaRows = max(0, Int((h - 36) / 15))
+        // 取り消した予定は名前と時刻だけ（場所・持ち物などは出さない）
+        let metaRows = block.struck ? 0 : max(0, Int((h - 36) / 15))
         HStack(alignment: .top, spacing: 0) {
             if !filled && block.kind != .check {
                 Rectangle().fill(block.tomorrow || block.struck ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
@@ -615,7 +614,6 @@ struct TimelineBlock: View {
                         .foregroundStyle(block.tomorrow ? Color.secondary : filled ? Color.white : block.running ? Color.green : block.late ? Color.red : block.color)
                     Text(block.title).lineLimit(h > 60 ? 2 : 1)
                         .strikethrough((block.faded && block.kind != .event) || block.struck)
-                    if block.struck { StruckBadge(compact: h < 40) }
                     if block.pending { PendingBadge(compact: h < 40) }
                 }
                 .font(.caption.weight(.semibold))
@@ -642,7 +640,6 @@ struct TimelineBlock: View {
         .background {
             if block.tomorrow || block.struck {
                 shape.fill(Color(.tertiarySystemFill))
-                    .overlay { if block.struck { shape.strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
             } else if filled {
                 shape.fill(block.color.gradient.opacity(block.faded ? 0.45 : 0.92))
             } else {
