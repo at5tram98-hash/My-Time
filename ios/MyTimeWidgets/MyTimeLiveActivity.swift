@@ -34,15 +34,18 @@ struct MyTimeLiveActivity: Widget {
                     .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
+                    // 右の数字は島の右の縁にそろえる（タイマーの文字は幅を広めに取るので、文字の中でも右ぞろえ）
                     VStack(alignment: .trailing, spacing: 0) {
                         Text(phaseLabel(k, phase(s, stale: stale))).font(.caption2).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         TimeValue(state: s, stale: stale)
                             .font(.callout.weight(.semibold)).monospacedDigit()
                             .multilineTextAlignment(.trailing)
                             .lineLimit(1).minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .frame(maxWidth: 96, alignment: .trailing)
-                    .padding(.trailing, 4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     // いちばん大事な1つ（授業＝教室、バイト＝出勤時刻、朝・清掃＝いまの工程・場所）
@@ -64,7 +67,7 @@ struct MyTimeLiveActivity: Widget {
                 }
                 .frame(maxWidth: 70, alignment: .leading)
             } compactTrailing: {
-                // 右：短い時間か進み具合
+                // 右：短い時間か進み具合。島の右の縁に寄せる（タイマーの文字は中で右ぞろえにしないと左に寄って見える）
                 HStack(spacing: 4) {
                     Group {
                         if let t = s.compactTrailing, phase(s, stale: stale) == .run { Text(t).contentTransition(.numericText()) }
@@ -72,11 +75,14 @@ struct MyTimeLiveActivity: Widget {
                     }
                     .font(.caption.weight(.semibold)).monospacedDigit()
                     .foregroundStyle(accent(s))
+                    .multilineTextAlignment(.trailing)
                     .lineLimit(1).minimumScaleFactor(0.75)
+                    .frame(maxWidth: 48, alignment: .trailing)
                     // 進行中は、残りが減っていく小さな丸（OS が動かす）
                     TimeRing(state: s, stale: stale)
                 }
-                .frame(maxWidth: 74, alignment: .trailing)
+                .frame(maxWidth: 70, alignment: .trailing)
+                .padding(.trailing, 1)
             } minimal: {
                 if let d = s.progressDone, let t = s.progressTotal, t > 0 {
                     ZStack {

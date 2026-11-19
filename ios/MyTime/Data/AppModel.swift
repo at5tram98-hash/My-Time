@@ -56,6 +56,13 @@ final class AppModel {
     func reload() {
         // カレンダーは「自分」「みお」の2つ（取り込みで増えても、ここでまとめる。済んでいれば何もしない）
         _ = try? repo.consolidateCalendars()
+        load()
+        // 朝の自動配置（予定が変わったら付いて動く）。変えたら読み直す
+        if !isPreview, placeMorningsIfNeeded() { load() }
+        scheduleNotifications()
+    }
+
+    private func load() {
         let allTasks = repo.tasks(), allEvents = repo.events()
         tasks = allTasks.filter { !$0.isArchived }
         archivedTasks = allTasks.filter(\.isArchived)
@@ -72,7 +79,6 @@ final class AppModel {
         }
         specDisplay = disp
         outboxPending = repo.store.outbox().filter { $0["synced"]?.intValue == 0 }.count
-        scheduleNotifications()
     }
 
     // MARK: 通知（端末内の予約。変更のたびに少し待ってから予約し直す）
@@ -159,7 +165,7 @@ final class AppModel {
     func studioType(_ id: String?) -> StudioType? { studioTypes.first { $0.id == id } }
 
     /// 未割当（時間を決めていない実行タスク）
-    var inbox: [MTTask] { tasks.filter { $0.kind == .do && !$0.isDone && $0.plannedStart == nil }.sorted { ($0.deadline ?? .max) < ($1.deadline ?? .max) } }
+    var inbox: [MTTask] { tasks.filter { $0.kind == .do && !$0.isDone && $0.plannedStart == nil && $0.onDay == nil }.sorted { ($0.deadline ?? .max) < ($1.deadline ?? .max) } }
 
     func updateSettings(_ change: (inout AppSettings) -> Void) {
         repo.updateSettings(change)

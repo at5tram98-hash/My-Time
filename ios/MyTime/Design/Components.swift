@@ -46,6 +46,8 @@ enum IconMap {
     static func symbol(_ icon: String?) -> String {
         guard let icon else { return "circle" }
         if let s = symbols[icon] { return s }
+        // 種類のアイコン（SF Symbols の名前をそのまま保存したもの）
+        if icon.contains("."), UIImage(systemName: icon) != nil { return icon }
         let key = icon.replacingOccurrences(of: "\u{FE0F}", with: "")
         return emoji[key].flatMap { symbols[$0] } ?? "circle"
     }

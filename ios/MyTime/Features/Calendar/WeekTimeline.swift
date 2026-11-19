@@ -220,7 +220,7 @@ struct WeekTimeline: View {
                 // 長押しで新しい予定・左右になぞって日を動かす（UIKit のジェスチャー：上下のスクロールを邪魔しない）
                 .overlay {
                     PressDragRecognizer(
-                        minimumDuration: 0.45,
+                        minimumDuration: 0.75,
                         onEnded: { p, t in
                             guard abs(t.width) < 10 && abs(t.height) < 10 else { return }
                             let m = Int(p.y / hourHeight * 60) / 15 * 15
@@ -239,7 +239,7 @@ struct WeekTimeline: View {
             ForEach(list) { it in
                 if let p = placed[it.id] {
                     let cw = (width - 4) / CGFloat(p.columns)
-                    block(it, height: max(16, CGFloat(p.height) / 60 * hourHeight - 2), width: cw - 2)
+                    block(it, height: max(20, CGFloat(p.height) / 60 * hourHeight - 2), width: cw - 2)
                         .offset(x: 2 + cw * CGFloat(p.column), y: CGFloat(p.top) / 60 * hourHeight + 1)
                 }
             }

@@ -315,6 +315,8 @@ public struct MTTask: Record {
 
     public var specType: SpecTypeId? { SpecTypeId(rawValue: extra?["spec"]?["type"]?.stringValue ?? "") ?? (special == "assignment" ? .assignment : special == "testPrep" ? .exam : nil) }
     public var isDone: Bool { status == .done || checked }
+    /// 日付だけ決めたタスク（時刻なし）。その日の0時
+    public var onDay: EpochMs? { plannedStart == nil && kind == .do ? extra?["onDay"]?.intValue : nil }
     public var travelMinutes: Int? { extra?["travelMinutes"]?.intValue.map(Int.init) }
     public var deadline: EpochMs? {
         extra?["spec"]?["details"]?["dueAt"]?.intValue ?? assignment?["deadline"]?.intValue ?? testPrep?["examAt"]?.intValue

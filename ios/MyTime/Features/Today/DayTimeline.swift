@@ -89,8 +89,10 @@ struct DayTimeline: View {
         var struck = false
         /// ほかの人（「自分」以外のカレンダー）の予定なら、その人。札の右上に人のしるしを付ける
         var person: MTCalendar? = nil
+        /// 予定の前の移動時間（分）。札の上に「移動」の帯を出す
+        var travel: Int? = nil
         var movable: Bool { !tomorrow && (kind == .event || kind == .task) }
-        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late && a.pending == b.pending && a.struck == b.struck && a.person?.id == b.person?.id }
+        static func == (a: Block, b: Block) -> Bool { a.id == b.id && a.start == b.start && a.end == b.end && a.placed == b.placed && a.faded == b.faded && a.running == b.running && a.title == b.title && a.meta == b.meta && a.late == b.late && a.pending == b.pending && a.struck == b.struck && a.person?.id == b.person?.id && a.travel == b.travel }
     }
 
     struct Meta: Equatable, Hashable {
@@ -118,6 +120,15 @@ struct DayTimeline: View {
                                     .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
                                     .offset(x: Self.gutter + laneX(2, width)).allowsHitTesting(false)
                             }
+                            // 予定の前の移動時間：札の上に、うすい帯と「移動○分・○時発」（純正カレンダーの移動時間と同じ）
+                            ForEach(blocks.filter { $0.travel != nil && $0.placed.columns == 1 }) { b in
+                                let m = b.travel ?? 0
+                                let h = CGFloat(m) / 60 * hourHeight
+                                TravelBand(minutes: m, leave: b.start - EpochMs(m) * MINUTE, color: b.color, height: h)
+                                    .frame(width: max(8, laneWidth(b.lane, width) - 3), height: max(2, h - 1))
+                                    .offset(x: Self.gutter + laneX(b.lane, width) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight - h + 1)
+                                    .allowsHitTesting(false)
+                            }
                             ForEach(blocks) { b in
                                 TimelineBlock(
                                     block: b, hourHeight: hourHeight,
@@ -129,7 +140,7 @@ struct DayTimeline: View {
                                     onMenu: { open(b) },
                                     onDragging: { dragging = $0 }
                                 )
-                                .frame(width: max(8, laneWidth(b.lane, width) / CGFloat(b.placed.columns) - 3), height: max(18, CGFloat(b.placed.height) / 60 * hourHeight - 2))
+                                .frame(width: max(8, laneWidth(b.lane, width) / CGFloat(b.placed.columns) - 3), height: max(22, CGFloat(b.placed.height) / 60 * hourHeight - 2))
                                 .offset(x: Self.gutter + laneX(b.lane, width) + laneWidth(b.lane, width) * CGFloat(b.placed.column) / CGFloat(b.placed.columns) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight + 1)
                             }
                             if let c = creating { creatingGhost(c, width: width) }
@@ -241,8 +252,9 @@ struct DayTimeline: View {
             .frame(width: Self.gutter + width, height: hourHeight * 24)
             // 長押し→上下になぞって範囲を決める（UIKit のジェスチャーなので、ふだんの上下スクロールを邪魔しない）
             .overlay {
+                // 予定の追加は少し長めの長押し（スクロールや札のつかみ損ねで出ないように）
                 PressDragRecognizer(
-                    minimumDuration: 0.45,
+                    minimumDuration: 0.75,
                     onBegan: { p in updateCreating(start: p, current: p, moved: false, width: width) },
                     onChanged: { p, t in
                         updateCreating(start: CGPoint(x: p.x - t.width, y: p.y - t.height), current: p, moved: abs(t.height) > 6, width: width)
@@ -333,7 +345,7 @@ struct DayTimeline: View {
             let symbol = e.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? "calendar"
             let id = "event:\(e.id)"
             add(0, Draft(item: TimedItem(id: id, start: e.start, end: e.end)) { p in
-                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event), pending: isShiftPending(e.event), struck: e.isStruck, person: model.isOtherPerson(e.event.calendarId) ? model.calendar(e.event.calendarId) : nil)
+                Block(id: id, kind: .event, refId: e.id, title: e.title, start: e.start, end: e.end, plannedEnd: e.end, color: color, symbol: symbol, lane: 0, placed: p, faded: e.end <= now, running: false, meta: eventMeta(e.event), pending: isShiftPending(e.event), struck: e.isStruck, person: model.isOtherPerson(e.event.calendarId) ? model.calendar(e.event.calendarId) : nil, travel: e.isStruck ? nil : e.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil })
             })
         }
         let byId = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -368,6 +380,8 @@ struct DayTimeline: View {
             guard st < d1, en > d0 else { continue }
             let id = "morning:\(r.id)"
             let running = r.finishedAt == nil
+            // 朝のタスクを実行中なら、そのタスクの札で見せる（同じものを2つ並べない）
+            if running && model.tasks.contains(where: { $0.specType == .morning && $0.status == .running }) { continue }
             add(taskLane, Draft(item: TimedItem(id: id, start: st, end: max(en, st + 15 * MINUTE))) { p in
                 Block(id: id, kind: .session, refId: "morning:", title: running ? "朝の準備 \(r.index + 1)/\(r.steps.count)" : "朝の準備 \(Int((en - st) / MINUTE))分",
                       start: st, end: max(en, st + 15 * MINUTE), plannedEnd: en, color: .orange, symbol: "sunrise.fill", lane: taskLane, placed: p,
@@ -524,7 +538,7 @@ struct DayTimeline: View {
         } else if b.kind == .task {
             Button("削除", role: .destructive) {
                 guard let snap = model.tasks.first(where: { $0.id == b.refId }) else { return }
-                model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { try model.repo.deleteTask(b.refId) }
+                model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { model.skipAutoMorning(snap); try model.repo.deleteTask(b.refId) }
             }
         }
         Button("キャンセル", role: .cancel) {}
@@ -606,7 +620,9 @@ struct TimelineBlock: View {
         let sub: Color = block.tomorrow || block.struck ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
         // 取り消した予定・横に並んで細い札は、名前と時刻だけ（場所などは出さない）
         let metaRows = block.struck || block.placed.columns > 1 ? 0 : max(0, Int((h - 36) / 15))
-        HStack(alignment: .top, spacing: 0) {
+        // 短い札（30分未満などで高さが足りない）は、名前と時刻を1行にまとめて、文字を小さく詰める
+        let compact = h < 32 && !drag.active
+        HStack(alignment: compact ? .center : .top, spacing: 0) {
             if !filled && block.kind != .check {
                 Rectangle().fill(block.tomorrow || block.struck ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
             }
@@ -616,10 +632,14 @@ struct TimelineBlock: View {
                         .foregroundStyle(block.tomorrow ? Color.secondary : filled ? Color.white : block.running ? Color.green : block.late ? Color.red : block.color)
                     Text(block.title).lineLimit(h > 60 ? 2 : 1)
                         .strikethrough((block.faded && block.kind != .event) || block.struck)
+                        .layoutPriority(1)
+                    if compact {
+                        Text(model.hm(block.start)).font(.caption2).monospacedDigit().foregroundStyle(sub).lineLimit(1)
+                    }
                     if block.pending { PendingBadge(compact: h < 40) }
                 }
-                .font(.caption.weight(.semibold))
-                if h > 30 || drag.active {
+                .font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
+                if !compact {
                     Text("\(model.hm(drag.active ? g.start : block.start))〜\(model.hm(drag.active ? g.end : block.end))" + (block.late ? "・遅れ" : ""))
                         .font(.caption2).monospacedDigit().foregroundStyle(block.late ? Color.red : sub)
                 }
@@ -633,7 +653,7 @@ struct TimelineBlock: View {
                     Label("重なり", systemImage: "exclamationmark.triangle.fill").font(.caption2.weight(.bold)).foregroundStyle(filled ? .white : .red)
                 }
             }
-            .padding(.horizontal, 6).padding(.vertical, 3)
+            .padding(.horizontal, 6).padding(.vertical, compact ? 0 : 3)
             Spacer(minLength: 0)
         }
         // 札は時間の長さいっぱいに広げる（中身の高さに縮まないように）
@@ -671,8 +691,9 @@ struct TimelineBlock: View {
         .padding(.bottom, drag.edge == .bottom ? -bottomShift : 0)
         // 本体：タップで開く、長押し→上下で移動、動かさずに離すとメニュー
         .overlay { pressRecognizer(edge: nil) }
-        .overlay(alignment: .top) { if block.movable { handle(.top) } }
-        .overlay(alignment: .bottom) { if block.movable { handle(.bottom) } }
+        // 短い札には端のつまみを付けない（つまみが札を覆って押せなくなる）
+        .overlay(alignment: .top) { if block.movable && !compact { handle(.top) } }
+        .overlay(alignment: .bottom) { if block.movable && !compact { handle(.bottom) } }
         .scaleEffect(drag.active && drag.edge == nil && !reduceMotion ? 1.03 : 1)
         .shadow(color: .black.opacity(drag.active ? 0.18 : 0), radius: 8, y: 4)
         .offset(y: drag.active && drag.edge == nil ? topShift : 0)
@@ -772,5 +793,33 @@ struct TimelineBlock: View {
             },
             onCancelled: { drag = DragInfo(); snapped = 0 }
         )
+    }
+}
+
+
+/// 予定の前の移動時間の帯（うすい色と斜線。高さがあれば「移動25分・8:35発」）
+private struct TravelBand: View {
+    var minutes: Int
+    var leave: EpochMs
+    var color: Color
+    var height: CGFloat
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        ZStack(alignment: .topLeading) {
+            shape.fill(color.opacity(0.08))
+            shape.strokeBorder(color.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            if height >= 16 {
+                Label("移動\(minutes)分・\(model.hm(leave))発", systemImage: AppleMaps.preferredMode.symbol)
+                    .labelStyle(CompactLabel())
+                    .font(.caption2.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6).padding(.top, 2)
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("移動\(minutes)分、\(model.hm(leave))に出発")
     }
 }

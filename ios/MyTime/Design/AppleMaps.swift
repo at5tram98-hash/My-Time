@@ -130,163 +130,50 @@ enum AppleMaps {
     }
 }
 
-/// 予定の詳細の地図：場所のピン・自宅からの所要時間・出発の目安・経路。地図を押すと Apple マップで開く
-/// 予定の場所の画面（地図・行き方・所要時間・経路・移動の段取り）。予定の詳細の「場所」の行から開く
-struct PlaceDetailScreen: View {
-    var event: MTEvent
-    var start: EpochMs
-
-    @Environment(AppModel.self) private var model
-    @State private var item: MKMapItem?
-    @State private var mode: AppleMaps.Mode = AppleMaps.preferredMode
-    @State private var eta: Int?
-    @State private var loading = false
-
-    private var place: PlaceValue? { PlaceValue(event.extra?["place"]) ?? event.placeName.map { PlaceValue(name: $0) } }
-
-    var body: some View {
-        List { content }
-            .navigationTitle("場所と移動")
-            .navigationBarTitleDisplayMode(.inline)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let place {
-            Section {
-                ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let c = item?.placemark.coordinate {
-                            Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 700, longitudinalMeters: 700)), interactionModes: []) {
-                                Marker(place.name, systemImage: "mappin", coordinate: c).tint(.red)
-                            }
-                        } else {
-                            ZStack {
-                                Color(.tertiarySystemFill)
-                                if loading { ProgressView() } else { Label(place.name, systemImage: "map").foregroundStyle(.secondary) }
-                            }
-                        }
-                    }
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .onTapGesture { Task { await AppleMaps.open(place) } }
-                    .accessibilityLabel("\(place.name)の地図")
-                    .accessibilityHint("Apple マップで開きます")
-                    .accessibilityAddTraits(.isButton)
-                    Button { Task { await AppleMaps.openDirections(to: place, mode: mode) } } label: {
-                        Label("経路", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .glass(Capsule(), interactive: true)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(8)
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(place.name).font(.title3.weight(.semibold))
-                    if !place.address.isEmpty && place.address != "このまま使う" { Text(place.address).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
-                }
-            }
-            Section("行き方") {
-                GlassSegmented(items: AppleMaps.Mode.allCases.map { .init(value: $0, title: $0.label, symbol: $0.symbol) }, selection: $mode)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                etaRow
-            }
-            Section {
-                // 家を出てから着くまでの区間（乗り場・路線・時刻）。移動中はロック画面に今の区間を出す
-                TravelPlanSummary(event: event, start: start)
-            } header: { Text("移動の段取り") }
-            .task(id: place.name) { loading = true; item = await AppleMaps.mapItem(place); loading = false }
-            .task(id: "\(place.name)-\(mode.rawValue)") {
-                AppleMaps.preferredMode = mode
-                eta = await AppleMaps.minutes(to: place, mode: mode, arrival: model.time.date(start))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var etaRow: some View {
-        if AppleMaps.home == nil {
-            Label("「その他」の「アカウント」で自宅を入れると、所要時間と出発の目安を出します。", systemImage: "house").font(.caption).foregroundStyle(.secondary)
-        } else if let m = eta {
-            let leave = start - EpochMs(m) * MINUTE
-            let line = Label {
-                Text("自宅から\(mode.label)で約\(durationLabel(m))・\(model.hm(leave))に出発").monospacedDigit()
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: { Image(systemName: mode.symbol).foregroundStyle(.orange) }
-                .font(.subheadline)
-            let button = Button("移動に入れる") { setTravel(m) }.font(.caption.weight(.semibold)).buttonStyle(.bordered).fixedSize()
-            // 1行に入るときは横に、入らないときはボタンを下に（文字とボタンが押しつぶされない）
-            if event.travelMinutes != m {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { line.lineLimit(1); Spacer(minLength: 4); button }
-                    VStack(alignment: .leading, spacing: 6) { line; button }
-                }
-            } else {
-                line
-            }
-        } else {
-            Label("所要時間を調べています…", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func setTravel(_ m: Int) {
-        var e = event
-        let before = event
-        var o = e.extra?.objectValue ?? [:]
-        o["travelMinutes"] = .number(Double((m + 4) / 5 * 5))
-        e.extra = .object(o)
-        model.perform("移動時間を\((m + 4) / 5 * 5)分にしました", undo: { try model.repo.saveEvent(before, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
-    }
-}
-
-
-/// 予定の詳細の「場所」：小さな地図・場所の名前・出発の目安を1行に。押すと「場所と移動」の画面
+/// 予定の詳細の「場所」：Apple マップのプレビュー（押すとマップで開く。経路のボタンは出さない）と、
+/// 移動の段取り（あるときだけ。区間の時刻と乗り場）
 struct EventMapCard: View {
     var event: MTEvent
     var start: EpochMs
     @Environment(AppModel.self) private var model
-    @State private var coord: CLLocationCoordinate2D?
-
-    private var place: PlaceValue? { PlaceValue(event.extra?["place"]) ?? event.placeName.map { PlaceValue(name: $0) } }
 
     var body: some View {
-        if let place {
+        if let place = AppleMaps.place(of: event) {
             Section {
-                NavigationLink { PlaceDetailScreen(event: event, start: start) } label: {
-                    HStack(spacing: 12) {
-                        Group {
-                            if let c = coord {
-                                Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 500, longitudinalMeters: 500)), interactionModes: []) {
-                                    Marker("", coordinate: c).tint(.red)
-                                }
-                                .allowsHitTesting(false)
-                            } else {
-                                ZStack { Color(.tertiarySystemFill); Image(systemName: "map.fill").foregroundStyle(.secondary) }
-                            }
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(place.name).font(.body.weight(.semibold)).lineLimit(1)
-                            Text(subline).font(.caption).foregroundStyle(.secondary).lineLimit(1).monospacedDigit()
-                        }
-                    }
-                }
-                .accessibilityHint("地図・行き方・移動の段取りを開きます")
-            }
-            .task(id: place.name) { coord = await AppleMaps.mapItem(place)?.placemark.coordinate }
+                PlaceMapPreview(place: place, height: 140, subline: subline)
+                    .listRowInsets(EdgeInsets())
+            } header: { Text("場所") }
+            Section {
+                TravelPlanSummary(event: event, start: start)
+            } header: { Text("移動の段取り") }
         }
     }
 
-    private var subline: String {
+    private var subline: String? {
         let legs = TravelPlan.legs(event.extra)
-        if let r = legs.first(where: { $0.mode.isRide }) {
-            return "\(r.from) \(model.hm(start + EpochMs(r.departMin) * MINUTE))発・\(r.mode.label)"
+        if let f = legs.first {
+            let r = legs.first(where: { $0.mode.isRide })
+            return "\(model.hm(start + EpochMs(f.departMin) * MINUTE))に出発" + (r.map { "・\($0.from)から\($0.mode.label)" } ?? "")
         }
-        if let m = event.travelMinutes, m > 0 { return "\(model.hm(start - EpochMs(m) * MINUTE))に出発・移動\(m)分" }
-        return "地図と行き方"
+        if let m = event.travelMinutes, m > 0 { return "\(model.hm(start - EpochMs(m) * MINUTE))に出発・移動\(durationLabel(m))" }
+        return nil
+    }
+}
+
+extension AppleMaps {
+    /// 予定の場所。授業で場所が空なら、アカウントの学校（住所が分かっているので）
+    static func place(of e: MTEvent) -> PlaceValue? {
+        if let p = PlaceValue(e.extra?["place"]) { return p }
+        if let n = e.placeName, !n.isEmpty { return PlaceValue(name: n) }
+        if e.specType == .class || e.classInfo != nil { return school }
+        return nil
+    }
+
+    /// 学校（アカウントの学校名と住所。住所が無ければ nil）
+    static var school: PlaceValue? {
+        let a = UserDefaults.standard.string(forKey: AccountKeys.schoolAddress) ?? ""
+        guard !a.isEmpty else { return nil }
+        let n = UserDefaults.standard.string(forKey: AccountKeys.school) ?? ""
+        return PlaceValue(name: n.isEmpty ? "学校" : n, address: a)
     }
 }

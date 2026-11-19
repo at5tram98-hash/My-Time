@@ -297,7 +297,7 @@ struct TasksScreen: View {
 
     private func delete(_ t: MTTask) {
         let snap = t
-        model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { try model.repo.deleteTask(t.id) }
+        model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { model.skipAutoMorning(t); try model.repo.deleteTask(t.id) }
     }
 
     private func toggleFlag(_ t: MTTask) {
@@ -330,7 +330,9 @@ struct TasksScreen: View {
         for t in list {
             let end = t.kind == .check ? t.checkAt : (t.plannedEnd ?? t.deadline)
             if let e = end, e < now { late.append(t); continue }
-            guard let a = taskAnchor(t) ?? t.deadline else { none.append(t); continue }
+            // 日付だけのタスクは、その日の終わりまでは期限切れにしない
+            if let d = t.onDay, model.time.addDays(d, 1) <= now, t.deadline == nil { late.append(t); continue }
+            guard let a = taskAnchor(t) ?? t.onDay ?? t.deadline else { none.append(t); continue }
             if a < d1 { today.append(t) } else if a < d2 { tomorrow.append(t) } else { later.append(t) }
         }
         return [("期限切れ", late, Color.red), ("今日", today, Color.accentColor), ("明日", tomorrow, Color.secondary), ("今後", later, Color.secondary), ("時間未定", none, Color.secondary)]
@@ -361,8 +363,8 @@ struct TasksScreen: View {
     private func matches(_ t: MTTask, _ f: Filter) -> Bool {
         switch f {
         case .open: return !t.isDone
-        case .today: return tasksForDay([t], day: model.time.startOfDay(model.now), time: model.time).isEmpty == false
-        case .inbox: return t.kind == .do && !t.isDone && t.plannedStart == nil
+        case .today: return tasksForDay([t], day: model.time.startOfDay(model.now), time: model.time).isEmpty == false || (!t.isDone && t.onDay.map { model.time.isSameDay($0, model.now) } == true)
+        case .inbox: return t.kind == .do && !t.isDone && t.plannedStart == nil && t.onDay == nil
         case .check: return t.kind == .check && !t.checked
         case .flagged: return t.flagged && !t.isDone
         case .done: return t.isDone
@@ -397,7 +399,7 @@ struct TasksScreen: View {
                     let c = a.title.localizedStandardCompare(b.title)
                     return c != .orderedSame ? c == .orderedAscending : (a.createdAt, a.id) < (b.createdAt, b.id)
                 default:
-                    let x = taskAnchor(a) ?? a.deadline ?? .max, y = taskAnchor(b) ?? b.deadline ?? .max
+                    let x = taskAnchor(a) ?? a.onDay ?? a.deadline ?? .max, y = taskAnchor(b) ?? b.onDay ?? b.deadline ?? .max
                     return x != y ? x < y : (a.createdAt, a.id) < (b.createdAt, b.id)
                 }
             }

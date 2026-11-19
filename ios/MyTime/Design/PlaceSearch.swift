@@ -74,15 +74,30 @@ final class PlaceCompleter: NSObject, MKLocalSearchCompleterDelegate {
     }
 }
 
-/// 場所と移動を、その場で開いて選ぶ行（タップすると下に検索と候補が広がる）
-struct PlaceTravelEditor: View {
+/// 「設定」アプリと同じ、角丸の色つきアイコン
+struct RowIcon: View {
+    var symbol: String
+    var tint: Color
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 28)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+
+/// 予定・タスクの編集の「場所と移動」の画面。
+/// 「場所」と「移動」を別々のまとまりに分け、つながった枠にしない：
+/// 1. 場所：選んだら地図のカード（変更・外す）。選ぶ前・変更中だけ検索と候補（よく使う場所／マップの候補）
+/// 2. 移動：行き方（徒歩・電車・車）を選ぶと、自宅からの時間を自動で入れる。指でなぞって直せる
+struct PlaceTravelScreen: View {
     @Binding var place: PlaceValue?
     @Binding var travel: Int?
-    @Binding var expanded: Bool
     var start: Date
     var history: [PlaceValue]
-    /// 専用の画面の中で使う（見出しの行を出さず、いつも開いた状態。選んだ場所は地図のカードで出す）
-    var embedded = false
 
     @Environment(AppModel.self) private var model
     @AppStorage(AccountKeys.home) private var homeAddress = ""
@@ -90,112 +105,159 @@ struct PlaceTravelEditor: View {
     @AppStorage(AccountKeys.school) private var schoolName = ""
     @State private var query = ""
     @State private var completer = PlaceCompleter()
-    @FocusState private var focused: Bool
+    @State private var searching = false
+    @State private var mode: AppleMaps.Mode = AppleMaps.preferredMode
     @State private var calculating = false
-
-    static let travelChoices = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
+    /// 自動で入れた値（自分で直したら、その後は自動で上書きしない）
+    @State private var autoValue: Int?
+    @State private var failed = false
+    @FocusState private var focused: Bool
 
     var body: some View {
-        if !embedded { headerRow }
-        if expanded || embedded { expandedContent }
+        List {
+            placeSection
+            if place != nil && !searching { travelSection }
+        }
+        .listSectionSpacing(.custom(24))
+        .navigationTitle("場所と移動")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if place == nil { searching = true; focused = true }
+            autoValue = travel
+        }
+        .task(id: "\(place?.name ?? "")-\(mode.rawValue)") { await autoFill() }
+        .animation(.snappy, value: searching)
+        .animation(.snappy, value: place)
     }
 
-    private var headerRow: some View {
-        Button {
-            withAnimation(.snappy) { expanded.toggle() }
-            if expanded { focused = place == nil }
-        } label: {
-            HStack(spacing: 12) {
-                RowIcon(symbol: "mappin.and.ellipse", tint: .red)
-                Text("場所と移動").foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                Text(summary).foregroundStyle(.secondary).lineLimit(1)
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: 場所
 
     @ViewBuilder
-    private var expandedContent: some View {
-            if let p = place, embedded {
-                PlaceMapHeader(place: p) { withAnimation(.snappy) { place = nil } }
-            } else if let p = place {
-                HStack(spacing: 10) {
-                    Image(systemName: "mappin.circle.fill").font(.title2).foregroundStyle(.red)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(p.name).font(.body.weight(.semibold))
-                        if !p.address.isEmpty { Text(p.address).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+    private var placeSection: some View {
+        if let p = place, !searching {
+            Section {
+                PlaceMapPreview(place: p, height: 170)
+                    .listRowInsets(EdgeInsets())
+                HStack(spacing: 12) {
+                    Button { searching = true; focused = true } label: {
+                        Label("変更", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
                     }
-                    Spacer()
-                    Button { withAnimation(.snappy) { place = nil } } label: {
-                        Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.tertiary)
+                    Button(role: .destructive) { place = nil; travel = nil; autoValue = nil; searching = true } label: {
+                        Label("外す", systemImage: "xmark").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("場所を外す")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 0, trailing: 0))
+            } header: { Text("場所") }
+        } else {
+            Section {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("場所や住所を検索", text: $query)
+                        .focused($focused)
+                        .submitLabel(.search)
+                        .onSubmit { if !query.isEmpty { choose(PlaceValue(name: query)) } }
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                .onChange(of: query) { _, q in completer.update(q) }
+                if place != nil {
+                    Button("やめる") { searching = false; query = "" }.font(.subheadline)
+                }
+            } header: { Text("場所") }
+            if !quickPlaces.isEmpty {
+                Section("よく使う場所") {
+                    ForEach(quickPlaces, id: \.self) { p in
+                        suggestionRow(p, symbol: p.name == "自宅" ? "house.fill" : p.name == schoolLabel ? "graduationcap.fill" : "clock.arrow.circlepath") { choose(p) }
+                    }
                 }
             }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(place == nil ? "場所や住所を入力" : "別の場所を探す", text: $query)
-                    .focused($focused)
-                    .submitLabel(.done)
-                    .onSubmit { if !query.isEmpty { choose(PlaceValue(name: query)) } }
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                        .buttonStyle(.plain)
+            if !completer.results.isEmpty || !query.isEmpty {
+                Section("マップの候補") {
+                    ForEach(completer.results, id: \.self) { c in
+                        suggestionRow(PlaceValue(name: c.title, address: c.subtitle), symbol: "mappin") {
+                            Task { choose(await completer.resolve(c)) }
+                        }
+                    }
+                    if !query.isEmpty {
+                        suggestionRow(PlaceValue(name: query, address: "この名前のまま使う"), symbol: "text.cursor") { choose(PlaceValue(name: query)) }
+                    }
                 }
             }
-            .onChange(of: query) { _, q in completer.update(q) }
+        }
+    }
 
-            // 候補：自宅・学校 → 入力に合う履歴 → マップの検索結果
-            ForEach(quickPlaces, id: \.self) { p in suggestionRow(p, symbol: p.name == "自宅" ? "house.fill" : p.name == schoolLabel ? "graduationcap.fill" : "clock.arrow.circlepath") { choose(p) } }
-            ForEach(completer.results, id: \.self) { c in
-                suggestionRow(PlaceValue(name: c.title, address: c.subtitle), symbol: "mappin") {
-                    Task { choose(await completer.resolve(c)) }
+    // MARK: 移動
+
+    private var travelSection: some View {
+        Section {
+            // 今の移動時間と出発の時刻（大きく1行）
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(travel.map { "移動 \(durationLabel($0))" } ?? "移動なし").font(.title3.weight(.semibold)).monospacedDigit()
+                        .contentTransition(.numericText())
+                    if let t = travel, t > 0 {
+                        Text("\(model.hm(model.time.ms(start) - EpochMs(t) * MINUTE))に出発").font(.subheadline).foregroundStyle(.orange).monospacedDigit()
+                    }
+                }
+                Spacer()
+                if calculating { ProgressView() }
+                else if travel != nil && travel == autoValue && AppleMaps.home != nil && !failed {
+                    Text("自動").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color(.tertiarySystemFill)))
                 }
             }
-            if !query.isEmpty {
-                suggestionRow(PlaceValue(name: query, address: "このまま使う"), symbol: "text.cursor") { choose(PlaceValue(name: query)) }
-            }
-
-            // 移動時間：指でなぞって決める（5分ごと。0 は「なし」）
             GlassSlider(value: Binding(get: { travel ?? 0 }, set: { travel = $0 == 0 ? nil : $0 }),
                         steps: Array(stride(from: 0, through: 120, by: 5)),
-                        label: { m in m == 0 ? "なし" : durationLabel(m) + "・" + model.hm(model.time.ms(start) - EpochMs(m) * MINUTE) + "発" },
-                        tint: .orange, symbol: "tram.fill", title: "移動時間")
-            // Apple マップで自宅からの所要時間を調べて、移動時間に入れる
-            if let p = place, AppleMaps.home != nil {
-                Button {
-                    Task {
-                        calculating = true
-                        if let m = await AppleMaps.minutes(to: p, mode: AppleMaps.preferredMode, arrival: start) { travel = (m + 4) / 5 * 5 }
-                        calculating = false
-                    }
-                } label: {
-                    HStack {
-                        Label("自宅から\(AppleMaps.preferredMode.label)の時間を調べて入れる", systemImage: "arrow.triangle.turn.up.right.diamond")
-                        if calculating { Spacer(); ProgressView() }
-                    }
-                }
-                .disabled(calculating)
+                        label: { $0 == 0 ? "なし" : durationLabel($0) },
+                        tint: .orange, symbol: mode.symbol, title: "直す")
+        } header: {
+            // 行き方（見出しの下に、枠の外で選ぶ）
+            VStack(alignment: .leading, spacing: 8) {
+                Text("移動")
+                GlassSegmented(items: AppleMaps.Mode.allCases.map { .init(value: $0, title: $0.label, symbol: $0.symbol) }, selection: $mode)
+                    .textCase(nil)
+                    .padding(.horizontal, -16)
+                    .padding(.bottom, 4)
             }
+        } footer: {
+            if AppleMaps.home == nil {
+                Text("「その他」の「アカウント」で自宅の住所を入れると、場所を選んだときに移動時間を自動で入れます。")
+            } else if failed {
+                Text("Apple マップで時間を求められませんでした。指でなぞって入れてください。")
+            } else {
+                Text("自宅から\(mode.label)で着くまでの時間を、Apple マップで調べて入れます。なぞって直すと、その値を使います。")
+            }
+        }
+    }
+
+    /// 場所・行き方が変わったら、自宅からの時間を調べて入れる（自分で直した値は上書きしない）
+    private func autoFill() async {
+        guard let p = place, AppleMaps.home != nil, p.name != "自宅" else { return }
+        guard travel == nil || travel == autoValue else { return }
+        AppleMaps.preferredMode = mode
+        calculating = true
+        defer { calculating = false }
+        if let m = await AppleMaps.minutes(to: p, mode: mode, arrival: start) {
+            let v = (m + 4) / 5 * 5
+            failed = false
+            withAnimation(.snappy) { travel = v; autoValue = v }
+        } else {
+            failed = true
+        }
     }
 
     private var schoolLabel: String { schoolName.isEmpty ? "学校" : schoolName }
 
-    private var summary: String {
-        let t = travel.map { $0 >= 60 && $0 % 60 == 0 ? "移動\($0 / 60)時間" : "移動\($0)分" }
-        let parts = [place?.name, t].compactMap { $0 }
-        return parts.isEmpty ? "なし" : parts.joined(separator: "・")
-    }
-
     private var quickPlaces: [PlaceValue] {
         let k = query.trimmingCharacters(in: .whitespaces)
         var out: [PlaceValue] = []
-        if k.isEmpty || "自宅".contains(k) || homeAddress.contains(k) { out.append(PlaceValue(name: "自宅", address: homeAddress)) }
+        if !homeAddress.isEmpty, k.isEmpty || "自宅".contains(k) || homeAddress.contains(k) { out.append(PlaceValue(name: "自宅", address: homeAddress)) }
         if k.isEmpty || schoolLabel.contains(k) || schoolAddress.contains(k) { out.append(PlaceValue(name: schoolLabel, address: schoolAddress)) }
         for h in history where (k.isEmpty || h.name.localizedCaseInsensitiveContains(k) || h.address.localizedCaseInsensitiveContains(k)) && !out.contains(where: { $0.name == h.name }) {
             out.append(h)
@@ -220,71 +282,55 @@ struct PlaceTravelEditor: View {
     }
 
     private func choose(_ p: PlaceValue) {
-        withAnimation(.snappy) { place = p; query = ""; completer.update("") }
+        // 場所を変えたら、自動の移動時間は調べ直す
+        if travel == autoValue { travel = nil; autoValue = nil }
+        place = p; query = ""; completer.update(""); searching = false
         focused = false
     }
 }
 
-/// 「設定」アプリと同じ、角丸の色つきアイコン
-struct RowIcon: View {
-    var symbol: String
-    var tint: Color
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-
-/// 選んだ場所の地図のカード（場所と移動の画面の上）
-struct PlaceMapHeader: View {
+/// Apple マップのプレビュー（地図・ピン・名前・住所・出発の目安）。押すと Apple マップでその場所を開く（経路は出さない）
+struct PlaceMapPreview: View {
     var place: PlaceValue
-    var onRemove: () -> Void
+    var height: CGFloat = 150
+    /// 「8:35に出発・移動25分」など（任意）
+    var subline: String? = nil
     @State private var coord: CLLocationCoordinate2D?
+    @State private var loading = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                if let c = coord {
-                    Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 600, longitudinalMeters: 600)), interactionModes: []) {
-                        Marker(place.name, coordinate: c).tint(.red)
+        Button { Task { await AppleMaps.open(place) } } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack {
+                    if let c = coord {
+                        Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 650, longitudinalMeters: 650)), interactionModes: []) {
+                            Marker(place.name, coordinate: c).tint(.red)
+                        }
+                        .allowsHitTesting(false)
+                    } else {
+                        Color(.tertiarySystemFill)
+                        if loading { ProgressView() } else { Image(systemName: "map").font(.title2).foregroundStyle(.secondary) }
                     }
-                } else {
-                    Color(.tertiarySystemFill)
-                    ProgressView()
                 }
-            }
-            .frame(height: 160)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(place.name).font(.headline)
-                    if !place.address.isEmpty && place.address != "このまま使う" { Text(place.address).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                .frame(height: height)
+                .clipped()
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(place.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                        let addr = place.address == "このまま使う" || place.address == "この名前のまま使う" ? "" : place.address
+                        if let subline { Text(subline).font(.subheadline).foregroundStyle(.orange).monospacedDigit().lineLimit(1) }
+                        else if !addr.isEmpty { Text(addr).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "arrow.up.forward.app").font(.body).foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button("外す", role: .destructive, action: onRemove).font(.subheadline).buttonStyle(.borderless)
+                .padding(.horizontal, 14).padding(.vertical, 10)
             }
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
-        .task(id: place.name) { coord = await AppleMaps.mapItem(place)?.placemark.coordinate }
-    }
-}
-
-/// 予定の編集の「場所と移動」の画面（検索・地図・移動時間を1つの画面で）
-struct PlaceTravelScreen: View {
-    @Binding var place: PlaceValue?
-    @Binding var travel: Int?
-    var start: Date
-    var history: [PlaceValue]
-    var body: some View {
-        Form {
-            PlaceTravelEditor(place: $place, travel: $travel, expanded: .constant(true), start: start, history: history, embedded: true)
-        }
-        .navigationTitle("場所と移動")
-        .navigationBarTitleDisplayMode(.inline)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Apple マップで開きます")
+        .task(id: place.name) { loading = true; coord = await AppleMaps.mapItem(place)?.placemark.coordinate; loading = false }
     }
 }

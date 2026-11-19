@@ -17,10 +17,18 @@ struct TaskDetailView: View {
         NavigationStack {
             if let task = model.tasks.first(where: { $0.id == taskId }) {
                 // 秒を出すのは作業中だけ（それ以外は画面全体を毎秒書き換えない。ボタンや日付の選択が途切れないように）
-                TimelineView(.periodic(from: .now, by: task.status == .running ? 1 : 30)) { ctx in
-                    form(task, now: model.time.ms(ctx.date))
+                // 朝・清掃は種類ごとの詳細（進み具合や作業時間は出さない）
+                Group {
+                    switch task.specType {
+                    case .morning: MorningTaskDetail(task: task) { confirmDelete = true }
+                    case .cleaning: CleaningTaskDetail(task: task) { confirmDelete = true }
+                    default:
+                        TimelineView(.periodic(from: .now, by: task.status == .running ? 1 : 30)) { ctx in
+                            form(task, now: model.time.ms(ctx.date))
+                        }
+                    }
                 }
-                .navigationTitle(task.kind == .check ? "確認" : "タスク")
+                .navigationTitle(task.specType == .morning ? "朝" : task.specType == .cleaning ? "清掃" : task.kind == .check ? "確認" : "タスク")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -38,7 +46,7 @@ struct TaskDetailView: View {
                         if model.perform("削除しました", undo: {
                             try model.repo.saveTask(snapshot, isNew: true)
                             for s in subs { try model.repo.addSubtask(taskId: snapshot.id, title: s.title) }
-                        }, { try model.repo.deleteTask(task.id) }) {
+                        }, { model.skipAutoMorning(task); try model.repo.deleteTask(task.id) }) {
                             // 朝のタスクを消して、ほかに朝のタスクが無ければ起床アラームも解除する（設定は残し、オフにする）
                             if task.specType == .morning && !model.tasks.contains(where: { $0.specType == .morning }) {
                                 var m = model.morning
@@ -61,6 +69,8 @@ struct TaskDetailView: View {
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
     }
+
+    static let noProgress: Set<SpecTypeId> = [.shopping, .chores, .belongings, .payment, .paperwork, .cooking, .morning, .cleaning]
 
     @ViewBuilder
     private func form(_ task: MTTask, now: EpochMs) -> some View {
@@ -159,7 +169,8 @@ struct TaskDetailView: View {
                 }
             }
 
-            if task.kind == .do && sp == nil && canScrubProgress(task, subtasks: subs) {
+            // 買い物・家事・持ち物・支払い・書類・料理は「％」の進み具合を出さない（済んだかどうかだけ）
+            if task.kind == .do && sp == nil && canScrubProgress(task, subtasks: subs) && !Self.noProgress.contains(task.specType ?? .project) {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -198,6 +209,13 @@ struct TaskDetailView: View {
                 }
             }
 
+            // 場所：Apple マップのプレビュー（予定と同じ。押すとマップで開く）
+            if let p = PlaceValue(task.extra?["place"]) ?? task.location.flatMap({ $0.isEmpty ? nil : PlaceValue(name: $0) }) {
+                Section {
+                    PlaceMapPreview(place: p, height: 130, subline: task.travelMinutes.flatMap { m in task.plannedStart.map { "\(model.hm($0 - EpochMs(m) * MINUTE))に出発・移動\(durationLabel(m))" } })
+                        .listRowInsets(EdgeInsets())
+                } header: { Text("場所") }
+            }
             Section("詳しい情報") {
                 info("予定", "calendar", .red, when(task))
                 if task.status != .notStarted && task.kind == .do {
@@ -211,7 +229,6 @@ struct TaskDetailView: View {
                 }
                 if let m = task.estimateMinutes { info("見積時間", "hourglass", .teal, formatDuration(EpochMs(m) * MINUTE)) }
                 if let d = task.deadline { info("締切", "flag.fill", .orange, "\(model.time.dayLabel(d)) \(model.hm(d))") }
-                if let p = PlaceValue(task.extra?["place"])?.name ?? task.location, !p.isEmpty { info("場所", "mappin.and.ellipse", .red, p) }
                 if let c = task.category, !c.isEmpty { info("カテゴリー", "tray.fill", .brown, c) }
                 if task.extra?["alarm"]?.boolValue == true { info("アラーム", "alarm.fill", .orange, "開始の時刻に鳴らす") }
                 if let n = task.extra?["notifies"]?.arrayValue, !n.isEmpty {

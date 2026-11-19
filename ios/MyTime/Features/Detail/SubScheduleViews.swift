@@ -4,7 +4,7 @@ import MyTimeCore
 // MARK: - 予定の詳細の上のプレビュー（純正「カレンダー」の予定の詳細と同じ、時刻の目盛りに予定の札を置いた小さな日の表示）
 
 /// 予定の前後の時間を目盛りで表示し、予定の札の中に詳細スケジュール（予定・タスク）を名前と時刻まで並べる。
-/// - 同じ日のほかの予定は、前後に灰色の細い札で出す（その予定の前後の流れが分かる）
+/// - 前後の予定は出さない（この予定と、その中の詳細スケジュールだけ）
 /// - 今の時刻の赤い線、進行中のものは白く浮かせ、終わったタスクは灰色に取り消し線
 /// - 押すと詳細スケジュールを開く
 struct EventDayPreview: View {
@@ -36,30 +36,15 @@ struct EventDayPreview: View {
         let now = model.now
         let nowMin = Int((now - start) / MINUTE)
         let current = now >= start && now < end ? SubSchedule.current(items, minute: nowMin) : nil
-        let others = model.visibleEvents(from: w.start, to: winEnd, includeStruck: true)
-            .filter { !$0.event.allDay && !($0.masterId == event.id && $0.start == start) }
         let y: (EpochMs) -> CGFloat = { CGFloat(max(w.start, min(winEnd, $0)) - w.start) / CGFloat(HOUR) * hourH }
         VStack(alignment: .leading, spacing: 6) {
             GeometryReader { g in
                 let width = g.size.width - gutter - 4
                 ZStack(alignment: .topLeading) {
                     grid(hours: w.hours, hourH: hourH, firstHour: model.time.minutesOfDay(w.start) / 60)
-                    // 同じ日のほかの予定（灰色の細い札。押しても開かない＝この画面の主役は今の予定）
-                    ForEach(others) { o in
-                        let top = y(o.start), h = max(14, y(o.end) - top)
-                        HStack(spacing: 4) {
-                            RoundedRectangle(cornerRadius: 1).fill(model.occurrenceColor(o).opacity(0.7)).frame(width: 3)
-                            Text(o.title).font(.caption2).foregroundStyle(.secondary).strikethrough(o.isStruck).lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 2)
-                        .frame(width: width * 0.3, height: h - 2, alignment: .topLeading)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color(.tertiarySystemFill)))
-                        .offset(x: gutter + width * 0.7 + 4, y: top + 1)
-                    }
                     // この予定の札
                     let top = y(start), h = max(28, y(end) - top)
-                    let blockW = others.isEmpty ? width : width * 0.7
+                    let blockW = width
                     eventBlock(items: items, total: total, current: current, width: blockW, height: h)
                         .offset(x: gutter, y: top)
                     // 今の時刻の赤い線
@@ -220,6 +205,7 @@ struct SubScheduleView: View {
     /// 下のよく使う名前から足すレーン
     @State private var quickLane: SubItem.Lane = .event
     @State private var addTick = 0
+    @State private var adding: SubItem?
 
     static let gutter: CGFloat = 52
 
@@ -294,9 +280,14 @@ struct SubScheduleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { quickBar }
         .toolbar {
+            // ＋：時刻を選んで追加
+            ToolbarItem(placement: .primaryAction) {
+                Button { addWithTime() } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("時刻を選んで追加")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("次の空いた時間に追加", systemImage: "plus") { addNext() }
+                    Button("次の空いた時間に追加", systemImage: "text.badge.plus") { addNext() }
                     Button("隙間なく詰める", systemImage: "rectangle.compress.vertical") { pack() }.disabled(items.isEmpty)
                     // 同じ名前のほかの予定（前の回など）の詳細スケジュールを、そのまま入れる
                     if let src = previousSource {
@@ -331,6 +322,12 @@ struct SubScheduleView: View {
             Button("キャンセル", role: .cancel) { naming = nil }
         } message: {
             if let it = naming { Text("\(it.lane.label)・\(model.hm(start + EpochMs(it.startMin) * MINUTE))〜\(model.hm(start + EpochMs(it.endMin) * MINUTE))") }
+        }
+        .sheet(item: $adding) { it in
+            SubItemEditor(item: it, base: start, total: total, tint: tint,
+                          onSave: { save(adding: $0) }, onDelete: {}, isNew: true)
+                .environment(model)
+                .presentationDetents([.medium, .large])
         }
         .sheet(item: $editing) { it in
             SubItemEditor(item: it, base: start, total: total, tint: tint,
@@ -605,6 +602,15 @@ struct SubScheduleView: View {
         save(replacing: x)
     }
 
+    /// ＋：今（予定の最中なら）か、予定のレーンの最後の後に15分を下書きして、時刻を選ぶ画面を開く
+    private func addWithTime() {
+        let nowMin = Int((model.now - start) / MINUTE) / SubSchedule.step * SubSchedule.step
+        let last = items.filter { $0.lane == .event }.map(\.endMin).max() ?? 0
+        let s0 = nowMin > 0 && nowMin < total ? nowMin : last
+        let r = SubSchedule.clamp(s0, s0 + 15, total: total)
+        adding = SubItem(id: model.repo.newId(), lane: .event, title: "", startMin: r.0, endMin: r.1)
+    }
+
     /// 予定のレーンで最後の札のすぐ後（なければ最初）に15分
     private func addNext() {
         let last = items.filter { $0.lane == .event }.map(\.endMin).max() ?? 0
@@ -762,9 +768,18 @@ struct SubItemEditor: View {
     var onSave: (SubItem) -> Void
     var onDelete: () -> Void
     var onDuplicate: ((SubItem) -> Void)? = nil
+    /// ＋から新しく足すとき
+    var isNew = false
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+
+    private func date(_ m: Int) -> Date { model.time.date(base + EpochMs(m) * MINUTE) }
+    /// 選んだ時刻を予定の始まりからの分に（5分ごとにそろえる）
+    private func minute(_ d: Date) -> Int {
+        let m = Int((model.time.ms(d) - base) / MINUTE)
+        return max(0, min(total, (m + SubSchedule.step / 2) / SubSchedule.step * SubSchedule.step))
+    }
 
     var body: some View {
         NavigationStack {
@@ -777,16 +792,20 @@ struct SubItemEditor: View {
                     .pickerStyle(.segmented)
                 }
                 Section {
-                    GlassSlider(value: Binding(get: { item.startMin }, set: { s in
+                    // 時刻はiOSの時刻の選択で（予定の時間の中、5分ごと）
+                    DatePicker("開始", selection: Binding(get: { date(item.startMin) }, set: { d in
                         let len = item.minutes
+                        let s = minute(d)
                         let r = SubSchedule.clamp(s, s + len, total: total)
                         item.startMin = r.0; item.endMin = r.1
-                    }), steps: Array(stride(from: 0, through: max(0, total - SubSchedule.step), by: SubSchedule.step)),
-                                label: { model.hm(base + EpochMs($0) * MINUTE) }, tint: tint, symbol: "clock", title: "開始")
+                    }), in: date(0)...date(max(0, total - SubSchedule.step)), displayedComponents: .hourAndMinute)
+                    DatePicker("終了", selection: Binding(get: { date(item.endMin) }, set: { d in
+                        item.endMin = max(item.startMin + SubSchedule.step, min(total, minute(d)))
+                    }), in: date(min(total, item.startMin + SubSchedule.step))...date(total), displayedComponents: .hourAndMinute)
                     GlassSlider(value: Binding(get: { item.minutes }, set: { m in item.endMin = min(total, item.startMin + m) }),
                                 steps: Array(stride(from: SubSchedule.step, through: max(SubSchedule.step, total - item.startMin), by: SubSchedule.step)),
                                 label: { durationLabel($0) }, tint: tint, symbol: "hourglass", title: "長さ")
-                } footer: { Text("\(model.hm(base + EpochMs(item.startMin) * MINUTE))〜\(model.hm(base + EpochMs(item.endMin) * MINUTE))。5分ごとに止まります。") }
+                } footer: { Text("予定の時間（\(model.hm(base))〜\(model.hm(base + EpochMs(total) * MINUTE))）の中で、5分ごとにそろえます。") }
                 Section {
                     if item.lane == .task { Toggle("済み", isOn: $item.done) }
                     HStack(spacing: 12) {
@@ -807,7 +826,7 @@ struct SubItemEditor: View {
                         }
                     }
                 }
-                Section {
+                if !isNew { Section {
                     Button("すぐ後に複製", systemImage: "plus.square.on.square") {
                         var x = item
                         x.id = UUID().uuidString.lowercased()
@@ -816,13 +835,18 @@ struct SubItemEditor: View {
                         onSave(item); onDuplicate?(x); dismiss()
                     }
                     Button("外す", role: .destructive) { onDelete(); dismiss() }
-                }
+                } }
             }
-            .navigationTitle(item.lane == .event ? "予定" : "タスク")
+            .navigationTitle(isNew ? "追加" : item.lane == .event ? "予定" : "タスク")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("保存") { onSave(item); dismiss() }.fontWeight(.semibold) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isNew ? "追加" : "保存") {
+                        if item.title.trimmingCharacters(in: .whitespaces).isEmpty { item.title = item.lane == .event ? "予定" : "やること" }
+                        onSave(item); dismiss()
+                    }.fontWeight(.semibold)
+                }
             }
         }
     }

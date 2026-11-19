@@ -69,7 +69,7 @@ struct EventDetailView: View {
                                 _ = model.perform(nil, undo: { try model.repo.saveEvent(ev, isNew: false) }) { try model.repo.saveEvent(e, isNew: false) }
                             }
                         }
-                        // 場所：地図・自宅からの所要時間・Apple マップの経路
+                        // 場所：Apple マップのプレビューと移動の段取り
                         if !struckNow { EventMapCard(event: ev, start: start) }
                         details(ev, start: start, end: end)
                         // 持ち物：1行（押すと確認の画面）
@@ -259,12 +259,8 @@ struct EventDetailView: View {
         VStack(spacing: 10) {
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
-            } else if let place = ev.placeName, !place.isEmpty, !isStruck(ev, parsed) {
-                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発・経路を見る" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
-                    let p = PlaceValue(ev.extra?["place"]) ?? PlaceValue(name: place)
-                    Task { await AppleMaps.openDirections(to: p) }
-                }
             }
+            // 経路のボタンは出さない（場所は下の Apple マップのプレビューから）
             secondaryActions(ev, parsed: parsed, start: start, end: end)
         }
         .padding(.vertical, 2)
@@ -273,15 +269,17 @@ struct EventDetailView: View {
     }
 
     private func secondaryActions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
-        HStack(spacing: 10) {
-            Menu {
-                Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
-                Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
-                    copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
-                }
-                ShareLink(item: shareText(ev, start: start, end: end)) { Label("共有", systemImage: "square.and.arrow.up") }
-            } label: { roundLabel("その他", "ellipsis") }
-            .buttonStyle(PressableStyle())
+        HStack(spacing: 8) {
+            // 「その他」にしまわず、複製・コピー・共有・取り消すを同じ形のタイルで横に並べる
+            Button { duplicate(ev, start: start, end: end) } label: { roundLabel("複製", "plus.square.on.square") }
+                .buttonStyle(PressableStyle())
+                .accessibilityHint("すぐ後に同じ予定を作ります")
+            Button {
+                copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
+            } label: { roundLabel("ほかの日へ", "calendar.badge.plus") }
+                .buttonStyle(PressableStyle())
+            ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
+                .buttonStyle(PressableStyle())
             let struck = isStruck(ev, parsed)
             Button {
                 if struck {
@@ -319,7 +317,7 @@ struct EventDetailView: View {
     /// 同じ幅のタイル（形の上に名前。文字が大きくても切れずに縮む）
     private func roundLabel(_ title: String, _ symbol: String) -> some View {
         VStack(spacing: 3) {
-            Image(systemName: symbol).font(.body.weight(.semibold))
+            Image(systemName: symbol).font(.body.weight(.semibold)).frame(height: 22)
             Text(title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
         }
         .foregroundStyle(Color.accentColor)

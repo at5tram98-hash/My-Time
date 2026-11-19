@@ -299,7 +299,7 @@ struct AgendaList: View {
 
     private func deleteTask(_ t: MTTask) {
         let snapshot = t
-        model.perform("削除しました", undo: { try model.repo.saveTask(snapshot, isNew: true) }) { try model.repo.deleteTask(t.id) }
+        model.perform("削除しました", undo: { try model.repo.saveTask(snapshot, isNew: true) }) { model.skipAutoMorning(t); try model.repo.deleteTask(t.id) }
     }
 
     private func taskButton(_ t: MTTask, at: EpochMs) -> some View {

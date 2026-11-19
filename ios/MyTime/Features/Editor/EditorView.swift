@@ -31,6 +31,8 @@ struct EditorView: View {
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
     @State private var hasTime = true
+    /// タスクの日付（時刻なしで日付だけ・時刻だけ〈今日〉も選べる。純正リマインダーと同じ2つのスイッチ）
+    @State private var hasDate = true
     @State private var allDay = false
     @State private var isCheck = false
     @State private var hasDeadline = false
@@ -64,6 +66,11 @@ struct EditorView: View {
     @State private var studioId: String?
     @State private var studioValues: [String: JSONValue] = [:]
     @State private var bring: [String] = []
+    /// 種類を自分で選んだか（選んでいなければ、タイトルから自動で決める）
+    @State private var specPicked = false
+    /// タイトルから自動で決めた種類（自分で選んだら使わない）
+    @State private var autoSpec: SpecTypeId?
+    @State private var iconPicking = false
     @FocusState private var titleFocused: Bool
     /// 開いたときの入力の内容（変更があるか比べる）
     @State private var initialSignature = ""
@@ -109,6 +116,11 @@ struct EditorView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in withAnimation(.snappy) { keyboardUp = true } }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.snappy) { keyboardUp = false } }
             .onAppear(perform: load)
+            .onChange(of: title) { _, t in autoDetect(t) }
+            // 授業は学校の場所を最初から入れる（アカウントに学校の住所があるとき）
+            .onChange(of: spec) { _, sp in
+                if sp == .class, place == nil, let sc = AppleMaps.school { place = sc }
+            }
             // 変更があるときは、下になぞって閉じない（キャンセルから確かめる）
             .interactiveDismissDisabled(hasChanges)
             .sensoryFeedback(.success, trigger: saved)
@@ -146,9 +158,30 @@ struct EditorView: View {
         Section {
             HStack(spacing: 10) {
                 if kind == .event {
-                    Circle().fill(tint).frame(width: 12, height: 12).accessibilityHidden(true)
+                    // 種類があれば種類のしるし（タイトルから自動で決まる）、なければ色の丸
+                    if let sp = spec {
+                        SpecBadge(type: sp, isEvent: true, size: 26)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityLabel("種類：\(SPEC_BY_ID[sp]?.name ?? "")")
+                    } else {
+                        Circle().fill(tint).frame(width: 12, height: 12).accessibilityHidden(true)
+                    }
                 } else {
-                    Image(systemName: IconMap.symbol(icon)).foregroundStyle(tint).accessibilityHidden(true)
+                    // アイコンを押すと、その場でアイコンを選べる
+                    Button { iconPicking = true } label: {
+                        Image(systemName: IconMap.symbol(icon)).font(.body.weight(.semibold)).foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(tint.gradient))
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("アイコンを変える")
+                    .popover(isPresented: $iconPicking, arrowEdge: .top) {
+                        iconGrid
+                            .padding(12)
+                            .frame(width: 300)
+                            .presentationCompactAdaptation(.popover)
+                    }
                 }
                 TextField(kind == .event ? "予定のタイトル" : "タスクのタイトル", text: $title)
                     .font(.title3.weight(.medium))
@@ -176,6 +209,8 @@ struct EditorView: View {
                 Button { withAnimation(.snappy) { page = p; open = .none } } label: {
                     Text(p == .special ? specialLabel : p.rawValue)
                         .font(.subheadline.weight(page == p ? .semibold : .regular))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background(Capsule().fill(page == p ? Color.accentColor.opacity(0.16) : .clear))
                         .foregroundStyle(page == p ? Color.accentColor : .primary)
@@ -227,19 +262,20 @@ struct EditorView: View {
     private var basicPage: some View {
         Section {
             NavigationLink {
-                SpecTypePicker(spec: $spec, onPick: apply, studioTypes: model.studioTypes.filter { $0.status == "active" }, studioId: studioId, onPickStudio: applyStudio)
+                SpecTypePicker(spec: $spec, onPick: { specPicked = true; apply($0) }, studioTypes: model.studioTypes.filter { $0.status == "active" }, studioId: studioId, onPickStudio: { specPicked = true; applyStudio($0) })
             } label: {
-                row("種類", "square.stack.3d.up.fill", .gray, value: studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない")
+                row("種類", "square.stack.3d.up.fill", .gray, value: (studioType?.name ?? spec.flatMap { SPEC_BY_ID[$0]?.name } ?? "指定しない") + (spec != nil && spec == autoSpec && !specPicked ? "（自動）" : ""))
             }
         }
         if kind == .task {
             // タスクの種類：大きな押しボタン（実行する／確認する）
+            // 実行する／確認する：小さな2つのボタン（目立ちすぎないように）
             Section {
-                HStack(spacing: 10) {
-                    kindButton("実行する", "play.circle.fill", "時間をかけて進める", selected: !isCheck, tint: .doTask) { isCheck = false }
-                    kindButton("確認する", "checkmark.circle.fill", "その時刻に確かめる", selected: isCheck, tint: .checkTask) { isCheck = true }
+                HStack(spacing: 8) {
+                    kindButton("実行する", "play.circle.fill", selected: !isCheck, tint: .doTask) { isCheck = false }
+                    kindButton("確認する", "checkmark.circle.fill", selected: isCheck, tint: .checkTask) { isCheck = true }
                 }
-            } header: { Text("タスクの種類") }
+            } footer: { Text(isCheck ? "その時刻に確かめるだけのタスク" : "時間をかけて進めるタスク") }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
@@ -248,7 +284,18 @@ struct EditorView: View {
             if kind == .event {
                 Toggle(isOn: $allDay.animation()) { rowLabel("終日", "sun.max.fill", .orange) }
             } else if !isCheck {
-                Toggle(isOn: $hasTime.animation()) { rowLabel("日時を指定", "clock.fill", .orange) }
+                // 日付と時刻は別々のスイッチ（日付だけ・時刻だけ〈今日〉・両方）
+                Toggle(isOn: $hasDate.animation()) {
+                    switchLabel("日付", "calendar", .red, on: hasDate, value: dayText)
+                }
+                if hasDate && !hasTime {
+                    DatePicker("日付", selection: startKeepingLength, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                }
+                Toggle(isOn: $hasTime.animation()) {
+                    switchLabel("時刻", "clock.fill", .blue, on: hasTime, value: hasDate ? nil : "今日")
+                }
             }
             if showsTime { dateTimeRows }
             if kind == .task && isCheck {
@@ -257,8 +304,10 @@ struct EditorView: View {
         } footer: {
             if let c = conflict {
                 Label("「\(c.title)」（\(model.hm(c.start))〜\(model.hm(c.end))）と重なっています", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            } else if kind == .task && !isCheck && !hasTime && !hasDate {
+                Text("日付も時刻も決めないタスクは「未割当」に入ります。")
             } else if kind == .task && !isCheck && !hasTime {
-                Text("日時を決めないタスクは「未割当」に入ります。")
+                Text("日付だけのタスクは、その日の「今日」に入ります（時間軸には置きません）。")
             } else if end <= start && showsTime {
                 Text("終了は開始より後にしてください。").foregroundStyle(.red)
             }
@@ -321,9 +370,6 @@ struct EditorView: View {
             } header: { Text("持ち物") }
         }
         Section("色") { colorStrip }
-        if kind == .task {
-            Section { iconGrid } header: { Text("アイコン") }
-        }
     }
 
     /// バイトのシフトか（種類が勤務シフト、またはアルバイトのカレンダー）
@@ -336,7 +382,9 @@ struct EditorView: View {
     private var dateTimeRows: some View {
         // 1つの行にまとめる（行ごとの区切り線がずれて見えないように）
         VStack(spacing: 10) {
-            DaySwipeRow(date: startKeepingLength, onShift: shiftDay, onTap: { toggle(.date) }, expanded: open == .date)
+            if !(kind == .task && !hasDate) {
+                DaySwipeRow(date: startKeepingLength, onShift: shiftDay, onTap: { toggle(.date) }, expanded: open == .date)
+            }
             if !(kind == .event && allDay) {
                 TimeRangeBar(start: $start, end: $end, tint: tint)
                 Button { toggle(.time) } label: {
@@ -377,22 +425,31 @@ struct EditorView: View {
         }
     }
 
-    private func kindButton(_ title: String, _ symbol: String, _ sub: String, selected: Bool, tint: Color, action: @escaping () -> Void) -> some View {
+    private func kindButton(_ title: String, _ symbol: String, selected: Bool, tint: Color, action: @escaping () -> Void) -> some View {
         Button { withAnimation(.snappy) { action() } } label: {
-            VStack(spacing: 4) {
-                Image(systemName: symbol).font(.title2)
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(sub).font(.caption2).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 84)
-            .foregroundStyle(selected ? Color.white : tint)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color(.secondarySystemGroupedBackground))))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(selected ? .clear : Color(.separator).opacity(0.5), lineWidth: 0.5))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 38)
+                .foregroundStyle(selected ? tint : .secondary)
+                .background(Capsule().fill(selected ? AnyShapeStyle(tint.opacity(0.15)) : AnyShapeStyle(Color(.secondarySystemGroupedBackground))))
+                .contentShape(Capsule())
         }
         .buttonStyle(PressableStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+
+    /// スイッチの行（オンのときは選んだ値を小さく下に）
+    private func switchLabel(_ title: String, _ symbol: String, _ tint: Color, on: Bool, value: String?) -> some View {
+        HStack(spacing: 12) {
+            RowIcon(symbol: symbol, tint: tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                if on, let value { Text(value).font(.caption).foregroundStyle(tint) }
+            }
+        }
+    }
+
+    private var dayText: String { model.time.dayLabel(model.time.ms(start)) }
 
     private func setAlarm(_ on: Bool) {
         alarm = on
@@ -508,7 +565,7 @@ struct EditorView: View {
     private var iconGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
             ForEach(Array(IconMap.symbols.keys.sorted()), id: \.self) { key in
-                Button { icon = key } label: {
+                Button { icon = key; iconPicking = false } label: {
                     Image(systemName: IconMap.symbols[key]!)
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(icon == key ? Color.accentColor.opacity(0.2) : Color.clear))
@@ -610,6 +667,24 @@ struct EditorView: View {
     private var lengthText: String { durationLabel(max(0, Int(end.timeIntervalSince(start) / 60))) }
 
     // MARK: 種類（S01〜S25）
+
+    /// タイトルから種類を自動で決め、アイコン（タスク）・種類のしるし（予定）を合わせる。
+    /// 自分で種類を選んだ・自分で作った種類を使っているときはしない。予定とタスクの切り替えはしない（入力中に画面が変わらないように）
+    private func autoDetect(_ t: String) {
+        guard isNew, !specPicked, studioId == nil, loaded else { return }
+        let d = detectSpec(t).flatMap { SPEC_BY_ID[$0] }
+        // 前に自動で決めたものだけを入れ替える（読み込み時の種類は残す）
+        guard spec == nil || spec == autoSpec else { return }
+        withAnimation(.snappy) {
+            autoSpec = d?.id
+            spec = d?.id
+            if kind == .task { icon = d.map { model.specSymbol($0.id) } ?? "book" }
+        }
+        if let d, d.isEvent == (kind == .event) {
+            if kind == .task { isCheck = d.isCheck }
+            if let m = model.specSetting(d.id).defaultMinutes { end = start.addingTimeInterval(TimeInterval(m * 60)) }
+        }
+    }
 
     /// 種類を選ぶと、予定かタスクか・確認かどうかの既定を合わせる（新規のときだけ）
     private func apply(_ d: SpecDef) {
@@ -725,7 +800,7 @@ struct EditorView: View {
 
     /// 入力の内容をまとめた文字（変更の有無を比べるだけ）
     private var signature: String {
-        [title, notes, spec?.rawValue ?? "", "\(details.count)", "\(start.timeIntervalSince1970)", "\(end.timeIntervalSince1970)", "\(hasTime)", "\(allDay)", "\(isCheck)",
+        [title, notes, spec?.rawValue ?? "", "\(details.count)", "\(start.timeIntervalSince1970)", "\(end.timeIntervalSince1970)", "\(hasTime)", "\(hasDate)", "\(allDay)", "\(isCheck)",
          "\(hasDeadline)", "\(deadline.timeIntervalSince1970)", "\(estimate)", "\(hasEstimate)", calendarId, "\(String(describing: rule))", place?.name ?? "", "\(travel ?? -1)",
          "\(notifies)", meetingUrl, "\(links.map { $0.title + $0.url })", color ?? "", category, hideAfterEnd ? "1" : "0", subjectName, room, flagged ? "1" : "0", icon,
          alarm ? "1" : "0", employerId ?? "", shiftPending ? "1" : "0", studioId ?? "", "\(studioValues.count)", bring.joined(separator: "、"), "\(kind)"].joined(separator: "|")
@@ -742,14 +817,17 @@ struct EditorView: View {
         start = model.time.date(base)
         end = model.time.date(seed.end ?? base + HOUR)
         spec = seed.spec
+        specPicked = seed.spec != nil
         if let t = seed.title, !t.isEmpty { title = t }
         if let id = seed.taskId, let t = model.tasks.first(where: { $0.id == id }) {
             isNew = false; kind = .task; task = t
             title = t.title; notes = t.notes; spec = t.specType; isCheck = t.kind == .check
-            flagged = t.flagged; icon = IconMap.symbols[t.icon] != nil ? t.icon : "book"
+            flagged = t.flagged; icon = IconMap.symbol(t.icon) != "circle" ? t.icon : "book"
             category = t.category ?? ""; taskCalendarId = t.calendarId
             if let c = t.checkAt { start = model.time.date(c) }
-            if let s = t.plannedStart, let e = t.plannedEnd { start = model.time.date(s); end = model.time.date(e); hasTime = true } else { hasTime = false }
+            if let s = t.plannedStart, let e = t.plannedEnd { start = model.time.date(s); end = model.time.date(e); hasTime = true; hasDate = true }
+            else if let d = t.onDay { let s0 = d + 9 * HOUR; start = model.time.date(s0); end = model.time.date(s0 + HOUR); hasTime = false; hasDate = true }
+            else { hasTime = false; hasDate = false }
             if let d = t.deadline { hasDeadline = true; deadline = model.time.date(d) }
             if let m = t.estimateMinutes { hasEstimate = true; estimate = m }
             loadCommon(t.extra)
@@ -849,12 +927,22 @@ struct EditorView: View {
             if isCheck {
                 t.checkAt = model.time.ms(start); t.plannedStart = nil; t.plannedEnd = nil
             } else if hasTime {
-                t.plannedStart = model.time.ms(start); t.plannedEnd = model.time.ms(end); t.checkAt = nil
+                // 時刻だけのときは今日のその時刻
+                var s0 = model.time.ms(start), e0 = model.time.ms(end)
+                if !hasDate {
+                    let shift = model.time.startOfDay(now) - model.time.startOfDay(s0)
+                    s0 += shift; e0 += shift
+                }
+                t.plannedStart = s0; t.plannedEnd = e0; t.checkAt = nil
             } else {
                 t.plannedStart = nil; t.plannedEnd = nil; t.checkAt = nil
             }
+            let onDay: EpochMs? = !isCheck && !hasTime && hasDate ? model.time.startOfDay(model.time.ms(start)) : nil
             t.estimateMinutes = hasEstimate && !isCheck ? estimate : nil
             t.extra = mergeExtra(t.extra, dueAt: hasDeadline && spec != nil ? model.time.ms(deadline) : nil)
+            if onDay != nil || t.extra?["onDay"] != nil {
+                t.extra = (t.extra ?? .object([:])).merging(.object(["onDay": onDay.map { .number(Double($0)) } ?? .null]))
+            }
             if !hasDeadline, t.assignment != nil, var a = t.assignment?.objectValue { a["deadline"] = .null; t.assignment = .object(a) }
             ok = model.perform { try model.repo.saveTask(t, isNew: isNew) }
         }

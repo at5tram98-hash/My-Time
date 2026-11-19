@@ -133,6 +133,7 @@ struct CheckpointSheet: View {
     var isNew: Bool
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(Router.self) private var router: Router?
     @State private var editing = false
     @State private var confirmDelete = false
     @FocusState private var focused: Bool
@@ -204,6 +205,21 @@ struct CheckpointSheet: View {
 
     private var editor: some View {
         Form {
+            if isNew {
+                // タスク・予定にも戻れる（新しく作る画面と同じ切り替え）
+                Picker("作成する種類", selection: Binding(get: { 2 }, set: { v in
+                    guard v != 2, let router else { return }
+                    let s = checkpoint.at
+                    router.replace(.editor(EditorSeed(kind: v == 0 ? .task : .event, start: s, end: s + HOUR, title: checkpoint.title.isEmpty ? nil : checkpoint.title)))
+                })) {
+                    Text("タスク").tag(0)
+                    Text("予定").tag(1)
+                    Text("チェックポイント").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
+            }
             Section {
                 HStack(spacing: 12) {
                     RoundedRectangle(cornerRadius: 2).fill(Color.orange).frame(width: 4, height: 28)
