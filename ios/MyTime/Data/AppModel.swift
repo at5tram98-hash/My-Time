@@ -112,6 +112,8 @@ final class AppModel {
         do {
             try body()
             reload()
+            // ロック画面・Dynamic Island もすぐ合わせる（予定の取り消し・削除・移動が1分待たずに反映される。まとめて照合）
+            LiveActivityCoordinator.shared.refresh(model: self)
             // 取り消せる操作だけを覚えておく（知らせは表示しない）
             if let undo {
                 toast = Toast(text: message ?? "直前の変更", undo: { [weak self] in self?.perform { try undo() } })

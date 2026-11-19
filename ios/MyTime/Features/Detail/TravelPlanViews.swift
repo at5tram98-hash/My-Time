@@ -44,21 +44,34 @@ struct LegRow: View {
         let d = start + EpochMs(leg.departMin) * MINUTE
         let a = start + EpochMs(leg.arriveMin) * MINUTE
         HStack(alignment: .top, spacing: 10) {
-            Text(model.hm(d)).font(.subheadline.weight(.semibold)).monospacedDigit().frame(width: 46, alignment: .trailing)
+            // 時刻の列は文字の大きさに合わせて広がる（固定の幅だと大きな文字で切れる）
+            Text(model.hm(d)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                .fixedSize()
+                .frame(minWidth: 44, alignment: .trailing)
+            // 乗り物の丸と、次の区間までつなぐ線（行の高さいっぱいに伸ばす）
             VStack(spacing: 0) {
                 Image(systemName: leg.mode.symbol).font(.caption.weight(.bold)).foregroundStyle(.white)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(leg.mode.isRide ? Color.green.gradient : Color.gray.gradient))
-                if !isLast { Rectangle().fill(Color(.separator)).frame(width: 2).frame(minHeight: 18) }
+                if !isLast {
+                    Rectangle().fill(Color(.separator)).frame(width: 2).frame(maxHeight: .infinity)
+                }
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(leg.mode.isRide ? "\(leg.from)から" : leg.from).font(.subheadline.weight(leg.mode.isRide ? .bold : .regular))
-                Text("\(leg.mode.label)\(leg.line.map { "・\($0)" } ?? "")・\(leg.minutes)分 → \(leg.to) \(model.hm(a))着")
-                    .font(.caption).foregroundStyle(.secondary)
+            .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(leg.mode.isRide ? "\(leg.from)から" : leg.from)
+                    .font(.subheadline.weight(leg.mode.isRide ? .bold : .regular))
+                    .lineLimit(2)
+                Text("\(leg.mode.label)\(leg.line.map { "・\($0)" } ?? "")・\(leg.minutes)分")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text("→ \(leg.to.isEmpty ? "到着" : leg.to)  \(model.hm(a))着")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(2)
             }
-            .padding(.bottom, isLast ? 0 : 8)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, isLast ? 0 : 10)
         }
+        // 線を行の高さに合わせるため、縦は中身の高さで決める
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
     }
 }
