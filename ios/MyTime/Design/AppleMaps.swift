@@ -212,13 +212,20 @@ struct PlaceDetailScreen: View {
             Label("「その他」の「アカウント」で自宅を入れると、所要時間と出発の目安を出します。", systemImage: "house").font(.caption).foregroundStyle(.secondary)
         } else if let m = eta {
             let leave = start - EpochMs(m) * MINUTE
-            HStack(spacing: 8) {
-                Image(systemName: mode.symbol).foregroundStyle(.orange)
-                Text("自宅から\(mode.label)で約\(durationLabel(m))・\(model.hm(leave))に出発").font(.subheadline).monospacedDigit()
-                Spacer(minLength: 4)
-                if event.travelMinutes != m {
-                    Button("移動に入れる") { setTravel(m) }.font(.caption.weight(.semibold)).buttonStyle(.bordered)
+            let line = Label {
+                Text("自宅から\(mode.label)で約\(durationLabel(m))・\(model.hm(leave))に出発").monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: { Image(systemName: mode.symbol).foregroundStyle(.orange) }
+                .font(.subheadline)
+            let button = Button("移動に入れる") { setTravel(m) }.font(.caption.weight(.semibold)).buttonStyle(.bordered).fixedSize()
+            // 1行に入るときは横に、入らないときはボタンを下に（文字とボタンが押しつぶされない）
+            if event.travelMinutes != m {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { line.lineLimit(1); Spacer(minLength: 4); button }
+                    VStack(alignment: .leading, spacing: 6) { line; button }
                 }
+            } else {
+                line
             }
         } else {
             Label("所要時間を調べています…", systemImage: "clock").font(.caption).foregroundStyle(.secondary)

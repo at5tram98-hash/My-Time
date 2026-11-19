@@ -26,7 +26,7 @@ struct MyTimeLiveActivity: Widget {
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label {
-                        Text(kindLabel(k)).font(.caption2.weight(.semibold)).lineLimit(1)
+                        Text(kindLabel(k)).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
                     } icon: {
                         Image(systemName: phase(s, stale: stale) == .ended ? "checkmark.circle.fill" : s.symbol).foregroundStyle(accent(s))
                             .contentTransition(.symbolEffect(.replace))
@@ -39,6 +39,7 @@ struct MyTimeLiveActivity: Widget {
                         TimeValue(state: s, stale: stale)
                             .font(.callout.weight(.semibold)).monospacedDigit()
                             .multilineTextAlignment(.trailing)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: 96, alignment: .trailing)
                     .padding(.trailing, 4)
@@ -58,7 +59,7 @@ struct MyTimeLiveActivity: Widget {
                 HStack(spacing: 3) {
                     Image(systemName: s.symbol).foregroundStyle(accent(s))
                     if let l = s.compactLeading, !l.isEmpty {
-                        Text(l).font(.caption.weight(.semibold)).lineLimit(1).monospacedDigit()
+                        Text(l).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75).monospacedDigit()
                     }
                 }
                 .frame(maxWidth: 70, alignment: .leading)
@@ -71,7 +72,7 @@ struct MyTimeLiveActivity: Widget {
                     }
                     .font(.caption.weight(.semibold)).monospacedDigit()
                     .foregroundStyle(accent(s))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.75)
                     // 進行中は、残りが減っていく小さな丸（OS が動かす）
                     TimeRing(state: s, stale: stale)
                 }

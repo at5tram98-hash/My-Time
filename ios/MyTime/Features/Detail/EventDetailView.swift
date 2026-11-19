@@ -140,7 +140,7 @@ struct EventDetailView: View {
                     }
                     Button("キャンセル", role: .cancel) {}
                 } message: {
-                    Text("「\(ev.title)」\n間違えたときは iPhone を振ると元に戻せます。")
+                    Text("「\(ev.title)」")
                 }
                 .sensoryFeedback(.warning, trigger: deleted)
             } else {
@@ -201,22 +201,23 @@ struct EventDetailView: View {
                     Label("調整中のシフト", systemImage: "hourglass").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.orange.opacity(0.14)))
                 }
-                if !struck, let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
-                    HStack(spacing: 4) {
-                        Image(systemName: s.symbol).imageScale(.small)
-                        Text(s.text).lineLimit(1).minimumScaleFactor(0.8)
+                // 人と今の状態を1行に（枠や塗りは付けず、文字だけ）
+                HStack(spacing: 10) {
+                    if model.calendars.count > 1 {
+                        PersonLabel(calendar: model.calendar(ev.calendarId), size: 20)
+                            .font(.subheadline.weight(.medium))
+                            .saturation(struck ? 0 : 1)
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(s.color)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(s.color.opacity(0.14)))
-                    .fixedSize(horizontal: true, vertical: true)
+                    if !struck, let s = status(start: start, end: end, now: now, allDay: ev.allDay) {
+                        Label(s.text, systemImage: s.symbol).labelStyle(CompactLabel())
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(s.color)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 10).padding(.horizontal, 12)
         .accessibilityElement(children: .combine)
     }
 
@@ -252,17 +253,27 @@ struct EventDetailView: View {
     // MARK: よく使う操作
 
     /// よく使う操作（編集は右上）。ひとつ目は大きく（参加・マップ）、ほかは同じ形の丸いボタンを横に並べる
+    /// 大きな主ボタン（参加・経路）は1行まるごと、ほかの操作はその下に同じ幅のタイル（形の上に名前）。
+    /// 横1列に詰めると、主ボタンに幅を取られて右のボタンの文字が切れていた
     private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
             } else if let place = ev.placeName, !place.isEmpty, !isStruck(ev, parsed) {
-                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
+                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発・経路を見る" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
                     let p = PlaceValue(ev.extra?["place"]) ?? PlaceValue(name: place)
                     Task { await AppleMaps.openDirections(to: p) }
                 }
             }
-            // 複製・コピー・共有は1つのメニューに（ボタンを並べすぎない）
+            secondaryActions(ev, parsed: parsed, start: start, end: end)
+        }
+        .padding(.vertical, 2)
+        .animation(Motion.pop, value: isStruck(ev, parsed))
+        .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
+    }
+
+    private func secondaryActions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+        HStack(spacing: 10) {
             Menu {
                 Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
                 Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
@@ -281,7 +292,7 @@ struct EventDetailView: View {
                 } else {
                     setStruck(ev, originalStart: nil, true)
                 }
-            } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward.circle" : "xmark.circle") }
+            } label: { roundLabel(struck ? "戻す" : "取り消す", struck ? "arrow.uturn.backward" : "strikethrough") }
             .buttonStyle(PressableStyle())
             .accessibilityHint(struck ? "取り消しをやめて元の予定に戻します" : "削除せずに灰色にして線を引きます")
             .confirmationDialog("繰り返しの予定を取り消します", isPresented: $askStrike, titleVisibility: .visible) {
@@ -290,15 +301,13 @@ struct EventDetailView: View {
                 Button("キャンセル", role: .cancel) {}
             } message: { Text("削除はせず、灰色にして線を引きます。") }
         }
-        .padding(.vertical, 2)
-        .animation(Motion.pop, value: isStruck(ev, parsed))
-        .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
     }
 
     private func primaryButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
                 .foregroundStyle(.white)
+                .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .background(Color.accentColor.gradient, in: Capsule())
                 .contentShape(Capsule())
@@ -307,12 +316,17 @@ struct EventDetailView: View {
         .layoutPriority(1)
     }
 
+    /// 同じ幅のタイル（形の上に名前。文字が大きくても切れずに縮む）
     private func roundLabel(_ title: String, _ symbol: String) -> some View {
-        Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1)
-            .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-            .contentShape(Capsule())
+        VStack(spacing: 3) {
+            Image(systemName: symbol).font(.body.weight(.semibold))
+            Text(title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(Color.accentColor)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {
@@ -337,13 +351,8 @@ struct EventDetailView: View {
     @ViewBuilder
     private func details(_ ev: MTEvent, start: EpochMs, end: EpochMs) -> some View {
         Section {
-            if let cal = model.calendar(ev.calendarId) {
-                LabeledContent("カレンダー") {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: cal.color)).frame(width: 10, height: 10)
-                        Text(cal.name)
-                    }
-                }
+            if let cal = model.calendar(ev.calendarId), model.calendars.count <= 1 {
+                LabeledContent("カレンダー") { PersonLabel(calendar: cal, size: 18) }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {

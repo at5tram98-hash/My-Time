@@ -295,7 +295,8 @@ struct TaskDetailView: View {
     private func run(_ task: MTTask, _ a: TaskAction) {
         if a == .finish { feedback += 1 }
         let undo: TaskAction? = a == .start ? .undoStart : a == .finish ? .undoFinish : nil
-        model.perform(label(a) + "しました", undo: undo.map { u in { try model.repo.taskAction(task.id, u) } }) { try model.repo.taskAction(task.id, a) }
+        let ok = model.perform(label(a) + "しました", undo: undo.map { u in { try model.repo.taskAction(task.id, u) } }) { try model.repo.taskAction(task.id, a) }
+        if ok && (a == .start || a == .resume) { router.taskStarted(task.id, model: model) }
     }
 
     private func shift(_ task: MTTask, by delta: EpochMs, now: EpochMs) {
@@ -413,6 +414,9 @@ struct BigActionButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.headline)
+                // 2つ並んでも文字が折り返して崩れないよう、1行に収めて縮める
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .foregroundStyle(prominent ? Color.white : tint == .gray ? Color.primary : tint)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(prominent ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color(.secondarySystemGroupedBackground))))

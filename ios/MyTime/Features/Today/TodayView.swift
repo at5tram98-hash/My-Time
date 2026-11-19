@@ -101,15 +101,15 @@ struct TodayView: View {
     @ViewBuilder
     private func content(now: EpochMs) -> some View {
         let d1 = model.time.addDays(day, 1)
+        // 時間軸には取り消した予定も灰色で出す。上のカード・空き時間・件数には入れない
         let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
+        let live = occ.filter { !$0.isStruck }
         let dayTasks = orderHomeTasks(tasksForDay(model.tasks, day: day, time: model.time), now: now)
         let done = dayTasks.filter(\.isDone).count
-        // 取り消した予定は時刻軸に灰色で残すだけ。上のカード・空き時間・次にやることには使わない
-        let active = occ.filter { !$0.isStruck }
-        let busy = busyItems(events: active, tasks: model.tasks)
+        let busy = busyItems(events: live, tasks: model.tasks)
         let freeMin = freeMinutes(day: day, now: now, busy: busy)
-        let next = nextAction(events: active, tasks: model.tasks, now: now, time: model.time)
-        let dayEvents = occ.filter { $0.start < d1 && $0.end > day && !$0.event.allDay }
+        let next = nextAction(events: live, tasks: model.tasks, now: now, time: model.time)
+        let dayEvents = live.filter { $0.start < d1 && $0.end > day && !$0.event.allDay }
         let focus = model.settings.laneFocus
         let mainFraction: CGFloat = focus == "main" ? 0.68 : focus == "detail" ? 0.34 : 0.52
         // 計画のレーン：その日の計画（前の日に立てたもの）。今日は承認した計画、先の日は下書きを入れられる
@@ -120,7 +120,7 @@ struct TodayView: View {
         VStack(spacing: 8) {
             // 今日を見ているときだけ、状況に合わせたカード（何もなければ時計と明日の最初の予定）
             if !collapsed && model.time.isSameDay(day, now) {
-                NowCard(next: next, now: now, occurrences: active)
+                NowCard(next: next, now: now, occurrences: live)
                     .padding(.horizontal)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
@@ -565,7 +565,8 @@ struct NowCard: View {
 
     private func act(_ id: String, _ a: TaskAction, _ msg: String, undo: TaskAction? = nil) {
         feedback += 1
-        model.perform(msg, undo: undo.map { u in { try model.repo.taskAction(id, u) } }) { try model.repo.taskAction(id, a) }
+        let ok = model.perform(msg, undo: undo.map { u in { try model.repo.taskAction(id, u) } }) { try model.repo.taskAction(id, a) }
+        if ok && (a == .start || a == .resume) { router.taskStarted(id, model: model) }
     }
 }
 

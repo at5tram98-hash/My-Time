@@ -112,6 +112,8 @@ final class AppModel {
         do {
             try body()
             reload()
+            // ロック画面・Dynamic Island もすぐ合わせる（予定の取り消し・削除・移動が1分待たずに反映される。まとめて照合）
+            LiveActivityCoordinator.shared.refresh(model: self)
             // 取り消せる操作だけを覚えておく（知らせは表示しない）
             if let undo {
                 toast = Toast(text: message ?? "直前の変更", undo: { [weak self] in self?.perform { try undo() } })
@@ -129,6 +131,12 @@ final class AppModel {
 
     func subtasks(of taskId: String) -> [MTSubtask] { subtasks.filter { $0.taskId == taskId } }
     func calendar(_ id: String?) -> MTCalendar? { calendars.first { $0.id == id } }
+    /// 「自分」（最初のカレンダー）以外の人の予定か。時間軸の札では、ほかの人の予定にだけ人のしるしを付ける
+    func isOtherPerson(_ calendarId: String?) -> Bool { calendarId != nil && calendarId != MTCalendar.selfId && calendars.count > 1 }
+    /// 人ごとの表示・非表示（隠すだけで予定は消えない）
+    func setCalendarVisible(_ id: String, _ visible: Bool) {
+        _ = perform(visible ? "表示しました" : "隠しました", undo: { try self.repo.setCalendarVisible(id, !visible) }) { try repo.setCalendarVisible(id, visible) }
+    }
     /// 表示する予定。取り消した予定は既定で含めない（通知・ロック画面・給与・計画・分析に使わない）。
     /// カレンダーと今日の時間軸だけ includeStruck: true で灰色に出す
     func visibleEvents(from: EpochMs, to: EpochMs, includeArchived: Bool = false, includeStruck: Bool = false) -> [EventOccurrence] {

@@ -157,10 +157,16 @@ public struct CleaningBook: Codable, Hashable, Sendable {
 
     /// 長いあいだ清掃していない箇所（目標日を過ぎた日数が多い順。一度もない箇所も含む）
     public func neglected(now: EpochMs, time: DomainTime = .current) -> [(area: CleaningArea, item: CleaningItem, overdue: Int?)] {
-        areas.flatMap { a in a.items.map { (a, $0) } }
-            .filter { _, i in i.frequency != nil && (i.lastDone == nil || (i.overdueDays(now: now, time: time) ?? 0) > 0) }
-            .map { a, i in (a, i, i.lastDone == nil ? nil : i.overdueDays(now: now, time: time)) }
-            .sorted { ($0.overdue ?? .max) > ($1.overdue ?? .max) }
+        // 型を段ごとに決めて書く（1つの長い式だと、コンパイラによっては型の推論が終わらない）
+        typealias Row = (area: CleaningArea, item: CleaningItem, overdue: Int?)
+        var rows: [Row] = []
+        for a in areas {
+            for i in a.items where i.frequency != nil {
+                let over: Int? = i.lastDone == nil ? nil : i.overdueDays(now: now, time: time)
+                if i.lastDone == nil || (over ?? 0) > 0 { rows.append((area: a, item: i, overdue: over)) }
+            }
+        }
+        return rows.sorted { (a: Row, b: Row) -> Bool in (a.overdue ?? Int.max) > (b.overdue ?? Int.max) }
     }
 }
 

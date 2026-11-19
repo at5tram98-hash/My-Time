@@ -145,6 +145,19 @@ final class Router {
     }
     /// すべてのシートを閉じる
     func closeAll() { stack = [] }
+
+    /// 朝のタスクを開始・再開したら、そのまま朝の準備（実行中の画面）へ。朝の準備がまだなら始める（工程がない時は何もしない）
+    func taskStarted(_ taskId: String, model: AppModel) {
+        guard let t = model.tasks.first(where: { $0.id == taskId }), t.specType == .morning, t.status == .running else { return }
+        var m = model.morning
+        if m.active == nil {
+            guard !m.enabledSteps.isEmpty else { return }
+            m.active = MorningRun(startedAt: model.now, steps: m.enabledSteps)
+            model.saveMorning(m)
+        }
+        closeAll()
+        openTasks(.morningRun)
+    }
     /// i 段目のシートの表示（SwiftUI の sheet(item:) 用。中身を入れ替えてもシートは閉じない）
     func level(_ i: Int) -> Binding<SheetLevel?> {
         Binding(get: { self.stack.count > i ? SheetLevel(id: i) : nil },
@@ -257,7 +270,7 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $ringing) { t in
-            AlarmView(task: t) { ringing = nil }
+            AlarmView(task: t, onStarted: { router.taskStarted($0, model: model) }) { ringing = nil }
                 .environment(model)
         }
         // 操作のあとに画面下へ知らせは出さない。取り消しは iPhone を振る（純正アプリと同じ「シェイクで取り消す」）
@@ -377,6 +390,8 @@ extension UIWindow {
 /// アラームの画面（時計アプリのアラームにならう）。止めるまで鳴らし、振動させる
 struct AlarmView: View {
     var task: MTTask
+    /// 開始したとき（朝のタスクなら朝の準備の画面へ進む）
+    var onStarted: (String) -> Void = { _ in }
     var onClose: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router

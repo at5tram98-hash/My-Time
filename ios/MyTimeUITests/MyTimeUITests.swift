@@ -73,7 +73,7 @@ final class MyTimeUITests: XCTestCase {
         let preview = app.buttons["表示の見本（9種類）"]
         tries = 0
         // 一番下の行は浮いたタブバーに隠れることがあるので、少しずつ上へ送る
-        while !preview.isHittable && tries < 12 { app.swipeUp(velocity: .slow); tries += 1 }
+        while !(preview.exists && preview.isHittable) && tries < 16 { app.swipeUp(velocity: tries < 8 ? .default : .slow); tries += 1 }
         XCTAssertTrue(preview.exists)
         preview.tap()
         XCTAssertTrue(app.navigationBars["表示の見本"].waitForExistence(timeout: 3))

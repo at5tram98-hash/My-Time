@@ -146,6 +146,21 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(store.logs().last?["action"]?.stringValue, "resize")
     }
 
+    func testHidePersonCalendarKeepsEvents() throws {
+        try repo.ensureDefaults()
+        let e = MTEvent.make(title: "デート", calendarId: MTCalendar.mioId, start: now, end: now + HOUR, now: now)
+        try repo.saveEvent(e, isNew: true)
+        try repo.setCalendarVisible(MTCalendar.mioId, false)
+        XCTAssertEqual(repo.calendars().first { $0.id == MTCalendar.mioId }?.visible, false)
+        XCTAssertNotNil(repo.event(e.id), "隠しても予定は消えない")
+        let logs = store.logs().count
+        try repo.setCalendarVisible(MTCalendar.mioId, false)
+        XCTAssertEqual(store.logs().count, logs, "同じ値なら何も書かない")
+        try repo.setCalendarVisible(MTCalendar.mioId, true)
+        XCTAssertEqual(repo.calendars().first { $0.id == MTCalendar.mioId }?.visible, true)
+        XCTAssertThrowsError(try repo.setCalendarVisible("no-such", true))
+    }
+
     func testMoveKeepsLength() throws {
         let e = MTEvent.make(title: "面談", calendarId: "cal-general", start: now, end: now + 90 * MINUTE, now: now)
         try repo.saveEvent(e, isNew: true)

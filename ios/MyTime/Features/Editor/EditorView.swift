@@ -410,13 +410,13 @@ struct EditorView: View {
     @ViewBuilder
     private var optionPage: some View {
         if kind == .event {
-            Section("カレンダー") { calendarChips }
+            Section(model.calendars.count > 1 ? "誰の予定" : "カレンダー") { calendarChips }
         } else {
             Section {
                 Picker(selection: $taskCalendarId) {
                     Text("なし").tag(String?.none)
                     ForEach(model.calendars, id: \.id) { c in Text(c.name).tag(Optional(c.id)) }
-                } label: { rowLabel("カレンダー", "calendar", .blue) }
+                } label: { rowLabel(model.calendars.count > 1 ? "誰のタスク" : "カレンダー", "person.fill", .blue) }
                 categoryPicker
                 Toggle(isOn: $flagged) { rowLabel("フラグ", "flag.fill", .orange) }
             }
@@ -631,25 +631,10 @@ struct EditorView: View {
         }
     }
 
-    /// カレンダーを色の丸で選ぶ（純正カレンダーの色分けと同じ考え方）
+    /// 誰の予定か（人のしるしで選ぶ。カレンダー＝人）
     private var calendarChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(model.calendars, id: \.id) { c in
-                    let on = c.id == calendarId
-                    Button { calendarId = c.id } label: {
-                        HStack(spacing: 6) {
-                            Circle().fill(Color(hex: c.color)).frame(width: 12, height: 12)
-                            Text(c.name).font(.subheadline.weight(on ? .semibold : .regular))
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Capsule().fill(on ? Color(hex: c.color).opacity(0.18) : Color(.tertiarySystemFill)))
-                        .overlay(Capsule().strokeBorder(on ? Color(hex: c.color) : .clear, lineWidth: 1.5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                }
-            }
+            PersonPicker(calendars: model.calendars, selected: calendarId) { c in calendarId = c.id }
             .padding(.vertical, 2)
         }
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 0))
