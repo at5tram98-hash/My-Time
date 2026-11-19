@@ -164,7 +164,15 @@ public final class Repository {
         }
     }
 
-    public func deleteTask(_ id: String) throws {
+    /// `byUser`：人が消したとき true。自動で置いた朝を人が消したら、その日はもう自動で置かない
+    public func deleteTask(_ id: String, byUser: Bool = true) throws {
+        if byUser, let t = task(id), t.isAutoMorning, let d = MorningAuto.dayKey(t) {
+            updateSettings { s in
+                var xs = (s.raw["autoMorningSkip"]?.arrayValue ?? []).compactMap(\.intValue).filter { $0 >= d - 30 * DAY }
+                if !xs.contains(d) { xs.append(d) }
+                s.raw = s.raw.merging(.object(["autoMorningSkip": .array(xs.map { .number(Double($0)) })]))
+            }
+        }
         try store.transaction {
             let prev = store.get(.task, id: id)
             let subs = store.all(.subtask).filter { $0["taskId"]?.stringValue == id }
