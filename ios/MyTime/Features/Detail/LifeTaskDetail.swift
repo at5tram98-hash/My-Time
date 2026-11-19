@@ -29,7 +29,7 @@ struct MorningTaskDetail: View {
                     if let s = task.plannedStart {
                         Text("\(model.time.dayLabel(s)) \(model.hm(s))〜\(task.plannedEnd.map(model.hm) ?? "")").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
                     }
-                    if MorningPlace.dayKey(task) != nil, let f = first {
+                    if task.isAutoMorning, let f = first {
                         Label("\(model.hm(f.start))の「\(f.title)」の2時間前に自動で置きました", systemImage: "wand.and.stars")
                             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
@@ -113,7 +113,7 @@ struct MorningTaskDetail: View {
             Section {
                 Button(role: .destructive, action: onDelete) { Text("この朝を外す").frame(maxWidth: .infinity) }
             } footer: {
-                if MorningPlace.dayKey(task) != nil { Text("外した日は、自動で置き直しません。") }
+                if task.isAutoMorning { Text("外した日は、自動で置き直しません。") }
             }
         }
     }

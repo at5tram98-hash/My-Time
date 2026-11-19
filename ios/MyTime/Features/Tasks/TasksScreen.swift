@@ -297,7 +297,7 @@ struct TasksScreen: View {
 
     private func delete(_ t: MTTask) {
         let snap = t
-        model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { model.skipAutoMorning(t); try model.repo.deleteTask(t.id) }
+        model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { try model.repo.deleteTask(t.id) }
     }
 
     private func toggleFlag(_ t: MTTask) {

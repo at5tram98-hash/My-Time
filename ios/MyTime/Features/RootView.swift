@@ -242,6 +242,7 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active {
                 AutoCleanup.run(model: model)
+                model.autoPlaceMornings()
                 LiveActivityCoordinator.shared.startTicking(model: model)
                 Task { await AlarmService.sync(model: model) }
             } else {

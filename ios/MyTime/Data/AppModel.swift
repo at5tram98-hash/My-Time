@@ -57,8 +57,8 @@ final class AppModel {
         // カレンダーは「自分」「みお」の2つ（取り込みで増えても、ここでまとめる。済んでいれば何もしない）
         _ = try? repo.consolidateCalendars()
         load()
-        // 朝の自動配置（予定が変わったら付いて動く）。変えたら読み直す
-        if !isPreview, placeMorningsIfNeeded() { load() }
+        // 朝の自動配置（予定を変えたらすぐ付いて動く）。変えたら読み直す
+        if !isPreview, placeMornings() { load() }
         scheduleNotifications()
     }
 
@@ -79,6 +79,27 @@ final class AppModel {
         }
         specDisplay = disp
         outboxPending = repo.store.outbox().filter { $0["synced"]?.intValue == 0 }.count
+    }
+
+    // MARK: 朝の自動配置（今日と明日。最初の「自分」の予定の2時間前）
+
+    /// 予定が変わったら朝も置き直す。手で動かした・始めた朝はそのまま（MorningAuto）
+    func autoPlaceMornings() {
+        if placeMornings() { reload() }
+    }
+
+    /// 置いた・動かした・外したら true
+    private func placeMornings() -> Bool {
+        let est = morning.estimate().minutes
+        let minutes = est > 0 ? est : 60
+        let mine = events.filter { $0.calendarId == MTCalendar.selfId }
+        var changed = false
+        for i in 0..<2 {
+            let d = time.addDays(time.startOfDay(now), i)
+            let occ = expandAll(mine, from: d, to: time.addDays(d, 1), time: time)
+            if (try? repo.autoPlaceMorning(day: d, events: occ, minutes: minutes, time: time)) != nil { changed = true }
+        }
+        return changed
     }
 
     // MARK: 通知（端末内の予約。変更のたびに少し待ってから予約し直す）
@@ -118,6 +139,7 @@ final class AppModel {
         do {
             try body()
             reload()
+            autoPlaceMornings()
             // ロック画面・Dynamic Island もすぐ合わせる（予定の取り消し・削除・移動が1分待たずに反映される。まとめて照合）
             LiveActivityCoordinator.shared.refresh(model: self)
             // 取り消せる操作だけを覚えておく（知らせは表示しない）

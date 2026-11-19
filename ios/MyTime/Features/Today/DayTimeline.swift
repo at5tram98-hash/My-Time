@@ -538,7 +538,7 @@ struct DayTimeline: View {
         } else if b.kind == .task {
             Button("削除", role: .destructive) {
                 guard let snap = model.tasks.first(where: { $0.id == b.refId }) else { return }
-                model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { model.skipAutoMorning(snap); try model.repo.deleteTask(b.refId) }
+                model.perform("削除しました", undo: { try model.repo.saveTask(snap, isNew: true) }) { try model.repo.deleteTask(b.refId) }
             }
         }
         Button("キャンセル", role: .cancel) {}
