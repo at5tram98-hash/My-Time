@@ -559,7 +559,8 @@ struct NowCard: View {
 
     private func act(_ id: String, _ a: TaskAction, _ msg: String, undo: TaskAction? = nil) {
         feedback += 1
-        model.perform(msg, undo: undo.map { u in { try model.repo.taskAction(id, u) } }) { try model.repo.taskAction(id, a) }
+        let ok = model.perform(msg, undo: undo.map { u in { try model.repo.taskAction(id, u) } }) { try model.repo.taskAction(id, a) }
+        if ok && (a == .start || a == .resume) { router.taskStarted(id, model: model) }
     }
 }
 

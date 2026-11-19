@@ -250,16 +250,27 @@ struct EventDetailView: View {
     // MARK: よく使う操作
 
     /// よく使う操作（編集は右上）。ひとつ目は大きく（参加・マップ）、ほかは同じ形の丸いボタンを横に並べる
+    /// 大きな主ボタン（参加・経路）は1行まるごと、ほかの操作はその下に同じ幅のタイル（形の上に名前）。
+    /// 横1列に詰めると、主ボタンに幅を取られて右のボタンの文字が切れていた
     private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
             } else if let place = ev.placeName, !place.isEmpty {
-                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
+                primaryButton(ev.travelMinutes.map { "\(model.hm(start - EpochMs($0) * MINUTE))に出発・経路を見る" } ?? "経路を見る", AppleMaps.preferredMode.symbol) {
                     let p = PlaceValue(ev.extra?["place"]) ?? PlaceValue(name: place)
                     Task { await AppleMaps.openDirections(to: p) }
                 }
             }
+            secondaryActions(ev, parsed: parsed, start: start, end: end)
+        }
+        .padding(.vertical, 2)
+        .animation(Motion.pop, value: isStruck(ev, parsed))
+        .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
+    }
+
+    private func secondaryActions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+        HStack(spacing: 10) {
             Menu {
                 Button("すぐ後に複製", systemImage: "plus.square.on.square") { duplicate(ev, start: start, end: end) }
                 Button("ほかの日にもコピー…", systemImage: "calendar.badge.plus") {
@@ -288,15 +299,13 @@ struct EventDetailView: View {
                 Button("キャンセル", role: .cancel) {}
             } message: { Text("削除はせず、灰色にして線を引きます。") }
         }
-        .padding(.vertical, 2)
-        .animation(Motion.pop, value: isStruck(ev, parsed))
-        .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
     }
 
     private func primaryButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
                 .foregroundStyle(.white)
+                .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, minHeight: 50)
                 .background(Color.accentColor.gradient, in: Capsule())
                 .contentShape(Capsule())
@@ -305,12 +314,17 @@ struct EventDetailView: View {
         .layoutPriority(1)
     }
 
+    /// 同じ幅のタイル（形の上に名前。文字が大きくても切れずに縮む）
     private func roundLabel(_ title: String, _ symbol: String) -> some View {
-        Label(title, systemImage: symbol).font(.subheadline.weight(.semibold)).lineLimit(1)
-            .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-            .contentShape(Capsule())
+        VStack(spacing: 3) {
+            Image(systemName: symbol).font(.body.weight(.semibold))
+            Text(title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(Color.accentColor)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {

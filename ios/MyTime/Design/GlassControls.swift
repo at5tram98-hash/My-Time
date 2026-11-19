@@ -36,8 +36,10 @@ struct GlassSegmented<T: Hashable>: View {
                 } label: {
                     HStack(spacing: 4) {
                         if let s = it.symbol { Image(systemName: s).imageScale(.small) }
-                        Text(it.title)
+                        // 幅が足りないときは折り返さずに縮める（大きな文字・項目が多いとき）
+                        Text(it.title).lineLimit(1).minimumScaleFactor(0.7)
                     }
+                    .padding(.horizontal, 4)
                     .font(.subheadline.weight(on ? .semibold : .medium))
                     .foregroundStyle(on ? tint : Color.primary.opacity(0.75))
                     .frame(maxWidth: .infinity, minHeight: 34)

@@ -263,7 +263,9 @@ struct TasksScreen: View {
                     // まだ始めていなければ、右へなぞって開始
                     if t.status == .notStarted {
                         Button("開始", systemImage: "play.fill") {
-                            model.perform("開始しました", undo: { try model.repo.taskAction(t.id, .undoStart) }) { try model.repo.taskAction(t.id, .start) }
+                            if model.perform("開始しました", undo: { try model.repo.taskAction(t.id, .undoStart) }, { try model.repo.taskAction(t.id, .start) }) {
+                                router.taskStarted(t.id, model: model)
+                            }
                         }
                         .tint(.blue)
                     }
