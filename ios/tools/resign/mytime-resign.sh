@@ -48,7 +48,7 @@ fi
 log "入れ直しを始める（署名の残り ${LEFT} 時間）"
 
 # iPhone がつながっているか（ケーブルか、同じ Wi‑Fi）
-if ! xcrun devicectl list devices 2>/dev/null | grep "$DEVICE" | grep -q "available"; then
+if ! xcrun devicectl list devices 2>/dev/null | grep "$DEVICE" | grep -qE "available|connected"; then
   log "iPhone が見つからない（次の回にもう一度）"
   if (( LEFT < 24 )); then notify "署名の更新を待っています" "iPhone を Mac につなぐか、同じ Wi‑Fi にしてください（残り ${LEFT} 時間）"; fi
   exit 0
@@ -69,21 +69,15 @@ else
   notify "署名の更新に失敗" "署名の設定ファイルが見つかりません"; exit 1
 fi
 
-# 新しい署名を取り直すには、Xcode に Apple ID が入っている必要がある（無いまま退けるとビルドできなくなる）
-if ! defaults read com.apple.dt.Xcode DVTDeveloperAccountManagerAppleIDLists 2>/dev/null | grep -q "@"; then
-  log "Xcode に Apple ID が入っていない（署名を取り直せない）"
-  notify "署名を更新できません" "Xcode の設定の「Apple Accounts」で Apple ID にサインインしてください（残り ${LEFT} 時間）"
-  exit 1
-fi
-
 # 期限の近い署名ファイルを退ける（Xcode が新しい7日の署名を取り直す）
 BACKUP="$WORK/old-profiles"; mkdir -p "$BACKUP"
+MOVED=()
 for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
   [[ -d "$dir" ]] || continue
   for f in "$dir"/*.mobileprovision(N); do
     if security cms -D -i "$f" 2>/dev/null | grep -q "$BUNDLE"; then
       e=$(expiry_of "$f")
-      if (( (e - NOW) / 3600 <= MARGIN_HOURS )); then mv "$f" "$BACKUP/" && log "古い署名を退けた：${f:t}"; fi
+      if (( (e - NOW) / 3600 <= MARGIN_HOURS )); then mv "$f" "$BACKUP/" && MOVED+=("$dir/${f:t}") && log "古い署名を退けた：${f:t}"; fi
     fi
   done
 done
@@ -91,7 +85,13 @@ done
 if ! xcodebuild -project "$SRC/ios/MyTime.xcodeproj" -scheme MyTime -destination "id=$DEVICE" \
       -derivedDataPath "$DD" -allowProvisioningUpdates build >> "$LOG" 2>&1; then
   log "ビルドに失敗"
-  notify "署名の更新に失敗" "ビルドできませんでした。Xcode でアカウントにサインインしているか確かめてください"
+  # 退けた署名を元に戻す（取り直せなかったときに、今の署名でのビルドまでできなくならないように）
+  for f in "${MOVED[@]}"; do mv "$BACKUP/${f:t}" "$f" 2>/dev/null && log "署名を元に戻した：${f:t}"; done
+  if tail -n 400 "$LOG" | grep -q "No Accounts"; then
+    notify "署名を更新できません" "Xcode の設定の「Apple Accounts」で Apple ID にサインインしてください（残り ${LEFT} 時間）"
+  else
+    notify "署名の更新に失敗" "ビルドできませんでした。記録：~/Library/Logs/MyTime/resign.log"
+  fi
   exit 1
 fi
 if ! xcrun devicectl device install app --device "$DEVICE" "$APP" >> "$LOG" 2>&1; then
