@@ -69,6 +69,13 @@ else
   notify "署名の更新に失敗" "署名の設定ファイルが見つかりません"; exit 1
 fi
 
+# 新しい署名を取り直すには、Xcode に Apple ID が入っている必要がある（無いまま退けるとビルドできなくなる）
+if ! defaults read com.apple.dt.Xcode DVTDeveloperAccountManagerAppleIDLists 2>/dev/null | grep -q "@"; then
+  log "Xcode に Apple ID が入っていない（署名を取り直せない）"
+  notify "署名を更新できません" "Xcode の設定の「Apple Accounts」で Apple ID にサインインしてください（残り ${LEFT} 時間）"
+  exit 1
+fi
+
 # 期限の近い署名ファイルを退ける（Xcode が新しい7日の署名を取り直す）
 BACKUP="$WORK/old-profiles"; mkdir -p "$BACKUP"
 for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
