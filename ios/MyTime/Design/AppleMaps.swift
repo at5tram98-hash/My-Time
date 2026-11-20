@@ -36,6 +36,11 @@ enum AppleMaps {
         return item
     }
 
+    /// 移動時間の余裕（分）。Apple マップの所要時間に足す
+    static let bufferMinutes = 20
+    /// 所要時間＋余裕を5分単位に
+    static func withBuffer(_ m: Int) -> Int { (m + bufferMinutes + 4) / 5 * 5 }
+
     /// 自宅（アカウントの住所）
     static var home: PlaceValue? {
         let a = UserDefaults.standard.string(forKey: AccountKeys.home) ?? ""
@@ -175,5 +180,24 @@ extension AppleMaps {
         guard !a.isEmpty else { return nil }
         let n = UserDefaults.standard.string(forKey: AccountKeys.school) ?? ""
         return PlaceValue(name: n.isEmpty ? "学校" : n, address: a)
+    }
+}
+
+
+extension AppModel {
+    /// 予定に場所があって移動時間が空のとき、自宅から公共交通機関で調べて（＋余裕）入れる。自宅が無ければ何もしない
+    @MainActor
+    func fillTravel(eventId: String) {
+        guard AppleMaps.home != nil else { return }
+        Task { @MainActor in
+            guard let e = events.first(where: { $0.id == eventId }), e.travelMinutes == nil,
+                  let p = PlaceValue(e.extra?["place"]) ?? e.placeName.map({ PlaceValue(name: $0) }), p.name != "自宅",
+                  let m = await AppleMaps.minutes(to: p, mode: .transit, arrival: time.date(e.start)),
+                  var cur = events.first(where: { $0.id == eventId }), cur.travelMinutes == nil else { return }
+            var o = cur.extra?.objectValue ?? [:]
+            o["travelMinutes"] = .number(Double(AppleMaps.withBuffer(m)))
+            cur.extra = .object(o)
+            _ = perform(nil) { try repo.saveEvent(cur, isNew: false) }
+        }
     }
 }

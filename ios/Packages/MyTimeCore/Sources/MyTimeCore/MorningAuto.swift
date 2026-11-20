@@ -94,3 +94,51 @@ public extension Repository {
         return t
     }
 }
+
+// MARK: - 起床アラームの自動設定（2つまで）
+//
+// 家を出る時刻（最初の予定 − 移動時間。移動が無ければ予定の開始）から、朝の準備の見込みを引いた時刻を「起きる時刻」にする。
+// 1つ目はその10分前、2つ目は起きる時刻ちょうど。自動のアラームは名前を「自動」で始め、次の朝の曜日だけで鳴らす。
+
+public extension MorningAuto {
+    static let autoLabelPrefix = "自動"
+    /// 起きてから準備を始めるまでの余裕（分）
+    static let wakeMargin = 10
+
+    /// 起きる時刻（その日の0時からの分）。早すぎる・遅すぎる（4時より前・12時より後）は nil
+    static func wakeMinute(firstStart: EpochMs, travelMinutes: Int?, prepMinutes: Int, day: EpochMs, time: DomainTime = .current) -> Int? {
+        let leave = firstStart - EpochMs(max(0, travelMinutes ?? 0)) * MINUTE
+        let wake = leave - EpochMs(max(15, prepMinutes) + wakeMargin) * MINUTE
+        guard time.isSameDay(wake, day) else { return nil }
+        let m = time.minutesOfDay(wake) / 5 * 5
+        return (4 * 60...12 * 60).contains(m) ? m : nil
+    }
+
+    /// 自動のアラームを入れ替えた並び（自分で作ったアラームはそのまま。合わせて最大3つ）
+    static func applyWakeAlarms(_ routine: MorningRoutine, wakeMinute: Int?, weekday: Int) -> MorningRoutine {
+        var r = routine
+        let manual = r.alarms.filter { !$0.label.hasPrefix(autoLabelPrefix) }
+        var autos: [MorningAlarm] = []
+        if let w = wakeMinute {
+            let first = max(0, w - 10)
+            autos = [
+                MorningAlarm(id: "auto-wake-1", hour: first / 60, minute: first % 60, weekdays: [weekday], snoozeMinutes: 5, label: "\(autoLabelPrefix)・1つ目"),
+                MorningAlarm(id: "auto-wake-2", hour: w / 60, minute: w % 60, weekdays: [weekday], snoozeMinutes: 5, label: "\(autoLabelPrefix)・起きる時刻"),
+            ]
+            // 前のアラームの音・オンオフの選び方は引き継ぐ
+            for i in autos.indices {
+                if let old = r.alarms.first(where: { $0.id == autos[i].id }) { autos[i].sound = old.sound; autos[i].enabled = old.enabled }
+            }
+        }
+        // 自動のアラームを先に（2つは必ず入るように、自分のアラームは後ろ。合わせて3つまで）
+        r.alarms = autos + manual.prefix(max(0, MorningRoutine.maxAlarms - autos.count))
+        return r
+    }
+
+    /// 自動に切り替えたとき：自分で作ったアラームはオフにして残す（消さない。あとでオンにもできる）
+    static func turnOffManualAlarms(_ routine: MorningRoutine) -> MorningRoutine {
+        var r = routine
+        for i in r.alarms.indices where !r.alarms[i].label.hasPrefix(autoLabelPrefix) { r.alarms[i].enabled = false }
+        return r
+    }
+}

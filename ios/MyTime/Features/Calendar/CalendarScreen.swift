@@ -26,14 +26,6 @@ struct CalendarScreen: View {
                         .init(value: "month", title: "月"), .init(value: "list", title: "一覧"),
                     ], selection: $mode.animation(reduceMotion ? nil : Motion.sheet))
                     .padding(.horizontal)
-                    // 人ごとのカレンダー（自分・みお）。押すとその人の予定を出す・隠す（予定は消えない）
-                    if model.calendars.count > 1 {
-                        PersonPicker(calendars: model.calendars, selected: nil, dimmed: Set(model.calendars.filter { !$0.visible }.map(\.id))) { c in
-                            model.setCalendarVisible(c.id, !c.visible)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                    }
                     if mode == "day" || mode == "list" {
                         WeekStrip(selected: $selected)
                             .padding(.horizontal)
@@ -73,6 +65,10 @@ struct CalendarScreen: View {
                             .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.secondary : Color.red)
                     }
                     .accessibilityLabel("今日へ移動")
+                }
+                // 誰の予定を出すか（自分・みお）：＋の左のボタンから選ぶ（画面の上を占めない）
+                if model.calendars.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) { PeopleMenu() }
                 }
                 MainToolbar(addKind: .event)
             }
@@ -323,5 +319,44 @@ struct AgendaList: View {
                     Text(model.hm(at)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
+    }
+}
+
+
+/// ナビゲーションバーの「人」のボタン。押すと自分・みおの予定を出す／隠すを選べる（予定は消えない）
+struct PeopleMenu: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let shown = model.calendars.filter(\.visible)
+        Menu {
+            Section("表示する人") {
+                ForEach(model.calendars, id: \.id) { c in
+                    Toggle(isOn: Binding(get: { c.visible }, set: { v in
+                        // 全員を隠すことはしない（何も出ない画面にしない）
+                        if !v && shown.count <= 1 { return }
+                        model.setCalendarVisible(c.id, v)
+                    })) {
+                        Label(c.name, systemImage: c.visible ? "person.crop.circle.fill" : "person.crop.circle")
+                    }
+                }
+            }
+            Section {
+                Button("全員を表示", systemImage: "person.2.fill") {
+                    for c in model.calendars where !c.visible { model.setCalendarVisible(c.id, true) }
+                }
+                .disabled(shown.count == model.calendars.count)
+            }
+        } label: {
+            // 出している人のしるしを重ねて見せる（全員なら2人、片方ならその人）
+            HStack(spacing: -6) {
+                ForEach(shown.prefix(2), id: \.id) { c in
+                    PersonAvatar(calendar: c, size: 22)
+                        .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 1.5))
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .accessibilityLabel("表示する人：" + shown.map(\.name).joined(separator: "・"))
     }
 }

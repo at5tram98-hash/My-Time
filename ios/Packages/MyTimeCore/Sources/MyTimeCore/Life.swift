@@ -340,6 +340,18 @@ public struct MorningRoutine: Codable, Hashable, Sendable {
         return (Int((total + MINUTE / 2) / MINUTE), measured, planned, unknown)
     }
 
+    /// 放っておかれた朝（始めてから6時間を過ぎても終わっていない）を、最後に動かした工程の所で終わりにする。
+    /// 翌日まで「経過25時間」と出続けないように。終えたら true
+    @discardableResult
+    public mutating func closeStale(now: EpochMs, after hours: Int = 6) -> Bool {
+        guard var r = active, r.finishedAt == nil, now - r.startedAt > EpochMs(hours) * HOUR else { return false }
+        r.pausedAt = nil
+        r.finishedAt = max(r.stepStartedAt, r.startedAt)
+        active = r
+        finishActive()
+        return true
+    }
+
     public mutating func finishActive() {
         guard let r = active, r.finishedAt != nil else { return }
         history.removeAll { $0.id == r.id }

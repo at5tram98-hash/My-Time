@@ -50,6 +50,7 @@ struct WeekTimeline: View {
                         }
                         .background(alignment: .topLeading) { gridLines }
                     }
+                    .guardsTaps()
                     .onAppear {
                         first = clampFirst(model.time.weekday(model.time.ms(selected)) - visible / 2)
                         let h = model.time.minutesOfDay(now) / 60
@@ -190,6 +191,8 @@ struct WeekTimeline: View {
         var symbol: String = "calendar"
         /// 教室・場所など（余裕があれば表示）
         var sub: String? = nil
+        /// 予定の前の移動時間（分）。出発の ◆ を出す
+        var travel: Int? = nil
     }
 
     private func items(_ d: EpochMs) -> [Item] {
@@ -197,7 +200,8 @@ struct WeekTimeline: View {
         var out: [Item] = model.visibleEvents(from: d, to: d1, includeStruck: true).filter { !$0.event.allDay && $0.start < d1 && $0.end > d }.map { o in
             Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: o.isStruck ? .gray : Color(hex: model.eventColor(o.event)), isEvent: true, done: o.isStruck, pending: isShiftPending(o.event), open: .event(o.id),
                  symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
-                 sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName))
+                 sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName),
+                 travel: o.isStruck || o.start < d ? nil : o.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil })
         }
         for t in model.tasks {
             if t.kind == .do, let s = t.plannedStart, let e = t.plannedEnd, s < d1, e > d {
@@ -243,6 +247,16 @@ struct WeekTimeline: View {
                         .offset(x: 2 + cw * CGFloat(p.column), y: CGFloat(p.top) / 60 * hourHeight + 1)
                 }
             }
+            // 出発の時刻（◆だけ。列の左に）
+            ForEach(list.filter { $0.travel != nil && !$0.done }) { it in
+                let leave = it.start - EpochMs(it.travel ?? 0) * MINUTE
+                if leave >= d {
+                    Text("◆").font(.system(size: 9, weight: .bold)).foregroundStyle(it.color)
+                        .offset(x: 1, y: CGFloat(model.time.minutesOfDay(leave)) / 60 * hourHeight - 6)
+                        .accessibilityLabel("出発 \(model.hm(leave))")
+                        .allowsHitTesting(false)
+                }
+            }
             ForEach(model.checkpoints(on: d)) { c in
                 CheckpointLine(checkpoint: c, width: width) { router.open(.checkpoint(c)) }
                     .offset(y: CGFloat(model.time.minutesOfDay(c.at)) / 60 * hourHeight - 9)
@@ -286,7 +300,7 @@ struct WeekTimeline: View {
             .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(it.isEvent ? .clear : it.color.opacity(0.5), lineWidth: 0.8))
             .opacity(it.done ? 0.55 : 1)
         .contentShape(Rectangle())
-        .onTapGesture { if Date().timeIntervalSince(lastSwipe) > 0.4 { router.open(it.open) } }
+        .deliberateTap { if Date().timeIntervalSince(lastSwipe) > 0.4 { router.open(it.open) } }
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { router.open(it.open) }
         .accessibilityLabel("\(it.isEvent ? "予定" : "タスク") \(it.title)、\(model.hm(it.start))〜\(model.hm(it.end))")

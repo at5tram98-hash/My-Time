@@ -45,6 +45,7 @@ struct MonthView: View {
                     }
                     .padding(.bottom, 80)
                 }
+                .guardsTaps()
                 .onAppear { scrollToWeek(model.time.ms(selected), proxy: proxy, animated: false) }
                 .onChange(of: todayTick) { _, _ in scrollToWeek(model.now, proxy: proxy, animated: true) }
             }
@@ -256,8 +257,9 @@ struct MonthView: View {
         .frame(height: height)
         .background(RoundedRectangle(cornerRadius: 3).fill(filled ? AnyShapeStyle(c) : AnyShapeStyle(c.opacity(0.15))))
         .contentShape(Rectangle())
-        .onTapGesture { router.open(.event(o.id)) }
+        .deliberateTap { router.open(.event(o.id)) }
         .accessibilityElement(children: .combine)
+        .accessibilityAction { router.open(.event(o.id)) }
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel((o.isStruck ? "取り消し、" : "") + "\(o.title)、\(o.event.allDay ? "終日" : model.hm(o.start))")
     }

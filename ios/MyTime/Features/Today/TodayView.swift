@@ -101,8 +101,8 @@ struct TodayView: View {
     @ViewBuilder
     private func content(now: EpochMs) -> some View {
         let d1 = model.time.addDays(day, 1)
-        // 時間軸には取り消した予定も灰色で出す。上のカード・空き時間・件数には入れない
-        let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
+        // 今日の画面は「自分」の予定だけ（みおの予定はカレンダーで見る）。時間軸には取り消した予定も灰色で出す。上のカード・空き時間・件数には入れない
+        let occ = model.myEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
         let live = occ.filter { !$0.isStruck }
         let dayTasks = orderHomeTasks(tasksForDay(model.tasks, day: day, time: model.time), now: now)
         let done = dayTasks.filter(\.isDone).count
@@ -259,7 +259,7 @@ struct TodayView: View {
 
     private func tomorrowItemCount(after day: EpochMs) -> Int {
         let d1 = model.time.addDays(model.time.startOfDay(model.now), 1), d2 = model.time.addDays(d1, 1)
-        let ev = model.visibleEvents(from: d1, to: d2).filter { !$0.event.allDay && $0.start >= d1 && $0.start < d2 }.count
+        let ev = model.myEvents(from: d1, to: d2).filter { !$0.event.allDay && $0.start >= d1 && $0.start < d2 }.count
         let tk = model.tasks.filter { t in !t.isDone && ((t.kind == .check ? t.checkAt : t.plannedStart).map { $0 >= d1 && $0 < d2 } ?? false) }.count
         return ev + tk
     }
@@ -448,7 +448,7 @@ struct NowCard: View {
     /// 明日の最初の予定（終日を除く）か、時刻の決まったタスク
     private var tomorrowFirst: (title: String, detail: String)? {
         let d1 = model.time.addDays(model.time.startOfDay(now), 1), d2 = model.time.addDays(d1, 1)
-        let ev = model.visibleEvents(from: d1, to: d2).filter { !$0.event.allDay && $0.start >= d1 }.min { $0.start < $1.start }
+        let ev = model.myEvents(from: d1, to: d2).filter { !$0.event.allDay && $0.start >= d1 }.min { $0.start < $1.start }
         let tk = model.tasks.filter { !$0.isDone && ($0.plannedStart.map { $0 >= d1 && $0 < d2 } ?? false) }.min { $0.plannedStart! < $1.plannedStart! }
         if let ev, ev.start <= (tk?.plannedStart ?? .max) {
             let extra = room(ev) ?? ev.event.placeName

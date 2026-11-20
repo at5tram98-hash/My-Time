@@ -34,7 +34,8 @@ struct PressDragRecognizer: UIViewRepresentable {
             v.addGestureRecognizer(lp)
         }
         if onTap != nil || onTapAt != nil {
-            let t = UITapGestureRecognizer(target: c, action: #selector(Coordinator.tap(_:)))
+            // 軽く触れただけ・スクロールを止めようと触れただけでは開かない（DeliberateTap）
+            let t = DeliberateTapRecognizer(target: c, action: #selector(Coordinator.tap(_:)))
             t.delegate = c
             v.addGestureRecognizer(t)
         }
@@ -80,7 +81,7 @@ struct PressDragRecognizer: UIViewRepresentable {
             }
         }
 
-        @objc func tap(_ g: UITapGestureRecognizer) {
+        @objc func tap(_ g: UIGestureRecognizer) {
             guard g.state == .ended else { return }
             parent.onTap?()
             parent.onTapAt?(g.location(in: g.view))
@@ -108,5 +109,82 @@ struct PressDragRecognizer: UIViewRepresentable {
 
         /// スクロールなど、ほかのジェスチャーと同時に動かしてよい
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+
+// MARK: - 押したと分かるタップ
+
+/// 誤って開かないタップ：
+/// - 指を置いてから離すまで `TapGuard.minDuration` 秒以上（ふれただけ・こすっただけは数えない）
+/// - 8pt より動いたら取り消し（スクロールのつもりの指）
+/// - スクロール中・スクロールが止まった直後（`TapGuard.quiet` 秒）に触れたときは数えない（止めるための指で開かない）
+final class DeliberateTapRecognizer: UIGestureRecognizer {
+    private var began: TimeInterval = 0
+    private var origin: CGPoint = .zero
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard touches.count == 1, let t = touches.first else { state = .failed; return }
+        began = t.timestamp
+        origin = t.location(in: view)
+        if TapGuard.isScrolling(from: view) { state = .failed }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let t = touches.first else { return }
+        let p = t.location(in: view)
+        if hypot(p.x - origin.x, p.y - origin.y) > 8 { state = .failed }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let t = touches.first else { state = .failed; return }
+        state = t.timestamp - began >= TapGuard.minDuration && !TapGuard.isScrolling(from: view) ? .ended : .failed
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { state = .cancelled }
+
+    override func reset() { began = 0 }
+}
+
+/// 誤タップよけの決まり（今日・カレンダーの札で共通）
+enum TapGuard {
+    /// 指を置いておく最短の時間
+    static let minDuration: TimeInterval = 0.09
+    /// スクロールが止まってから、この秒数は札を開かない
+    static let quiet: TimeInterval = 0.35
+    /// SwiftUI のスクロールが最後に動いた時刻
+    static var lastScroll: Date = .distantPast
+
+    static func markScroll() { lastScroll = Date() }
+
+    /// 周りのスクロールが動いている（なぞっている・惰性で動いている）か、止まった直後か
+    static func isScrolling(from view: UIView?) -> Bool {
+        if Date().timeIntervalSince(lastScroll) < quiet { return true }
+        var v = view?.superview
+        while let x = v {
+            if let sv = x as? UIScrollView, sv.isDragging || sv.isDecelerating { markScroll(); return true }
+            v = x.superview
+        }
+        return false
+    }
+}
+
+extension View {
+    /// 札を開くタップ（少しだけ長く押すと開く。スクロール中・直後は開かない）。
+    /// SwiftUI の長押し（最短 TapGuard.minDuration 秒・8pt まで）で受け取り、スクロールの邪魔をしない
+    func deliberateTap(_ action: @escaping () -> Void) -> some View {
+        onLongPressGesture(minimumDuration: TapGuard.minDuration, maximumDistance: 8) {
+            if Date().timeIntervalSince(TapGuard.lastScroll) >= TapGuard.quiet { action() }
+        }
+    }
+
+    /// このスクロールが動いている間と止まった直後は、札を開かない
+    @ViewBuilder
+    func guardsTaps() -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollPhaseChange { _, phase in if phase != .idle { TapGuard.markScroll() } }
+        } else {
+            self
+        }
     }
 }

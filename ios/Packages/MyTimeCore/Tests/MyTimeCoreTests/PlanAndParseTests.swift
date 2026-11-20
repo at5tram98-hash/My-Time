@@ -173,4 +173,11 @@ final class PlanAndParseTests: XCTestCase {
         XCTAssertTrue(cs.isEmpty)
         XCTAssertTrue(notes[0].contains("書いてください"))
     }
+
+    /// 入力の誤り（とても大きな数・ありえない日付）で落ちない
+    func testHugeNumbersDoNotCrash() {
+        for text in ["勉強 99999999999999999999分", "読書 99999999999999999999時間", "13月40日に会議", "99日に買い物", "時給99999999999999999999999円"] {
+            _ = parseInput(text, ctx: ctx())
+        }
+    }
 }

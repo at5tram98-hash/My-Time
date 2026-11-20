@@ -99,8 +99,9 @@ func takeDate(_ s: String, now: EpochMs, time: DomainTime) -> DateHit? {
     let wd = time.weekday(today)
     let tries: [(Rx, (RxMatch) -> (EpochMs, String)?)] = [
         (Rx("(\\d{1,2})月(\\d{1,2})日"), { m in
-            var t = ymd(year, Int(m[1]!)!, Int(m[2]!)!, time)
-            if t < time.addDays(today, -60) { t = ymd(year + 1, Int(m[1]!)!, Int(m[2]!)!, time) }
+            guard let mo = Int(m[1]!), let d = Int(m[2]!), (1...12).contains(mo), (1...31).contains(d) else { return nil }
+            var t = ymd(year, mo, d, time)
+            if t < time.addDays(today, -60) { t = ymd(year + 1, mo, d, time) }
             return (t, m.whole)
         }),
         (Rx("(?<![\\d:])(\\d{1,2})/(\\d{1,2})(?![\\d:])"), { m in
@@ -124,8 +125,7 @@ func takeDate(_ s: String, now: EpochMs, time: DomainTime) -> DateHit? {
         }),
         (Rx("週末"), { m in (time.addDays(today, (6 - wd + 7) % 7), m.whole) }),
         (Rx("(?<![\\d月/])(\\d{1,2})日(?=に|まで|は|の|\\s|$|、)"), { m in
-            let d = Int(m[1]!)!
-            guard (1...31).contains(d) else { return nil }
+            guard let d = Int(m[1]!), (1...31).contains(d) else { return nil }
             var t = ymd(year, month, d, time)
             if t < today { t = ymd(month == 12 ? year + 1 : year, month == 12 ? 1 : month + 1, d, time) }
             return (t, m.whole)
@@ -211,10 +211,12 @@ private func takeVague(_ s: String, day: EpochMs, ctx: ParseContext) -> VagueHit
 
 private func takeDuration(_ s: String) -> (minutes: Int, rest: String)? {
     if let m = Rx("(\\d+(?:\\.\\d+)?)\\s*時間(半)?\\s*(ぐらい|くらい|程度|ほど|位)?").match(s) {
-        return (Int((Double(m[1]!)! * 60).rounded()) + (m[2] != nil ? 30 : 0), m.replacing(with: " "))
+        // 長すぎる数（入力の誤り）で落ちないように、最大7日分までに抑える
+        let h = min(Double(m[1]!) ?? 0, 24 * 7)
+        return (Int((h * 60).rounded()) + (m[2] != nil ? 30 : 0), m.replacing(with: " "))
     }
     if let m = Rx("([一二三四五六七八九十])\\s*時間(半)?").match(s) { return ((KANJI_NUM[m[1]!] ?? 1) * 60 + (m[2] != nil ? 30 : 0), m.replacing(with: " ")) }
-    if let m = Rx("(?<!休憩)(?<!休憩\\s)(\\d+)\\s*分\\s*(ぐらい|くらい|程度|ほど|間)?(?!から)").match(s) { return (Int(m[1]!)!, m.replacing(with: " ")) }
+    if let m = Rx("(?<!休憩)(?<!休憩\\s)(\\d+)\\s*分\\s*(ぐらい|くらい|程度|ほど|間)?(?!から)").match(s) { return (min(Int(m[1]!) ?? 0, 24 * 7 * 60), m.replacing(with: " ")) }
     if let m = Rx("半日").match(s) { return (240, m.replacing(with: " ")) }
     return nil
 }

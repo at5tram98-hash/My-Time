@@ -120,15 +120,6 @@ struct DayTimeline: View {
                                     .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
                                     .offset(x: Self.gutter + laneX(2, width)).allowsHitTesting(false)
                             }
-                            // 予定の前の移動時間：札の上に、うすい帯と「移動○分・○時発」（純正カレンダーの移動時間と同じ）
-                            ForEach(blocks.filter { $0.travel != nil && $0.placed.columns == 1 }) { b in
-                                let m = b.travel ?? 0
-                                let h = CGFloat(m) / 60 * hourHeight
-                                TravelBand(minutes: m, leave: b.start - EpochMs(m) * MINUTE, color: b.color, height: h)
-                                    .frame(width: max(8, laneWidth(b.lane, width) - 3), height: max(2, h - 1))
-                                    .offset(x: Self.gutter + laneX(b.lane, width) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight - h + 1)
-                                    .allowsHitTesting(false)
-                            }
                             ForEach(blocks) { b in
                                 TimelineBlock(
                                     block: b, hourHeight: hourHeight,
@@ -144,6 +135,14 @@ struct DayTimeline: View {
                                 .offset(x: Self.gutter + laneX(b.lane, width) + laneWidth(b.lane, width) * CGFloat(b.placed.column) / CGFloat(b.placed.columns) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight + 1)
                             }
                             if let c = creating { creatingGhost(c, width: width) }
+                            // 出発の時刻：チェックポイントと同じ位置（時刻の列）に「8:35 ◆」だけを出す（移動時間のある予定）
+                            ForEach(blocks.filter { $0.travel != nil && !$0.tomorrow }) { b in
+                                let leave = b.start - EpochMs(b.travel ?? 0) * MINUTE
+                                if model.time.isSameDay(leave, day) {
+                                    DepartureMark(leave: leave, minutes: b.travel ?? 0, tint: b.color) { open(b) }
+                                        .offset(x: max(0, Self.gutter - 40), y: CGFloat(model.time.minutesOfDay(leave)) / 60 * hourHeight - 9)
+                                }
+                            }
                             // チェックポイント：予定のレーンにオレンジの固定の線
                             ForEach(model.checkpoints(on: day)) { c in
                                 // 現在時刻の札と重なるときは、札を時刻の列の右へよける
@@ -164,6 +163,7 @@ struct DayTimeline: View {
                 }
                 .frame(height: hourHeight * 24 + 8)
             }
+            .guardsTaps()
             .scrollIndicators(.hidden)
             // 長押しで作る・動かす間だけスクロールを止める（ふだんは上下になぞってスクロールできる）
             .scrollDisabled(creating != nil || dragging)
@@ -706,6 +706,8 @@ struct TimelineBlock: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(.isButton)
+        // 読み上げの「ダブルタップ」で開く（指のタップは誤タップよけで少し長めの押しが要る）
+        .accessibilityAction { onTap() }
         .accessibilityAction(named: "操作メニュー") { onMenu() }
         .accessibilityAction(named: "15分遅らせる") { if block.movable { onMove(block.start + 15 * MINUTE) } }
         .accessibilityAction(named: "15分早める") { if block.movable { onMove(block.start - 15 * MINUTE) } }
@@ -797,29 +799,29 @@ struct TimelineBlock: View {
 }
 
 
-/// 予定の前の移動時間の帯（うすい色と斜線。高さがあれば「移動25分・8:35発」）
-private struct TravelBand: View {
-    var minutes: Int
+/// 出発の時刻のしるし（時刻と ◆ だけ。押すとその予定を開く）
+struct DepartureMark: View {
     var leave: EpochMs
-    var color: Color
-    var height: CGFloat
+    var minutes: Int
+    var tint: Color
+    var onTap: () -> Void
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        ZStack(alignment: .topLeading) {
-            shape.fill(color.opacity(0.08))
-            shape.strokeBorder(color.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            if height >= 16 {
-                Label("移動\(minutes)分・\(model.hm(leave))発", systemImage: AppleMaps.preferredMode.symbol)
-                    .labelStyle(CompactLabel())
-                    .font(.caption2.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(color)
-                    .lineLimit(1)
-                    .padding(.horizontal, 6).padding(.top, 2)
-            }
+        HStack(spacing: 3) {
+            Text(model.hm(leave)).font(.caption2.weight(.bold)).monospacedDigit()
+            Text("◆").font(.system(size: 9, weight: .bold))
         }
-        .accessibilityElement()
-        .accessibilityLabel("移動\(minutes)分、\(model.hm(leave))に出発")
+        .foregroundStyle(.white)
+        .padding(.horizontal, 5).padding(.vertical, 1)
+        .background(Capsule().fill(tint))
+        .fixedSize()
+        .frame(height: 18)
+        .contentShape(Rectangle())
+        .overlay { PressDragRecognizer(onTap: onTap) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("出発 \(model.hm(leave))、移動\(minutes)分")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onTap() }
     }
 }

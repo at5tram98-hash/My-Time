@@ -106,7 +106,8 @@ struct PlaceTravelScreen: View {
     @State private var query = ""
     @State private var completer = PlaceCompleter()
     @State private var searching = false
-    @State private var mode: AppleMaps.Mode = AppleMaps.preferredMode
+    /// 行き方：公共交通機関が既定
+    @State private var mode: AppleMaps.Mode = .transit
     @State private var calculating = false
     /// 自動で入れた値（自分で直したら、その後は自動で上書きしない）
     @State private var autoValue: Int?
@@ -231,7 +232,7 @@ struct PlaceTravelScreen: View {
             } else if failed {
                 Text("Apple マップで時間を求められませんでした。指でなぞって入れてください。")
             } else {
-                Text("自宅から\(mode.label)で着くまでの時間を、Apple マップで調べて入れます。なぞって直すと、その値を使います。")
+                Text("自宅から\(mode.label)で着くまでの時間（Apple マップ）に、余裕の\(AppleMaps.bufferMinutes)分を足して入れます。なぞって直すと、その値を使います。")
             }
         }
     }
@@ -244,7 +245,7 @@ struct PlaceTravelScreen: View {
         calculating = true
         defer { calculating = false }
         if let m = await AppleMaps.minutes(to: p, mode: mode, arrival: start) {
-            let v = (m + 4) / 5 * 5
+            let v = AppleMaps.withBuffer(m)
             failed = false
             withAnimation(.snappy) { travel = v; autoValue = v }
         } else {

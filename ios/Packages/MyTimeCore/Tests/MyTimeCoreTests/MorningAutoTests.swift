@@ -93,3 +93,41 @@ final class MorningAutoTests: XCTestCase {
         XCTAssertNil(try repo.autoPlaceMorning(day: day, events: occ(day), minutes: 60, time: tokyo))
     }
 }
+
+final class WakeAlarmTests: XCTestCase {
+    let time = DomainTime(timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+
+    func testWakeFromFirstEventTravelAndPrep() {
+        let day = time.startOfDay(1_800_000_000_000)
+        let first = time.at(day: day, hour: 10)
+        // 10:00 − 移動40分 − 準備50分 − 10分 = 8:20
+        XCTAssertEqual(MorningAuto.wakeMinute(firstStart: first, travelMinutes: 40, prepMinutes: 50, day: day, time: time), 8 * 60 + 20)
+        // 早すぎる朝は置かない
+        XCTAssertNil(MorningAuto.wakeMinute(firstStart: time.at(day: day, hour: 5), travelMinutes: 30, prepMinutes: 60, day: day, time: time))
+    }
+
+    func testAutoAlarmsKeepManualAndMaxThree() {
+        var r = MorningRoutine.template()
+        r.alarms = [MorningAlarm(id: "m1", hour: 6, minute: 0, label: "自分の"), MorningAlarm(id: "m2", hour: 6, minute: 30, label: "2つ目")]
+        let out = MorningAuto.applyWakeAlarms(r, wakeMinute: 8 * 60, weekday: 2)
+        XCTAssertEqual(out.alarms.map(\.id), ["auto-wake-1", "auto-wake-2", "m1"], "自動の2つを先に、合わせて3つまで")
+        XCTAssertEqual(out.alarms.first?.hour, 7)
+        XCTAssertEqual(out.alarms.first?.minute, 50)
+        XCTAssertTrue(MorningAuto.turnOffManualAlarms(out).alarms.filter { !$0.label.hasPrefix("自動") }.allSatisfy { !$0.enabled })
+        let none = MorningAuto.applyWakeAlarms(out, wakeMinute: nil, weekday: 2)
+        XCTAssertEqual(none.alarms.map(\.id), ["m1"], "予定が無い日は自動のアラームを外す")
+    }
+}
+
+final class StaleMorningTests: XCTestCase {
+    func testStaleRunIsClosedAndKeptInHistory() {
+        var r = MorningRoutine.template()
+        var run = MorningRun(startedAt: 0, steps: r.enabledSteps)
+        run.complete(now: 5 * MINUTE)
+        r.active = run
+        XCTAssertFalse(r.closeStale(now: 2 * HOUR), "6時間までは続ける")
+        XCTAssertTrue(r.closeStale(now: 25 * HOUR))
+        XCTAssertNil(r.active)
+        XCTAssertEqual(r.history.first?.finishedAt, 5 * MINUTE, "最後に動かした所で終わり")
+    }
+}

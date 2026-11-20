@@ -60,6 +60,8 @@ final class AppModel {
         // 朝の自動配置（予定を変えたらすぐ付いて動く）。変えたら読み直す
         if !isPreview, placeMornings() { load() }
         scheduleNotifications()
+        // 起床アラームは読み直しの後で（保存がまた読み直しを呼ぶため、入れ子にしない）
+        DispatchQueue.main.async { [weak self] in self?.syncWakeAlarms() }
     }
 
     private func load() {
@@ -85,8 +87,38 @@ final class AppModel {
 
     /// 予定が変わったら朝も置き直す。手で動かした・始めた朝はそのまま（MorningAuto）
     func autoPlaceMornings() {
+        // 前の日から続いたままの朝は終わりにする（ロック画面に「経過25時間」と出続けないように）
+        var m = morning
+        if m.closeStale(now: now) { saveMorning(m) }
         if placeMornings() { reload() }
+        syncWakeAlarms()
     }
+
+    /// 起床アラームを次の朝の最初の予定・移動時間に合わせる（2つまで。「朝」の画面で切れる）
+    func syncWakeAlarms() {
+        guard !isPreview, UserDefaults.standard.object(forKey: Self.autoWakeKey) as? Bool ?? true else { return }
+        let r = morning
+        let prep = max(30, r.estimate().minutes)
+        let today = time.startOfDay(now)
+        var pick: (minute: Int?, day: EpochMs) = (nil, time.addDays(today, 1))
+        for i in 0..<2 {
+            let d = time.addDays(today, i)
+            let first = myEvents(from: d, to: time.addDays(d, 1)).filter { !$0.event.allDay && $0.start >= d }.min { $0.start < $1.start }
+            let w = first.flatMap { MorningAuto.wakeMinute(firstStart: $0.start, travelMinutes: $0.event.travelMinutes, prepMinutes: prep, day: d, time: time) }
+            // 今日の起きる時刻がもう過ぎていれば明日
+            if let w, d + EpochMs(w) * MINUTE > now { pick = (w, d); break }
+            if i == 1 { pick = (w, d) }
+        }
+        var base = r
+        // 自動にしてから初めて：自分で作ったアラームはオフにする（消さない）
+        if !UserDefaults.standard.bool(forKey: "morning.autoWakeMigrated") {
+            base = MorningAuto.turnOffManualAlarms(base)
+            UserDefaults.standard.set(true, forKey: "morning.autoWakeMigrated")
+        }
+        let next = MorningAuto.applyWakeAlarms(base, wakeMinute: pick.minute, weekday: time.weekday(pick.day))
+        if next.alarms != r.alarms { saveMorning(next) }
+    }
+    static let autoWakeKey = "morning.autoWake"
 
     /// 置いた・動かした・外したら true
     private func placeMornings() -> Bool {
@@ -94,6 +126,10 @@ final class AppModel {
         let minutes = est > 0 ? est : 60
         let mine = events.filter { $0.calendarId == MTCalendar.selfId }
         var changed = false
+        // 試作の版が置いた形の古い朝（autoMorning が文字の日付）は外す（新しい形で置き直す）
+        for t in tasks where t.extra?["autoMorning"]?.stringValue != nil && t.status == .notStarted {
+            try? repo.deleteTask(t.id, byUser: false); changed = true
+        }
         for i in 0..<2 {
             let d = time.addDays(time.startOfDay(now), i)
             let occ = expandAll(mine, from: d, to: time.addDays(d, 1), time: time)
@@ -172,6 +208,12 @@ final class AppModel {
         // 種類の設定で「出さない」にした種類は出さない
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
         let all = expandAll((includeArchived ? analysisEvents : events).filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        return includeStruck ? all : all.filter { !$0.isStruck }
+    }
+    /// 「自分」の予定だけ（今日の画面・朝の目安。カレンダーの表示の切り替えに関係なく出す）
+    func myEvents(from: EpochMs, to: EpochMs, includeStruck: Bool = false) -> [EventOccurrence] {
+        let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
+        let all = expandAll(events.filter { $0.calendarId == MTCalendar.selfId && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
         return includeStruck ? all : all.filter { !$0.isStruck }
     }
     /// 予定の色：自分で決めた色 → 勤務先の色（勤務先の画面で決めたとき）→ カレンダーの色

@@ -11,6 +11,7 @@ struct MorningHomeView: View {
     @State private var newStepName = ""
     @State private var newStepGroup = "顔"
     @State private var awake = 0
+    @AppStorage(AppModel.autoWakeKey) private var autoWake = true
 
     var body: some View {
         let r = model.morning
@@ -34,6 +35,19 @@ struct MorningHomeView: View {
             departureSection(r)
 
             Section {
+                // 予定に合わせて自動で（最初の予定 − 移動 − 準備の見込み。2つまで）
+                Toggle(isOn: Binding(get: { autoWake }, set: { v in
+                    autoWake = v
+                    if v { model.saveMorning(MorningAuto.turnOffManualAlarms(model.morning)); model.syncWakeAlarms() }
+                    else { model.saveMorning(MorningAuto.applyWakeAlarms(model.morning, wakeMinute: nil, weekday: 0), message: "自動のアラームを外しました") }
+                })) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("予定に合わせて自動で設定")
+                        Text(autoWake ? (r.alarms.contains { $0.label.hasPrefix(MorningAuto.autoLabelPrefix) } ? "最初の予定・移動時間・準備の見込みから2つ" : "次の朝は予定が無いので鳴らしません") : "最初の予定・移動時間・準備の見込みから2つ")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.orange)
                 ForEach(r.alarms) { a in
                     Button { editingAlarm = a } label: { alarmRow(a) }
                         .buttonStyle(.plain)

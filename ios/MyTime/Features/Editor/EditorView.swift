@@ -914,6 +914,8 @@ struct EditorView: View {
             }
             e.extra = mergeExtra(e.extra, dueAt: nil)
             ok = model.perform { try model.repo.saveEvent(e, isNew: isNew) }
+            // 場所だけ入れて移動時間が空なら、あとから自宅からの時間（公共交通機関＋余裕）を入れる
+            if ok, place != nil, travel == nil { model.fillTravel(eventId: e.id) }
         } else {
             var t = isNew ? MTTask.make(title: name, kind: isCheck ? .check : .do, now: now, id: model.repo.newId()) : task
             t.title = name
