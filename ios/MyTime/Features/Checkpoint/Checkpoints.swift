@@ -37,7 +37,7 @@ struct Checkpoint: Identifiable, Equatable, Hashable {
 }
 
 extension AppModel {
-    static let checkpointsKey = "iosCheckpoints"
+    static let checkpointsKey = ChatGPTTransfer.checkpointsKey
 
     var checkpoints: [Checkpoint] {
         (settings.raw[Self.checkpointsKey]?.arrayValue ?? []).compactMap(Checkpoint.init).sorted { $0.at < $1.at }
@@ -66,13 +66,8 @@ extension AppModel {
     }
 
     func saveCheckpoint(_ c: Checkpoint?, removing id: String? = nil) {
-        updateSettings { s in
-            var list = s.raw[Self.checkpointsKey]?.arrayValue ?? []
-            let rid = id ?? c?.id
-            list.removeAll { $0["id"]?.stringValue == rid }
-            if let c { list.append(c.json) }
-            s.raw = s.raw.merging(.object([Self.checkpointsKey: .array(list)]))
-        }
+        guard let id = id ?? c?.id else { return }
+        updateSettings { ChatGPTTransfer.updateCheckpoint(c?.json, id: id, settings: &$0) }
     }
 }
 

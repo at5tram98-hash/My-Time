@@ -190,6 +190,7 @@ public struct MTEvent: Record {
         return .object(o)
     }
 
+    public var isArchived: Bool { extra?["archivedAt"]?.intValue != nil }
     public var allDay: Bool { extra?["allDay"]?.boolValue ?? false }
     public var travelMinutes: Int? { extra?["travelMinutes"]?.intValue.map(Int.init) }
     public var placeName: String? { extra?["place"]?["name"]?.stringValue }
@@ -315,6 +316,7 @@ public struct MTTask: Record {
 
     public var specType: SpecTypeId? { SpecTypeId(rawValue: extra?["spec"]?["type"]?.stringValue ?? "") ?? (special == "assignment" ? .assignment : special == "testPrep" ? .exam : nil) }
     public var isDone: Bool { status == .done || checked }
+    public var isArchived: Bool { extra?["archivedAt"]?.intValue != nil }
     /// 日付だけ決めたタスク（時刻なし）。その日の0時
     public var onDay: EpochMs? { plannedStart == nil && kind == .do ? extra?["onDay"]?.intValue : nil }
     public var travelMinutes: Int? { extra?["travelMinutes"]?.intValue.map(Int.init) }
