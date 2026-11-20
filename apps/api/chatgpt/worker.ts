@@ -40,7 +40,7 @@ async function body(req: Request): Promise<Dict> {
 
 function html(content: string) {
   return new Response('<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>My Time</title><main><h1>My TimeをChatGPTに接続</h1>' + content + '</main></html>', {
-    headers: { ...headers, 'Referrer-Policy': 'same-origin', 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" },
+    headers: { ...headers, 'Referrer-Policy': 'same-origin', 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; form-action 'self' https://chatgpt.com; base-uri 'none'; frame-ancestors 'none'" },
   });
 }
 
@@ -219,7 +219,7 @@ async function callTool(name: unknown, args: Dict, db: D1Database, now: number, 
 }
 
 async function mcp(req: Request, env: Env, now: number) {
-  if (req.method !== 'POST') return error('method_not_allowed', 405);
+  if (req.method !== 'POST') return send({ error: 'method_not_allowed' }, 405, { Allow: 'POST' });
   const b = await body(req);
   const reply = (result: unknown) => send({ jsonrpc: '2.0', id: b.id, result });
   if (b.jsonrpc !== '2.0') return error('invalid_request', 400);
