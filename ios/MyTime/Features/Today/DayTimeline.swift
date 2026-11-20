@@ -605,6 +605,23 @@ struct TimelineBlock: View {
     }
 
     var body: some View {
+        blockCard
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(.isButton)
+            // 読み上げのダブルタップで開く
+            .accessibilityAction { onTap() }
+            .accessibilityAction(named: "操作メニュー") { onMenu() }
+            .accessibilityAction(named: "15分遅らせる") { if block.movable { onMove(block.start + 15 * MINUTE) } }
+            .accessibilityAction(named: "15分早める") { if block.movable { onMove(block.start - 15 * MINUTE) } }
+            .accessibilityAction(named: "終了を15分延ばす") { if block.movable { onResize(block.start, block.plannedEnd + 15 * MINUTE) } }
+            .accessibilityAction(named: "終了を15分縮める") {
+                guard block.movable, block.plannedEnd - block.start > 15 * MINUTE else { return }
+                onResize(block.start, block.plannedEnd - 15 * MINUTE)
+            }
+    }
+
+    private var blockCard: some View {
         let shape = RoundedRectangle(cornerRadius: block.kind == .check ? 10 : 7, style: .continuous)
         let g = ghost
         let changed = drag.active && (g.start != block.start || g.end != block.plannedEnd)
@@ -622,7 +639,7 @@ struct TimelineBlock: View {
         let metaRows = block.struck || block.placed.columns > 1 ? 0 : max(0, Int((h - 36) / 15))
         // 短い札（30分未満などで高さが足りない）は、名前と時刻を1行にまとめて、文字を小さく詰める
         let compact = h < 32 && !drag.active
-        HStack(alignment: compact ? .center : .top, spacing: 0) {
+        let content = HStack(alignment: compact ? .center : .top, spacing: 0) {
             if !filled && block.kind != .check {
                 Rectangle().fill(block.tomorrow || block.struck ? Color.gray.opacity(0.5) : block.late ? Color.red : block.color).frame(width: 4)
             }
@@ -657,7 +674,7 @@ struct TimelineBlock: View {
             Spacer(minLength: 0)
         }
         // 札は時間の長さいっぱいに広げる（中身の高さに縮まないように）
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        let decorated = content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(fg)
         .background {
             if block.tomorrow || block.struck {
@@ -687,7 +704,7 @@ struct TimelineBlock: View {
             }
         }
         // 伸縮中は、つかんだ端だけを伸ばして見せる（移動中は全体をずらす）
-        .padding(.top, drag.edge == .top ? -topShift : 0)
+        return decorated.padding(.top, drag.edge == .top ? -topShift : 0)
         .padding(.bottom, drag.edge == .bottom ? -bottomShift : 0)
         // 本体：タップで開く、長押し→上下で移動、動かさずに離すとメニュー
         .overlay { pressRecognizer(edge: nil) }
@@ -703,16 +720,6 @@ struct TimelineBlock: View {
         .onChange(of: drag.active) { _, a in onDragging(a) }
         .sensoryFeedback(.impact(weight: .medium), trigger: pickedUp)
         .sensoryFeedback(.selection, trigger: snapped)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(.isButton)
-        // 読み上げの「ダブルタップ」で開く（指のタップは誤タップよけで少し長めの押しが要る）
-        .accessibilityAction { onTap() }
-        .accessibilityAction(named: "操作メニュー") { onMenu() }
-        .accessibilityAction(named: "15分遅らせる") { if block.movable { onMove(block.start + 15 * MINUTE) } }
-        .accessibilityAction(named: "15分早める") { if block.movable { onMove(block.start - 15 * MINUTE) } }
-        .accessibilityAction(named: "終了を15分延ばす") { if block.movable { onResize(block.start, block.plannedEnd + 15 * MINUTE) } }
-        .accessibilityAction(named: "終了を15分縮める") { if block.movable && block.plannedEnd - block.start > 15 * MINUTE { onResize(block.start, block.plannedEnd - 15 * MINUTE) } }
     }
 
     /// 状態が一目で分かる印（実行中・遅れ・完了・確認）
@@ -738,7 +745,14 @@ struct TimelineBlock: View {
         case .check: kind = "確認"
         case .session: kind = "作業枠"
         }
-        return (block.struck ? "取り消した" : "") + (block.person.map { "\($0.name)の" } ?? "") + (block.tomorrow ? "計画の" : "") + "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))" + (block.late ? "、遅れ" : "") + (block.pending ? "、調整中" : "") + block.meta.map { "、\($0.text)" }.joined()
+        var text = block.struck ? "取り消した" : ""
+        if let person = block.person { text += "\(person.name)の" }
+        if block.tomorrow { text += "計画の" }
+        text += "\(kind) \(block.title)、\(model.hm(block.start))〜\(model.hm(block.end))"
+        if block.late { text += "、遅れ" }
+        if block.pending { text += "、調整中" }
+        for entry in block.meta { text += "、\(entry.text)" }
+        return text
     }
 
     /// 上端・下端のつかむ所（見た目は細い線、触れる範囲は高さ12）

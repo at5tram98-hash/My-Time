@@ -102,6 +102,20 @@ struct EventDetailView: View {
                                 } header: { Label(st.name, systemImage: IconMap.symbol(st.icon)).foregroundStyle(Color(hex: st.color)) }
                             }
                         }
+                        if let source = ev.extra?["timeTree"] {
+                            Section("TimeTree") {
+                                if let name = source["calendarName"]?.stringValue, !name.isEmpty {
+                                    LabeledContent("元のカレンダー", value: name)
+                                }
+                                let participants = source["participants"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                                if !participants.isEmpty {
+                                    LabeledContent("参加者", value: participants.joined(separator: "、"))
+                                }
+                                if let label = source["label"]?["name"]?.stringValue ?? source["label"]?.stringValue {
+                                    LabeledContent("ラベル", value: label)
+                                }
+                            }
+                        }
                         if !ev.notes.isEmpty {
                             Section("メモ") { Text(ev.notes).textSelection(.enabled) }
                         }

@@ -17,9 +17,6 @@ struct AutoDeletePrefs: Codable, Equatable {
     }
 }
 
-extension MTTask { var isArchived: Bool { extra?["archivedAt"]?.intValue != nil } }
-extension MTEvent { var isArchived: Bool { extra?["archivedAt"]?.intValue != nil } }
-
 /// 終わってから決めた日数がたった予定・タスク・チェックポイントを片づける。
 /// - 予定・タスク：画面からは消し（`extra.archivedAt`）、振り返りの分析のために30日は中に残す。30日を過ぎたら本当に削除する。
 /// - チェックポイント：その場で削除する（分析に使わないため）。
