@@ -1,15 +1,14 @@
 # My Time iOS（SwiftUI ネイティブ版）
 
-
-[ChatGPT・TimeTree連携とファイル形式](chatgpt-timetree.md)
 Web 版（React/PWA）と同じデータ・同じ考え方で動く、SwiftUI で書いた iPhone アプリです。WebView やラッパーは使っていません。
-Web 版はこれまでどおり使え、本番（GitHub Pages）は変更していません。iOS 版は開発ブランチ `claude/clever-hamilton-8azv05` にあります。
+iOS 版の Xcode プロジェクトは `main` の `ios/` にあります。
 
 | 文書 | 内容 |
 |---|---|
 | [migration-plan.md](migration-plan.md) | 移行計画（構成・データ互換・段階） |
 | [feature-map.md](feature-map.md) | Web 版 ↔ iOS 版の機能対応表 |
 | [status.md](status.md) | ビルド・テスト結果、未対応・課題の一覧 |
+| [chatgpt-timetree.md](chatgpt-timetree.md) | ChatGPT・TimeTree連携と受け渡しのファイル形式 |
 
 ## フォルダ構成
 

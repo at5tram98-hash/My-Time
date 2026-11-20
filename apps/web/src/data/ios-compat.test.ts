@@ -27,7 +27,8 @@ describe('iOS 版から Web 版への移行', () => {
     const db = new MyTimeDB(`ios-compat-${crypto.randomUUID()}`);
     dbs.push(db);
     const added = await importDevice(db, text);
-    expect(added).toBe(3 + 1 + 1 + 1); // 既定カレンダー3・予定1・タスク1・サブタスク1
+    expect(added).toBe(2 + 1 + 1 + 1); // 既定カレンダー2・予定1・タスク1・サブタスク1
+    expect((await db.calendars.toArray()).map((calendar) => calendar.id).sort()).toEqual(['cal-general', 'cal-mio']);
     expect(await importDevice(db, text)).toBe(0);
     const t = (await db.tasks.get('ios-task-1'))!;
     expect(taskSchema.safeParse(normalizeTask(t)).success).toBe(true);
