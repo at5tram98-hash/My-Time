@@ -2,9 +2,17 @@ import { pkceChallenge, randomToken, sha256b64url } from '../src/lib/crypto';
 
 type Env = { DB: D1Database; ORIGIN: string };
 type Dict = Record<string, unknown>;
-type OAuthRow = { challenge: string; refresh_group: string };
+type OAuthRow = { challenge: string | null; refresh_group: string | null };
 const CLIENT = 'https://chatgpt.com/oauth/client.json';
 const CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
+const CODEX_CLIENT = 'https://chatgpt.com/oauth/codex/client.json';
+
+function validCallback(client: unknown, redirect: unknown): redirect is string {
+  if (client === CLIENT) return redirect === CALLBACK;
+  if (client !== CODEX_CLIENT || typeof redirect !== 'string') return false;
+  const loopback = /^http:\/\/(127\.0\.0\.1|localhost):([1-9][0-9]{0,4})\/callback$/.exec(redirect);
+  return Boolean(loopback && Number(loopback[2]) <= 65535);
+}
 const SCOPE = 'mytime:connect';
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -38,9 +46,9 @@ async function body(req: Request): Promise<Dict> {
     ? Object.fromEntries(new URLSearchParams(text)) : obj(JSON.parse(text));
 }
 
-function html(content: string) {
+function html(content: string, callbackOrigin: string) {
   return new Response('<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>My Time</title><main><h1>My TimeをChatGPTに接続</h1>' + content + '</main></html>', {
-    headers: { ...headers, 'Referrer-Policy': 'same-origin', 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; form-action 'self' https://chatgpt.com; base-uri 'none'; frame-ancestors 'none'" },
+    headers: { ...headers, 'Referrer-Policy': 'same-origin', 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; form-action 'self' ${callbackOrigin}; base-uri 'none'; frame-ancestors 'none'` },
   });
 }
 
@@ -57,21 +65,21 @@ async function deviceAuth(req: Request, db: D1Database) {
 async function authorize(req: Request, env: Env, url: URL, now: number): Promise<Response> {
   const q = Object.fromEntries(url.searchParams);
   const resource = env.ORIGIN + '/mcp';
-  if (q.client_id !== CLIENT || q.redirect_uri !== CALLBACK || q.response_type !== 'code' ||
+  if (!validCallback(q.client_id, q.redirect_uri) || q.response_type !== 'code' ||
       q.resource !== resource || q.code_challenge_method !== 'S256' || !TOKEN.test(q.code_challenge ?? '') ||
       !q.state || q.state.length > 1000 || (q.scope && q.scope !== SCOPE)) return error('invalid_request', 400);
-  if (req.method === 'GET') return html('<p>最新の同期データを読み取り、変更依頼をiPhoneに送ります。My Timeの連携画面で作った接続コードを入力してください。</p><form method="post" action="' + escape(url.pathname + url.search) + '"><label>接続コード <input name="pair" required autocomplete="off" autocapitalize="off" spellcheck="false"></label> <button>接続を許可</button></form>');
+  if (req.method === 'GET') return html('<p>最新の同期データを読み取り、変更依頼をiPhoneに送ります。My Timeの連携画面で作った接続コードを入力してください。</p><form method="post" action="' + escape(url.pathname + url.search) + '"><label>接続コード <input name="pair" required autocomplete="off" autocapitalize="off" spellcheck="false"></label> <button>接続を許可</button></form>', new URL(q.redirect_uri).origin);
   if (req.headers.get('origin') !== env.ORIGIN) return error('invalid_origin', 403);
   const pair = value((await body(req)).pair).trim();
   if (!TOKEN.test(pair)) return error('接続コードが無効です', 400);
   const pairHash = await sha256b64url(pair);
   const code = randomToken();
   const inserted = await env.DB.batch([
-    env.DB.prepare("INSERT INTO oauth(hash,kind,expires,challenge) SELECT ?,'code',?,? WHERE EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind='pair' AND expires>?)").bind(await sha256b64url(code), now + 2 * MIN, q.code_challenge, pairHash, now),
+    env.DB.prepare("INSERT INTO oauth(hash,kind,expires,challenge) SELECT ?,'code',?,? WHERE EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind='pair' AND expires>?)").bind(await sha256b64url(code), now + 2 * MIN, JSON.stringify([q.client_id, q.redirect_uri, q.code_challenge]), pairHash, now),
     env.DB.prepare("DELETE FROM oauth WHERE hash=? AND kind='pair'").bind(pairHash),
   ]);
   if (!inserted[0]?.meta.changes) return error('コードの期限が切れたか、すでに使用されています', 403);
-  const redirect = new URL(CALLBACK);
+  const redirect = new URL(q.redirect_uri);
   redirect.searchParams.set('code', code);
   redirect.searchParams.set('state', q.state);
   redirect.searchParams.set('iss', env.ORIGIN);
@@ -82,13 +90,13 @@ async function issueToken(req: Request, env: Env, now: number) {
   const q = await body(req);
   const grant = q.grant_type;
   const resource = env.ORIGIN + '/mcp';
-  if (q.client_id !== CLIENT || (q.resource !== resource && !(grant === 'refresh_token' && q.resource === undefined))) {
+  if ((q.client_id !== CLIENT && q.client_id !== CODEX_CLIENT) || (q.resource !== resource && !(grant === 'refresh_token' && q.resource === undefined))) {
     return error('invalid_client', 400);
   }
   let oldHash: string;
   let challenge = '';
   if (grant === 'authorization_code') {
-    if (q.redirect_uri !== CALLBACK || !TOKEN.test(value(q.code)) || !/^[A-Za-z0-9._~-]{43,128}$/.test(value(q.code_verifier))) return error('invalid_grant', 400);
+    if (!validCallback(q.client_id, q.redirect_uri) || !TOKEN.test(value(q.code)) || !/^[A-Za-z0-9._~-]{43,128}$/.test(value(q.code_verifier))) return error('invalid_grant', 400);
     oldHash = await sha256b64url(value(q.code));
     challenge = await pkceChallenge(value(q.code_verifier));
   } else if (grant === 'refresh_token' && TOKEN.test(value(q.refresh_token))) {
@@ -100,12 +108,16 @@ async function issueToken(req: Request, env: Env, now: number) {
   const kind = grant === 'authorization_code' ? 'code' : 'refresh';
   const previous = await db.prepare('SELECT challenge,refresh_group FROM oauth WHERE hash=? AND kind=? AND expires>?')
     .bind(oldHash, kind, now).first<OAuthRow>();
-  if (!previous || (kind === 'code' && previous.challenge !== challenge)) return error('invalid_grant', 400);
+  const binding = kind === 'code' ? JSON.stringify([q.client_id, q.redirect_uri, challenge]) : q.client_id;
+  const legacyBinding = kind === 'code' ? challenge : null;
+  if (!previous || (previous.challenge !== binding && !(q.client_id === CLIENT && previous.challenge === legacyBinding))) {
+    return error('invalid_grant', 400);
+  }
   const access = randomToken(), refresh = randomToken(), group = previous.refresh_group ?? randomToken();
   const accessHash = await sha256b64url(access), refreshHash = await sha256b64url(refresh);
   const commands = [
     db.prepare("INSERT INTO oauth(hash,kind,expires,refresh_group) SELECT ?,'access',?,? WHERE EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind=? AND expires>?)").bind(accessHash, now + 60 * MIN, group, oldHash, kind, now),
-    db.prepare("INSERT INTO oauth(hash,kind,expires,refresh_group) SELECT ?,'refresh',?,? WHERE EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind=? AND expires>?)").bind(refreshHash, now + 90 * DAY, group, oldHash, kind, now),
+    db.prepare("INSERT INTO oauth(hash,kind,expires,refresh_group,challenge) SELECT ?,'refresh',?,?,? WHERE EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind=? AND expires>?)").bind(refreshHash, now + 90 * DAY, group, q.client_id, oldHash, kind, now),
     db.prepare('DELETE FROM oauth WHERE hash=? OR expires<=?').bind(oldHash, now),
   ];
   const result = await db.batch(commands);

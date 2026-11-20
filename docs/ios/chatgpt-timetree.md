@@ -83,6 +83,10 @@ ChatGPTのWeb版で「プラグイン → ＋ → カスタムMCPサーバーを
 - 変更依頼は「ChatGPTの編集依頼」に届きます。内容を確認して反映または却下すると、ChatGPTから処理結果を確認できます。
 - 「連携を解除」で、専用サーバー上のコピー、依頼および接続情報を消去できます。再接続には、新しいセットアップコードが必要です。
 
+### MacのChatGPTデスクトップアプリ（Codex）から使う
+
+設定 → MCPサーバー → サーバーを追加で、名前を `My Time`、種類を「ストリーミングHTTP」、URLを `https://mytime-chatgpt.at5tram98.workers.dev/mcp` にします。保存して、表示されたら「再起動」を押し、MCPサーバー一覧の「認証」から接続します。My TimeのiPhoneアプリから発行した接続コードをブラウザの認証画面に入力します。
+
 ### サーバーの運用
 
 自動連携APIは、既存のMy Time Web APIから独立したCloudflare Workerです。設定は `apps/api/chatgpt/wrangler.toml`、データベースのDDLは同じフォルダの `schema.sql` にあります。
