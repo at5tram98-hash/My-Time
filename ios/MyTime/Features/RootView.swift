@@ -240,6 +240,7 @@ struct RootView: View {
         }
         // 前面にある間は Live Activity を1分ごとに照合する。戻ったときにアラームも照合する
         .onChange(of: scenePhase, initial: true) { _, phase in
+            model.chatGPT.scene(active: phase == .active, model: model)
             if phase == .active {
                 AutoCleanup.run(model: model)
                 model.autoPlaceMornings()

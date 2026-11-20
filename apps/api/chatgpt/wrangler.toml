@@ -1,0 +1,12 @@
+name = "mytime-chatgpt"
+main = "worker.ts"
+compatibility_date = "2026-11-20"
+workers_dev = true
+
+[vars]
+ORIGIN = "https://mytime-chatgpt.at5tram98.workers.dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mytime-chatgpt"
+database_id = "cc9c093b-c3bb-4b13-bbd4-2835f31aca08"
