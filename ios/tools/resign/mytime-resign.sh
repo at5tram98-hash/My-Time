@@ -61,6 +61,14 @@ fi
 git -C "$SRC" fetch --quiet origin main >> "$LOG" 2>&1 && git -C "$SRC" checkout --quiet -B main origin/main >> "$LOG" 2>&1 \
   || log "最新の取得に失敗（手元にある版でビルドする）"
 
+# 署名の設定（チームとバンドルID）は手元だけのファイル。作業用の場所へ写す
+if [[ -f "$REPO/ios/Config/Local.xcconfig" ]]; then
+  cp "$REPO/ios/Config/Local.xcconfig" "$SRC/ios/Config/Local.xcconfig"
+else
+  log "署名の設定（ios/Config/Local.xcconfig）が見つからない"
+  notify "署名の更新に失敗" "署名の設定ファイルが見つかりません"; exit 1
+fi
+
 # 期限の近い署名ファイルを退ける（Xcode が新しい7日の署名を取り直す）
 BACKUP="$WORK/old-profiles"; mkdir -p "$BACKUP"
 for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
