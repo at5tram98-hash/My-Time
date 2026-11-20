@@ -1,0 +1,13 @@
+name: Verify My Time native build on Intel
+on:
+  push:
+    branches: [codex/verify-mytime-intel]
+permissions:
+  contents: read
+jobs:
+  xcode:
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -project ios/MyTime.xcodeproj -scheme MyTime -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
