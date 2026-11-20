@@ -10,6 +10,7 @@ import MyTimeCore
 final class AppModel {
     let repo: Repository
     let time = DomainTime.current
+    let chatGPT = ChatGPTLiveConnection()
 
     /// 画面に出す予定・タスク（自動削除で片づけたものは含まない）
     private(set) var tasks: [MTTask] = []
@@ -60,6 +61,7 @@ final class AppModel {
         // 朝の自動配置（予定を変えたらすぐ付いて動く）。変えたら読み直す
         if !isPreview, placeMornings() { load() }
         scheduleNotifications()
+        chatGPT.changed(self)
         // 起床アラームは読み直しの後で（保存がまた読み直しを呼ぶため、入れ子にしない）
         DispatchQueue.main.async { [weak self] in self?.syncWakeAlarms() }
     }

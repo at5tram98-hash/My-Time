@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 import MyTimeCore
 
 struct ChatGPTTransferView: View {
@@ -13,9 +14,15 @@ struct ChatGPTTransferView: View {
     @State private var preview: ChatGPTTransfer.Preview?
     @State private var confirming = false
     @State private var message: String?
+    @State private var setupCode = ""
+    @State private var pairingCode: String?
+    @State private var reviewing: ChatGPTLiveConnection.Proposal?
+    @State private var disconnecting = false
+    @State private var busy = false
 
     var body: some View {
         Form {
+            liveSection
             Section {
                 DatePicker("開始日", selection: $from, displayedComponents: .date)
                 DatePicker("終了日", selection: $through, in: from..., displayedComponents: .date)
@@ -47,8 +54,15 @@ struct ChatGPTTransferView: View {
                         changeRow(preview.changes[index])
                     }
                     Button("変更を反映", systemImage: "checkmark.circle") { confirming = true }
-                        .disabled(model.storeFailure != nil || preview.changes.allSatisfy(\.skipped))
-                    Button("読み込みを取り消す", role: .cancel) { self.preview = nil }
+                        .disabled(model.storeFailure != nil || (reviewing == nil && preview.changes.allSatisfy(\.skipped)))
+                    if let reviewing {
+                        Button("この依頼を却下", role: .destructive) { reject(reviewing) }
+                    }
+                    Button("確認を閉じる", role: .cancel) { self.preview = nil; reviewing = nil }
+                }
+            } else if let reviewing {
+                Section("確認できなかった依頼") {
+                    Button("この依頼を却下", role: .destructive) { reject(reviewing) }
                 }
             }
         }
@@ -76,11 +90,75 @@ struct ChatGPTTransferView: View {
             Button("反映する", role: deletes ? .destructive : nil, action: apply)
             Button("キャンセル", role: .cancel) {}
         }
+        .confirmationDialog("自動連携を解除しますか？", isPresented: $disconnecting, titleVisibility: .visible) {
+            Button("連携を解除", role: .destructive) { run { try await model.chatGPT.disconnect(); pairingCode = nil; reviewing = nil; preview = nil } }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("同期サーバーのコピーと確認待ちの依頼を消去します。")
+        }
         .alert("ChatGPT・TimeTree連携", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") { message = nil }
         } message: {
             Text(message ?? "")
         }
+    }
+
+    private var liveSection: some View {
+        Section {
+            if model.chatGPT.connected {
+                if let synced = model.chatGPT.lastSent {
+                    LabeledContent("最終同期") { Text(synced, format: .dateTime.month().day().hour().minute()) }
+                }
+                if let failure = model.chatGPT.failure { Text(failure).foregroundStyle(.secondary) }
+                Button("今すぐ同期", systemImage: "arrow.clockwise") { Task { await model.chatGPT.sync(model) } }
+                Button("ChatGPT接続コードを発行") { run { pairingCode = try await model.chatGPT.pairingCode() } }
+                if let pairingCode {
+                    Button("接続コードをコピー", systemImage: "doc.on.doc") {
+                        UIPasteboard.general.setItems([["public.utf8-plain-text": pairingCode]], options: [
+                            .localOnly: true, .expirationDate: Date.now.addingTimeInterval(600)
+                        ])
+                    }
+                    Text("ChatGPTの認証ページに貼り付けてください。有効期限は10分です。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                ForEach(model.chatGPT.proposals) { proposal in
+                    Button {
+                        read(proposal.payload.data, proposal: proposal)
+                    } label: {
+                        LabeledContent("ChatGPTの編集依頼", value: model.hm(proposal.created))
+                    }
+                }
+                Button("連携を解除", role: .destructive) { disconnecting = true }
+            } else {
+                SecureField("一度だけ使うセットアップコード", text: $setupCode)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button("自動連携を有効にする") { run { try await model.chatGPT.connect(setupCode, model: model); setupCode = "" } }
+                    .disabled(setupCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.storeFailure != nil)
+            }
+        } header: {
+            Text("ChatGPTとの自動連携")
+        } footer: {
+            Text("有効にすると、My Timeを開いている間に前30日・先90日の予定などを同期します。ChatGPTからの変更はこの画面で確認して反映します。")
+        }
+        .disabled(busy)
+    }
+
+    private func run(_ action: @escaping @MainActor () async throws -> Void) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do { try await action() }
+            catch { message = (error as? RepositoryError)?.description ?? error.localizedDescription }
+        }
+    }
+
+    private func reject(_ proposal: ChatGPTLiveConnection.Proposal) {
+        let saved = model.perform {
+            try model.repo.store.transaction {
+                model.chatGPT.recordResult(proposal.id, applied: false, repo: model.repo)
+            }
+        }
+        if saved { reviewing = nil; preview = nil; Task { await model.chatGPT.sync(model) } }
     }
 
     private func export() {
@@ -93,8 +171,9 @@ struct ChatGPTTransferView: View {
         exporting = true
     }
 
-    private func read(_ data: Data) {
+    private func read(_ data: Data, proposal: ChatGPTLiveConnection.Proposal? = nil) {
         preview = nil
+        reviewing = proposal
         do { preview = try ChatGPTTransfer.preview(data, in: model.repo) }
         catch { message = (error as? RepositoryError)?.description ?? error.localizedDescription }
     }
@@ -102,9 +181,18 @@ struct ChatGPTTransferView: View {
     private func apply() {
         guard let preview, model.storeFailure == nil else { return }
         var count = 0
-        let saved = model.perform { count = try ChatGPTTransfer.apply(preview, to: model.repo) }
+        let saved = model.perform {
+            try model.repo.store.transaction {
+                count = try ChatGPTTransfer.apply(preview, to: model.repo)
+                if let proposal = reviewing {
+                    model.chatGPT.recordResult(proposal.id, applied: true, repo: model.repo)
+                }
+            }
+        }
         if saved {
             message = "\(count)件を反映しました"
+            if reviewing != nil { Task { await model.chatGPT.sync(model) } }
+            reviewing = nil
         }
         self.preview = nil
     }
