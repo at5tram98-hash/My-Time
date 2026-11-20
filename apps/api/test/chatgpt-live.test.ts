@@ -4,11 +4,12 @@ import liveWorker from '../chatgpt/worker';
 import schema from '../chatgpt/schema.sql?raw';
 import { pkceChallenge, randomToken, sha256b64url } from '../src/lib/crypto';
 
-it('pairs the iPhone, protects schedule data, and tracks a change until phone approval', async () => {
+const web = { client: 'https://chatgpt.com/oauth/client.json', callback: 'https://chatgpt.com/connector_platform_oauth_redirect' };
+const codex = { client: 'https://chatgpt.com/oauth/codex/client.json', callback: 'http://127.0.0.1:49217/callback' };
+
+it.each([web, codex])('pairs $client, protects schedules, and tracks changes until iPhone approval', async ({ client, callback }) => {
   const origin = 'https://mytime.test';
   const resource = origin + '/mcp';
-  const callback = 'https://chatgpt.com/connector_platform_oauth_redirect';
-  const client = 'https://chatgpt.com/oauth/client.json';
   const DB = env.RECOVERY_DB;
   for (const sql of schema.split(';').filter(s => s.trim())) await DB.prepare(sql).run();
   const setup = randomToken();
@@ -38,7 +39,14 @@ it('pairs the iPhone, protects schedule data, and tracks a change until phone ap
   const params = new URLSearchParams({ client_id: client, redirect_uri: callback,
     response_type: 'code', scope: 'mytime:connect', resource, state: 'test-state',
     code_challenge: await pkceChallenge(verifier), code_challenge_method: 'S256' });
-  expect((await get('/authorize?' + params)).status).toBe(200);
+  const formPage = await get('/authorize?' + params);
+  expect(formPage.status).toBe(200);
+  expect(formPage.headers.get('Content-Security-Policy')).toContain("form-action 'self' " + new URL(callback).origin);
+  for (const badRedirect of ['https://other.example/callback', 'http://127.0.0.1:49217/wrong']) {
+    const invalid = new URLSearchParams(params);
+    invalid.set('redirect_uri', badRedirect);
+    expect((await get('/authorize?' + invalid)).status).toBe(400);
+  }
   const auth = await post('/authorize?' + params, new URLSearchParams({ pair: pair.code }));
   expect(auth.status).toBe(303);
   const location = new URL(auth.headers.get('Location')!);
@@ -47,6 +55,16 @@ it('pairs the iPhone, protects schedule data, and tracks a change until phone ap
   expect((await post('/authorize?' + params, new URLSearchParams({ pair: pair.code }))).status).toBe(403);
   const tokenForm = new URLSearchParams({ grant_type: 'authorization_code', client_id: client,
     redirect_uri: callback, resource, code: location.searchParams.get('code')!, code_verifier: verifier });
+  const another = client === web.client ? codex : web;
+  const swapped = new URLSearchParams(tokenForm);
+  swapped.set('client_id', another.client);
+  swapped.set('redirect_uri', another.callback);
+  expect((await post('/token', swapped)).status).toBe(400);
+  if (client === codex.client) {
+    const changedPort = new URLSearchParams(tokenForm);
+    changedPort.set('redirect_uri', 'http://127.0.0.1:49218/callback');
+    expect((await post('/token', changedPort)).status).toBe(400);
+  }
   const incorrect = new URLSearchParams(tokenForm);
   incorrect.set('code_verifier', randomToken());
   expect((await post('/token', incorrect)).status).toBe(400);
@@ -77,6 +95,9 @@ it('pairs the iPhone, protects schedule data, and tracks a change until phone ap
   expect(await getStatus()).toBe('applied');
   const refresh = new URLSearchParams({ grant_type: 'refresh_token', client_id: client, resource,
     refresh_token: access.refresh_token });
+  const wrongClient = new URLSearchParams(refresh);
+  wrongClient.set('client_id', another.client);
+  expect((await post('/token', wrongClient)).status).toBe(400);
   expect((await post('/token', refresh)).status).toBe(200);
   expect((await post('/token', refresh)).status).toBe(400);
   expect((await post('/device/disconnect', {}, device.token)).status).toBe(200);
