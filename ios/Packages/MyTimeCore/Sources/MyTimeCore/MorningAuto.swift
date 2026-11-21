@@ -102,8 +102,10 @@ public extension Repository {
 
 public extension MorningAuto {
     static let autoLabelPrefix = "自動"
-    /// 起きてから準備を始めるまでの余裕（分）
-    static let wakeMargin = 10
+        /// 起きてから準備を始めるまでの余裕（分）。ゆとりを持って30分
+    static let wakeMargin = 30
+    /// 1つ目のアラームは起きる時刻の何分前か
+    static let firstAlarmLead = 15
 
     /// 起きる時刻（その日の0時からの分）。早すぎる・遅すぎる（4時より前・12時より後）は nil
     static func wakeMinute(firstStart: EpochMs, travelMinutes: Int?, prepMinutes: Int, day: EpochMs, time: DomainTime = .current) -> Int? {
@@ -139,6 +141,47 @@ public extension MorningAuto {
     static func turnOffManualAlarms(_ routine: MorningRoutine) -> MorningRoutine {
         var r = routine
         for i in r.alarms.indices where !r.alarms[i].label.hasPrefix(autoLabelPrefix) { r.alarms[i].enabled = false }
+        return r
+    }
+}
+
+
+// MARK: - 起床アラームの自動（これから7日分。1回ずつのアラーム）
+//
+// 起きる時刻 = 最初の予定 − 移動時間 − 準備の見込み − 余裕30分。
+// 1つ目は起きる時刻の15分前、2つ目は起きる時刻ちょうど。予定が変わるたびに計算し直して、予約を入れ替える。
+// 曜日ごとのくり返しにしないので、アプリを開かなくても毎朝その日の予定に合った時刻で鳴る。
+
+public struct WakeAlarm: Equatable, Hashable, Sendable {
+    /// 予約の鍵（その日・何番目か・時刻。時刻が変われば別の鍵になり、古い予約は取り消される）
+    public var key: String
+    public var at: EpochMs
+    public var label: String
+    public var day: EpochMs
+    public var first: Bool
+}
+
+public extension MorningAuto {
+    /// 7日分の自動の起床アラーム。firstOf は、その日の最初の予定（開始と移動時間の分）を返す
+    static func wakeAlarms(days: Int = 7, now: EpochMs, prepMinutes: Int, time: DomainTime = .current,
+                           firstOf: (EpochMs) -> (start: EpochMs, travel: Int?)?) -> [WakeAlarm] {
+        var out: [WakeAlarm] = []
+        let today = time.startOfDay(now)
+        for i in 0..<days {
+            let d = time.addDays(today, i)
+            guard let f = firstOf(d), let m = wakeMinute(firstStart: f.start, travelMinutes: f.travel, prepMinutes: prepMinutes, day: d, time: time) else { continue }
+            let wake = d + EpochMs(m) * MINUTE
+            let early = wake - EpochMs(firstAlarmLead) * MINUTE
+            if early > now { out.append(WakeAlarm(key: "wake1@\(early)", at: early, label: "起床（1つ目）", day: d, first: true)) }
+            if wake > now { out.append(WakeAlarm(key: "wake2@\(wake)", at: wake, label: "起床", day: d, first: false)) }
+        }
+        return out
+    }
+
+    /// 自動で置いていた古い形（曜日くり返しの「自動」アラーム）を外す
+    static func removeLegacyAutoAlarms(_ routine: MorningRoutine) -> MorningRoutine {
+        var r = routine
+        r.alarms.removeAll { $0.label.hasPrefix(autoLabelPrefix) }
         return r
     }
 }

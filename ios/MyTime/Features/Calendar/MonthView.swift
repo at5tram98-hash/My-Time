@@ -130,10 +130,10 @@ struct MonthView: View {
         let w = (model.time.weekday(first) + cal.component(.day, from: model.time.date(day)) - 1) / 7
         // 遅延表示なので、まず月へ。描かれてから週へ寄せる
         if animated { withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(m, anchor: .top) } } else { proxy.scrollTo(m, anchor: .top) }
-        guard rowHeight >= 120, w > 0 else { return }
+        // 今日の週を画面の上から3割ほどの所へ（前の週も少し見えて、先の週が多く見える、ちょうどいい位置）
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(animated ? 350 : 60))
-            withAnimation(reduceMotion || !animated ? nil : .snappy) { proxy.scrollTo("w\(m)-\(w)", anchor: .top) }
+            withAnimation(reduceMotion || !animated ? nil : .snappy) { proxy.scrollTo("w\(m)-\(w)", anchor: UnitPoint(x: 0.5, y: 0.3)) }
         }
     }
 

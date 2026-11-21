@@ -115,6 +115,10 @@ struct TravelPlanEditor: View {
                                 tint: .green, symbol: "flag.checkered", title: "着いておく")
                 }
                 Section {
+                    // Apple マップで下書きしている間は、区間の形の仮の表示
+                    if drafting && legs.isEmpty {
+                        ForEach(0..<3, id: \.self) { _ in SkeletonRow() }
+                    }
                     ForEach($legs) { $l in
                         let c = chained.first { $0.id == l.id } ?? l
                         NavigationLink {

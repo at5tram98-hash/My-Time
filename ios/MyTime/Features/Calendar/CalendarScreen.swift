@@ -96,8 +96,6 @@ struct CalendarScreen: View {
                     modeMenu
                     Button { searching = true } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("検索")
-                    // 誰の予定を出すか（自分・みお）
-                    if model.calendars.count > 1 { PeopleMenu() }
                 }
                 MainToolbar(addKind: .event)
             }
@@ -194,6 +192,17 @@ struct CalendarScreen: View {
                 modeButton("週", "calendar.badge.clock", "week")
                 modeButton("リスト", "list.bullet", "list")
             }
+            // 表示する人（自分・みお）。右上のボタンを減らすため、ここにまとめる
+            if model.calendars.count > 1 {
+                Section("表示する人") {
+                    ForEach(model.calendars, id: \.id) { c in
+                        Toggle(isOn: Binding(get: { c.visible }, set: { v in
+                            if !v && model.calendars.filter(\.visible).count <= 1 { return }
+                            model.setCalendarVisible(c.id, v)
+                        })) { Label(c.name, systemImage: c.visible ? "person.crop.circle.fill" : "person.crop.circle") }
+                    }
+                }
+            }
             // カレンダーの一覧と未割当（下に浮かべていたボタンをここへ）
             Section {
                 Button { showCalendars = true } label: { Label("カレンダー", systemImage: "calendar") }
@@ -202,10 +211,10 @@ struct CalendarScreen: View {
                 }
             }
         } label: {
-            Image(systemName: mode == "list" ? "list.bullet" : mode == "month" ? "rectangle.split.1x2" : mode == "week" ? "calendar.badge.clock" : "calendar.day.timeline.left")
-                .contentTransition(.symbolEffect(.replace))
+            // 日・週・月は見出しの行で切り替えるので、ここは「その他の表示」のボタン
+            Image(systemName: "ellipsis")
         }
-        .accessibilityLabel("表示の切り替え")
+        .accessibilityLabel("表示とカレンダー")
     }
 
     /// 月の表示で、その密度にする（今の表示が月でなければ月へ）
@@ -438,10 +447,31 @@ struct AgendaList: View {
                     Label(o.isOccurrence ? "この回を削除" : "削除", systemImage: "trash")
                 }
             }
+            // 右へなぞると取り消す（灰色と線だけ。削除はしない）・もう一度なぞると戻す
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    let snap = o.event
+                    model.perform(o.isStruck ? "取り消しを戻しました" : "予定を取り消しました", undo: { try model.repo.saveEvent(snap, isNew: false) }) {
+                        try model.repo.setStruck(eventId: o.masterId, originalStart: o.originalStart, struck: !o.isStruck)
+                    }
+                } label: { Label(o.isStruck ? "戻す" : "取り消す", systemImage: o.isStruck ? "arrow.uturn.backward" : "strikethrough") }
+                .tint(o.isStruck ? .blue : .gray)
+            }
         case .task(let t, let at):
             taskButton(t, at: at)
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { deleteTask(t) } label: { Label("削除", systemImage: "trash") }
+                }
+                // 右へなぞると完了（確認のタスクは確認済み）
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        if t.kind == .check {
+                            model.perform(t.checked ? "未確認に戻しました" : "確認しました", undo: { try model.repo.toggleCheck(t.id) }) { try model.repo.toggleCheck(t.id) }
+                        } else if t.status != .done {
+                            model.perform("完了しました", undo: { try model.repo.taskAction(t.id, .undoFinish) }) { try model.repo.taskAction(t.id, .finish) }
+                        }
+                    } label: { Label(t.isDone ? "済み" : "完了", systemImage: "checkmark") }
+                    .tint(.green)
                 }
         case .due(let t, let at):
             dueRow(t, at: at)
@@ -557,6 +587,13 @@ struct CalendarsSheet: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        // 左へなぞると「この人だけ」
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                for x in model.calendars { model.setCalendarVisible(x.id, x.id == c.id) }
+                            } label: { Label("この人だけ", systemImage: "person.crop.circle.badge.checkmark") }
+                            .tint(Color(hex: c.color))
+                        }
                     }
                 } header: {
                     Text("人")

@@ -100,8 +100,8 @@ final class WakeAlarmTests: XCTestCase {
     func testWakeFromFirstEventTravelAndPrep() {
         let day = time.startOfDay(1_800_000_000_000)
         let first = time.at(day: day, hour: 10)
-        // 10:00 − 移動40分 − 準備50分 − 10分 = 8:20
-        XCTAssertEqual(MorningAuto.wakeMinute(firstStart: first, travelMinutes: 40, prepMinutes: 50, day: day, time: time), 8 * 60 + 20)
+        // 10:00 − 移動40分 − 準備50分 − 余裕30分 = 8:00
+        XCTAssertEqual(MorningAuto.wakeMinute(firstStart: first, travelMinutes: 40, prepMinutes: 50, day: day, time: time), 8 * 60)
         // 早すぎる朝は置かない
         XCTAssertNil(MorningAuto.wakeMinute(firstStart: time.at(day: day, hour: 5), travelMinutes: 30, prepMinutes: 60, day: day, time: time))
     }
@@ -112,7 +112,7 @@ final class WakeAlarmTests: XCTestCase {
         let out = MorningAuto.applyWakeAlarms(r, wakeMinute: 8 * 60, weekday: 2)
         XCTAssertEqual(out.alarms.map(\.id), ["auto-wake-1", "auto-wake-2", "m1"], "自動の2つを先に、合わせて3つまで")
         XCTAssertEqual(out.alarms.first?.hour, 7)
-        XCTAssertEqual(out.alarms.first?.minute, 50)
+        XCTAssertEqual(out.alarms.first?.minute, 50, "古い形（1つ目は10分前）のまま")
         XCTAssertTrue(MorningAuto.turnOffManualAlarms(out).alarms.filter { !$0.label.hasPrefix("自動") }.allSatisfy { !$0.enabled })
         let none = MorningAuto.applyWakeAlarms(out, wakeMinute: nil, weekday: 2)
         XCTAssertEqual(none.alarms.map(\.id), ["m1"], "予定が無い日は自動のアラームを外す")
@@ -129,5 +129,26 @@ final class StaleMorningTests: XCTestCase {
         XCTAssertTrue(r.closeStale(now: 25 * HOUR))
         XCTAssertNil(r.active)
         XCTAssertEqual(r.history.first?.finishedAt, 5 * MINUTE, "最後に動かした所で終わり")
+    }
+}
+
+
+final class WakeAlarmsSevenDaysTests: XCTestCase {
+    let time = DomainTime(timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+
+    func testEachDayFollowsItsOwnFirstEvent() {
+        let day0 = time.startOfDay(1_800_000_000_000)
+        let now = time.at(day: day0, hour: 5)
+        // 今日は10時（移動30分）、明日は予定なし、あさっては9時
+        let firsts: [EpochMs: (EpochMs, Int?)] = [day0: (time.at(day: day0, hour: 10), 30), time.addDays(day0, 2): (time.at(day: time.addDays(day0, 2), hour: 9), nil)]
+        let xs = MorningAuto.wakeAlarms(days: 3, now: now, prepMinutes: 60, time: time) { firsts[$0].map { (start: $0.0, travel: $0.1) } }
+        // 10:00 − 30 − 60 − 30 = 8:00、1つ目は7:45
+        XCTAssertEqual(xs.filter { $0.day == day0 }.map(\.at), [time.at(day: day0, hour: 7, minute: 45), time.at(day: day0, hour: 8)])
+        XCTAssertTrue(xs.filter { $0.day == time.addDays(day0, 1) }.isEmpty, "予定のない日は鳴らさない")
+        let d2 = time.addDays(day0, 2)
+        XCTAssertEqual(xs.filter { $0.day == d2 }.map(\.at), [time.at(day: d2, hour: 7, minute: 15), time.at(day: d2, hour: 7, minute: 30)])
+        // 予定が動けば鍵も変わる（古い予約は取り消される）
+        let moved = MorningAuto.wakeAlarms(days: 1, now: now, prepMinutes: 60, time: time) { _ in (start: time.at(day: day0, hour: 11), travel: 30) }
+        XCTAssertNotEqual(Set(moved.map(\.key)), Set(xs.filter { $0.day == day0 }.map(\.key)))
     }
 }

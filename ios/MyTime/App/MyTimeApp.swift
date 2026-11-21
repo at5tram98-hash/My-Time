@@ -8,6 +8,8 @@ struct MyTimeApp: App {
     @State private var model: AppModel
 
     init() {
+        // 画面の一番上（時計のあたり）を押しても、一番上まで戻さない（時間軸の位置が急に飛ばないように）
+        UIScrollView.appearance().scrollsToTop = false
         // UI テスト・スクリーンショット用：起動引数 -inMemory で端末のデータに触れずに起動する
         let inMemory = ProcessInfo.processInfo.arguments.contains("-inMemory")
         var failure: String?

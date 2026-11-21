@@ -16,40 +16,17 @@ struct MoreScreen: View {
         NavigationStack(path: $router.morePath) {
             let stats = weekStats()
             List {
-                // アカウント（「設定」アプリの一番上と同じ形）
-                Section {
-                    NavigationLink { AccountView() } label: {
-                        HStack(spacing: 14) {
-                            Text(initials)
-                                .font(.title2.weight(.semibold)).foregroundStyle(.white)
-                                .frame(width: 56, height: 56)
-                                .background(LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(accountName.isEmpty ? "名前を設定" : accountName).font(.title3.weight(.semibold))
-                                Text(accountSchool.isEmpty ? "アカウント・自宅と学校・データ" : "\(accountSchool)・アカウント").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
+                // 振り返り（アカウントは上のバーへ移し、ここを広げてグラフを出す）
                 Section { header(stats) }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
-
-                Section("記録") {
+                Section {
+                    ReviewDashboard(minutes: stats.minutes)
                     NavigationLink(value: MoreRoute.review) {
-                        HStack(spacing: 12) {
-                            icon("chart.bar.xaxis", .green)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("振り返り")
-                                Text("直近7日の作業時間・完了・余白").font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            sparkline(stats.minutes)
-                        }
+                        Label("くわしい振り返り", systemImage: "chart.bar.xaxis")
                     }
-                    NavigationLink { HistoryView() } label: { row("操作履歴", "clock.arrow.circlepath", .gray, "いつ何を変えたか") }
-                }
+                    NavigationLink { HistoryView() } label: { Label("操作履歴", systemImage: "clock.arrow.circlepath") }
+                } header: { Text("振り返り") }
 
                 Section("計画") {
                     NavigationLink(value: MoreRoute.dayPlan) {
@@ -122,6 +99,16 @@ struct MoreScreen: View {
             }
             .navigationTitle("その他")
             .toolbar {
+                // アカウント（名前の頭文字の丸）：押すとアカウント・自宅と学校・データ
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { AccountView() } label: {
+                        Text(initials)
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                    }
+                    .accessibilityLabel("アカウント")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(value: MoreRoute.settings) { Image(systemName: "gearshape") }
                         .accessibilityLabel("設定")
@@ -313,5 +300,169 @@ struct GestureGuideView: View {
         }
         .navigationTitle("操作のしかた")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+
+// MARK: - 振り返りのグラフ（その他の画面に広げて出す）
+
+/// 直近7日の作業時間の棒（下から伸びる）・今週の予定の時間の内訳（ドーナツ）・今週のタスクの達成（輪）
+struct ReviewDashboard: View {
+    var minutes: [Int]
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var grown = false
+    @State private var page = 0
+
+    private struct Slice: Identifiable { var id: String { name }; var name: String; var minutes: Int; var color: Color }
+
+    var body: some View {
+        let slices = weekSlices()
+        let rate = completion()
+        VStack(alignment: .leading, spacing: 12) {
+            // 3つのグラフを横にめくる（カルーセル）
+            TabView(selection: $page) {
+                barCard.tag(0)
+                donutCard(slices).tag(1)
+                ringCard(rate).tag(2)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 196)
+            HStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { i in
+                    Capsule().fill(i == page ? Color.primary.opacity(0.6) : Color.primary.opacity(0.18))
+                        .frame(width: i == page ? 16 : 6, height: 6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.snappy, value: page)
+            .accessibilityHidden(true)
+        }
+        .padding(.vertical, 6)
+        .onAppear {
+            grown = false
+            withAnimation(reduceMotion ? nil : .spring(response: 0.7, dampingFraction: 0.8).delay(0.15)) { grown = true }
+        }
+        .sensoryFeedback(.selection, trigger: page)
+    }
+
+    private var barCard: some View {
+        let today = model.time.startOfDay(model.now)
+        let rows = minutes.enumerated().map { (i, m) in (day: model.time.addDays(today, i - (minutes.count - 1)), m: m) }
+        let total = minutes.reduce(0, +)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("作業した時間").font(.subheadline.weight(.semibold))
+            Text(formatDuration(EpochMs(total) * MINUTE) + "・直近7日").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            Chart(rows, id: \.day) { r in
+                BarMark(x: .value("日", model.time.date(r.day), unit: .day), y: .value("分", grown ? r.m : 0))
+                    .foregroundStyle(model.time.isSameDay(r.day, model.now) ? AnyShapeStyle(Color.green.gradient) : AnyShapeStyle(Color.green.opacity(0.45).gradient))
+                    .cornerRadius(4)
+            }
+            .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.narrow)) } }
+            .chartYAxis { AxisMarks(position: .trailing) { _ in AxisGridLine(); AxisValueLabel() } }
+            .overlay {
+                if total == 0 {
+                    Label("タスクを始めると、ここに作業した時間が出ます", systemImage: "play.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityLabel("直近7日の作業時間")
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func donutCard(_ slices: [Slice]) -> some View {
+        let total = slices.reduce(0) { $0 + $1.minutes }
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("今週の予定の時間").font(.subheadline.weight(.semibold))
+            if total == 0 {
+                Text("今週はまだ予定がありません").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                HStack(spacing: 14) {
+                    Chart(slices) { s in
+                        SectorMark(angle: .value("分", grown ? s.minutes : 0), innerRadius: .ratio(0.62), angularInset: 1.5)
+                            .foregroundStyle(s.color.gradient)
+                            .cornerRadius(3)
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: 130, height: 130)
+                    .overlay {
+                        VStack(spacing: 0) {
+                            Text(formatDuration(EpochMs(total) * MINUTE)).font(.subheadline.weight(.bold)).monospacedDigit()
+                            Text("合計").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(slices.prefix(5)) { s in
+                            HStack(spacing: 6) {
+                                Circle().fill(s.color).frame(width: 8, height: 8)
+                                Text(s.name).font(.caption).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text("\(Int((Double(s.minutes) / Double(total) * 100).rounded()))%").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func ringCard(_ rate: (done: Int, total: Int)) -> some View {
+        let v = rate.total == 0 ? 0 : Double(rate.done) / Double(rate.total)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("今週のタスク").font(.subheadline.weight(.semibold))
+            HStack(spacing: 18) {
+                ZStack {
+                    Circle().stroke(Color.blue.opacity(0.15), lineWidth: 14)
+                    Circle().trim(from: 0, to: grown ? v : 0)
+                        .stroke(Color.blue.gradient, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    VStack(spacing: 0) {
+                        Text("\(Int((v * 100).rounded()))%").font(.title2.weight(.bold)).monospacedDigit().contentTransition(.numericText())
+                        Text("達成").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 120, height: 120)
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("済んだ", value: "\(rate.done)件")
+                    LabeledContent("今週の予定", value: "\(rate.total)件")
+                    Text(v >= 0.8 ? "よいペースです" : v >= 0.5 ? "あと少し" : rate.total == 0 ? "今週のタスクはありません" : "これから巻き返せます")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 今週（月曜から）の自分の予定の時間を、種類ごとに
+    private func weekSlices() -> [Slice] {
+        let today = model.time.startOfDay(model.now)
+        let monday = model.time.addDays(today, -((model.time.weekday(today) + 6) % 7))
+        var by: [String: (Int, Color)] = [:]
+        for o in model.myEvents(from: monday, to: model.time.addDays(monday, 7)) where !o.event.allDay {
+            let name = o.event.specType.flatMap { SPEC_BY_ID[$0]?.name } ?? "そのほか"
+            let c = o.event.specType.map { model.specTint($0) } ?? Color.gray
+            let m = Int((o.end - o.start) / MINUTE)
+            by[name] = ((by[name]?.0 ?? 0) + m, c)
+        }
+        return by.map { Slice(name: $0.key, minutes: $0.value.0, color: $0.value.1) }.sorted { $0.minutes > $1.minutes }
+    }
+
+    /// 今週（月曜から）に予定していたタスクのうち、済んだ数
+    private func completion() -> (done: Int, total: Int) {
+        let today = model.time.startOfDay(model.now)
+        let monday = model.time.addDays(today, -((model.time.weekday(today) + 6) % 7))
+        let end = model.time.addDays(monday, 7)
+        let xs = model.tasks.filter { t in
+            guard let a = taskAnchor(t) ?? t.onDay else { return false }
+            return a >= monday && a < end
+        }
+        return (xs.filter(\.isDone).count, xs.count)
     }
 }

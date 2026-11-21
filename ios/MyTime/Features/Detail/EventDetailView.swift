@@ -12,6 +12,7 @@ struct EventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var confirmDelete = false
+    @State private var openBelongings = false
     @State private var deleted = 0
     @State private var copyOccurrence: EventOccurrence?
     /// 繰り返しの予定の取り消しで「この回のみ／すべての回」を選ぶ
@@ -72,6 +73,22 @@ struct EventDetailView: View {
                             }
                         }
                         // 場所：Apple マップのプレビューと移動の段取り
+                        // 場所・持ち物・メモが2つ以上あれば、横にめくるカード1枚の段にまとめる（縦に長くしない）
+                        let occHere = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start })
+                        let placeHere = AppleMaps.place(of: displayed)
+                        let bringHere = BelongingsList.eventItems(displayed)
+                        let cardCount = [placeHere != nil, !bringHere.isEmpty, !displayed.notes.isEmpty].filter { $0 }.count
+                        if !struckNow && cardCount >= 2 {
+                            Section {
+                                infoCarousel(displayed, start: start, place: placeHere, bring: bringHere, occ: occHere)
+                                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
+                                    .listRowBackground(Color.clear)
+                            }
+                            if !TravelPlan.legs(displayed.extra).isEmpty {
+                                Section { TravelPlanSummary(event: displayed, start: start) } header: { Text("移動の段取り") }
+                            }
+                            details(displayed, start: start, end: end)
+                        } else {
                         if !struckNow { EventMapCard(event: displayed, start: start) }
                         details(displayed, start: start, end: end)
                         // 持ち物：1行（押すと確認の画面）
@@ -96,6 +113,7 @@ struct EventDetailView: View {
                                 }
                             }
                         }
+                        }
                         if let st = model.studioType(displayed.extra?["studio"]?["typeId"]?.stringValue) {
                             let rows = studioInfoRows(st, values: displayed.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
                             if !rows.isEmpty {
@@ -118,7 +136,7 @@ struct EventDetailView: View {
                                 }
                             }
                         }
-                        if !displayed.notes.isEmpty {
+                        if !displayed.notes.isEmpty && !(cardCount >= 2 && !struckNow) {
                             Section("メモ") { Text(displayed.notes).textSelection(.enabled) }
                         }
                         // 純正カレンダーと同じく、一番下に赤い「予定を削除」（中央ぞろえ）
@@ -253,6 +271,45 @@ struct EventDetailView: View {
         let m = Int(ms / MINUTE)
         if m < 60 { return "\(m)分" }
         return m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分"
+    }
+
+    /// 場所・持ち物・メモを横にめくるカードで
+    @ViewBuilder
+    private func infoCarousel(_ ev: MTEvent, start: EpochMs, place: PlaceValue?, bring: [String], occ: EventOccurrence?) -> some View {
+        var kinds: [String] = []
+        let _ = { if place != nil { kinds.append("place") }; if !bring.isEmpty { kinds.append("bring") }; if !ev.notes.isEmpty { kinds.append("notes") } }()
+        let checked = occ.map { BelongingsList.checked(ev, key: BelongingsList.key($0)).intersection(bring) } ?? []
+        CardCarousel(count: kinds.count, height: 150) { i in
+            switch kinds[i] {
+            case "place":
+                CarouselCard(title: "場所", symbol: "mappin.and.ellipse", tint: .red, action: { if let place { Task { await AppleMaps.open(place) } } }) {
+                    Text(place?.name ?? "").font(.headline).lineLimit(2)
+                    if let m = ev.travelMinutes, m > 0 {
+                        Label("\(model.hm(start - EpochMs(m) * MINUTE))に出発・移動\(durationLabel(m))", systemImage: "tram.fill")
+                            .font(.subheadline).foregroundStyle(.orange).labelStyle(CompactLabel())
+                    } else if let a = place?.address, !a.isEmpty {
+                        Text(a).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    Text("押すと Apple マップで開きます").font(.caption2).foregroundStyle(.tertiary)
+                }
+            case "bring":
+                CarouselCard(title: "持ち物", symbol: "bag.fill", tint: .brown, action: { openBelongings = true }) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(checked.count)").font(.title.weight(.bold)).monospacedDigit().contentTransition(.numericText())
+                        Text("/ \(bring.count) 確認済み").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Text(bring.prefix(5).joined(separator: "・")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    ProgressView(value: Double(checked.count), total: Double(max(1, bring.count))).tint(checked.count == bring.count ? .green : .brown)
+                }
+            default:
+                CarouselCard(title: "メモ", symbol: "note.text", tint: .yellow) {
+                    Text(ev.notes).font(.subheadline).lineLimit(5).textSelection(.enabled)
+                }
+            }
+        }
+        .navigationDestination(isPresented: $openBelongings) {
+            if let occ { EventBelongingsScreen(occurrenceId: occ.id, masterId: ev.id, key: BelongingsList.key(occ), start: start) }
+        }
     }
 
     private struct Status { var text: String; var symbol: String; var color: Color }

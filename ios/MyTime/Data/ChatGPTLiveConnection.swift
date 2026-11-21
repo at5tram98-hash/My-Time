@@ -284,6 +284,11 @@ final class ChatGPTLiveConnection {
         if let d = try? JSONEncoder().encode(activity) { UserDefaults.standard.set(d, forKey: "chatgpt.activity") }
     }
 
+    func removeActivity(_ id: String) {
+        activity.removeAll { $0.id == id }
+        if let d = try? JSONEncoder().encode(activity) { UserDefaults.standard.set(d, forKey: "chatgpt.activity") }
+    }
+
     func clearActivity() {
         activity = []
         UserDefaults.standard.removeObject(forKey: "chatgpt.activity")

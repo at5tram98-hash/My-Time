@@ -70,6 +70,31 @@ struct TaskDetailView: View {
         .presentationCornerRadius(28)
     }
 
+    private struct TimeCard { var title: String; var symbol: String; var tint: Color; var value: String; var sub: String? }
+
+    /// 時間のカード（予定・作業した時間・終わる見込み・見積・締切）
+    private func timeCards(_ task: MTTask, subs: [MTSubtask], now: EpochMs) -> [TimeCard] {
+        var out = [TimeCard(title: "予定", symbol: "calendar", tint: .red, value: when(task), sub: nil)]
+        if task.status != .notStarted && task.kind == .do {
+            out.append(TimeCard(title: "作業した時間", symbol: "timer", tint: .green, value: formatDuration(workedMs(task, at: now)),
+                                sub: task.estimateMinutes.map { "見積 \(formatDuration(EpochMs($0) * MINUTE))" }))
+        } else if let m = task.estimateMinutes {
+            out.append(TimeCard(title: "見積時間", symbol: "hourglass", tint: .teal, value: formatDuration(EpochMs(m) * MINUTE), sub: nil))
+        }
+        if task.status == .running {
+            switch estimateEnd(task, subtasks: subs, now: now) {
+            case .estimate(let at): out.append(TimeCard(title: "終わる見込み", symbol: "flag.checkered", tint: .blue, value: model.hm(at), sub: nil))
+            case .unavailable(let why): out.append(TimeCard(title: "終わる見込み", symbol: "flag.checkered", tint: .blue, value: "—", sub: why))
+            }
+        }
+        if let d = task.deadline {
+            let left = Int((d - now) / MINUTE)
+            out.append(TimeCard(title: "締切", symbol: "flag.fill", tint: .orange, value: "\(model.time.dayLabel(d)) \(model.hm(d))",
+                                sub: left > 0 ? "あと\(left >= 1440 ? "\(left / 1440)日" : left >= 60 ? "\(left / 60)時間" : "\(left)分")" : "締切を過ぎています"))
+        }
+        return out
+    }
+
     static let noProgress: Set<SpecTypeId> = [.shopping, .chores, .belongings, .payment, .paperwork, .cooking, .morning, .cleaning]
 
     @ViewBuilder
@@ -216,23 +241,28 @@ struct TaskDetailView: View {
                         .listRowInsets(EdgeInsets())
                 } header: { Text("場所") }
             }
-            Section("詳しい情報") {
-                info("予定", "calendar", .red, when(task))
-                if task.status != .notStarted && task.kind == .do {
-                    info("作業した時間", "timer", .green, formatDuration(workedMs(task, at: now)))
-                }
-                if task.status == .running {
-                    switch estimateEnd(task, subtasks: subs, now: now) {
-                    case .estimate(let at): info("終わる見込み", "flag.checkered", .blue, model.hm(at))
-                    case .unavailable(let why): info("終わる見込み", "flag.checkered", .blue, why)
+            // 時間・見積・締切は横にめくるカードで（縦に長くしない）。そのほかは下の一覧
+            Section {
+                let cards = timeCards(task, subs: subs, now: now)
+                CardCarousel(count: cards.count, height: 104) { i in
+                    let c = cards[i]
+                    CarouselCard(title: c.title, symbol: c.symbol, tint: c.tint) {
+                        Text(c.value).font(.title3.weight(.bold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.7)
+                            .contentTransition(.numericText())
+                        if let sub = c.sub { Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }
                 }
-                if let m = task.estimateMinutes { info("見積時間", "hourglass", .teal, formatDuration(EpochMs(m) * MINUTE)) }
-                if let d = task.deadline { info("締切", "flag.fill", .orange, "\(model.time.dayLabel(d)) \(model.hm(d))") }
-                if let c = task.category, !c.isEmpty { info("カテゴリー", "tray.fill", .brown, c) }
-                if task.extra?["alarm"]?.boolValue == true { info("アラーム", "alarm.fill", .orange, "開始の時刻に鳴らす") }
-                if let n = task.extra?["notifies"]?.arrayValue, !n.isEmpty {
-                    info("通知", "bell.fill", .pink, n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
+            }
+            let hasMore = (task.category.map { !$0.isEmpty } ?? false) || task.extra?["alarm"]?.boolValue == true || !(task.extra?["notifies"]?.arrayValue ?? []).isEmpty
+            if hasMore {
+                Section("詳しい情報") {
+                    if let c = task.category, !c.isEmpty { info("カテゴリー", "tray.fill", .brown, c) }
+                    if task.extra?["alarm"]?.boolValue == true { info("アラーム", "alarm.fill", .orange, "開始の時刻に鳴らす") }
+                    if let n = task.extra?["notifies"]?.arrayValue, !n.isEmpty {
+                        info("通知", "bell.fill", .pink, n.compactMap { $0.intValue.map { NotifyPicker.label(Int($0)) } }.joined(separator: "・"))
+                    }
                 }
             }
 

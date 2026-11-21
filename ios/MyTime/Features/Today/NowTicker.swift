@@ -140,7 +140,7 @@ struct NowTicker: View {
         }
         // 8. 夜は明日の起床アラームと最初の予定
         if t.minutesOfDay(now) >= 18 * 60 {
-            if let a = model.morning.alarms.filter(\.enabled).compactMap({ $0.next(after: now, time: t) }).min(), a < t.addDays(d1, 1) {
+            if let a = (model.morning.alarms.filter(\.enabled).compactMap({ $0.next(after: now, time: t) }) + model.autoWakeAlarms.filter { $0.first }.map(\.at)).min(), a < t.addDays(d1, 1) {
                 out.append(Item(id: "wake", symbol: "alarm.fill", tint: .orange, text: "明日は\(t.hm(a))に起床アラーム", openTasks: .morning))
             }
             if let f = mine.first(where: { $0.start >= d1 }) {

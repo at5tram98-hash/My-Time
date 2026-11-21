@@ -70,7 +70,8 @@ final class MyTimeUITests: XCTestCase {
         app.tabBars.buttons["その他"].tap()
         let cell = app.staticTexts["ロック画面の表示"]
         var tries = 0
-        while !cell.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
+        // 振り返りのグラフで一覧が長くなったので、見えるまでゆっくり送る
+        while !cell.isHittable && tries < 12 { app.swipeUp(velocity: .slow); tries += 1 }
         cell.tap()
         let preview = app.buttons["表示の見本（9種類）"]
         tries = 0

@@ -161,7 +161,10 @@ struct ChatGPTTransferView: View {
         }
 
         Section {
-            if live.activity.isEmpty {
+            if live.activity.isEmpty && live.lastSent == nil && live.failure == nil {
+                // はじめての同期が終わるまでは、行の形の仮の表示
+                ForEach(0..<3, id: \.self) { _ in SkeletonRow() }
+            } else if live.activity.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "text.bubble").font(.title2).foregroundStyle(.tertiary)
                     Text("まだ変更はありません").font(.subheadline.weight(.medium))
@@ -171,7 +174,13 @@ struct ChatGPTTransferView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
             } else {
-                ForEach(live.activity.prefix(20)) { a in activityRow(a) }
+                ForEach(live.activity.prefix(20)) { a in
+                    activityRow(a)
+                        // 左へなぞると記録から外す（予定・タスクはそのまま）
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { live.removeActivity(a.id) } label: { Label("記録から外す", systemImage: "eye.slash") }
+                        }
+                }
             }
         } header: {
             HStack {

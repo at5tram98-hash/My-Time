@@ -168,8 +168,15 @@ struct DayTimeline: View {
             // 長押しで作る・動かす間だけスクロールを止める（ふだんは上下になぞってスクロールできる）
             .scrollDisabled(creating != nil || dragging)
             .onAppear {
-                let h = model.time.isSameDay(day, now) ? model.time.minutesOfDay(now) / 60 : 8
-                proxy.scrollTo("h\(max(0, h - 1))", anchor: .top)
+                // はじめの位置：今日は「いま」を画面の上から3割ほどに。ほかの日は最初の予定（なければ8時）が上の方に来るように
+                if model.time.isSameDay(day, now) {
+                    proxy.scrollTo("h\(model.time.minutesOfDay(now) / 60)", anchor: UnitPoint(x: 0.5, y: 0.3))
+                } else {
+                    let d1 = model.time.addDays(day, 1)
+                    let first = events.filter { !$0.event.allDay && $0.start >= day && $0.start < d1 }.map(\.start).min()
+                    let h = first.map { model.time.minutesOfDay($0) / 60 } ?? 8
+                    proxy.scrollTo("h\(max(0, h - 1))", anchor: .top)
+                }
             }
             .simultaneousGesture(
                 MagnifyGesture()
@@ -322,9 +329,12 @@ struct DayTimeline: View {
         let d0 = model.time.startOfDay(day)
         let times = model.morning.alarms.filter(\.enabled)
             .filter { $0.weekdays.isEmpty || $0.weekdays.contains(model.time.weekday(d0)) }
-            .map { $0.hour * 60 + $0.minute }.sorted()
+            .map { $0.hour * 60 + $0.minute }
+            // 自動の起床（その日の予定に合わせた時刻）
+            + model.autoWakeAlarms.filter { model.time.isSameDay($0.at, d0) }.map { model.time.minutesOfDay($0.at) }
+        let sortedTimes = Array(Set(times)).sorted()
         var groups: [[Int]] = []
-        for m in times {
+        for m in sortedTimes {
             if let last = groups.last?.last, m - last <= 30 { groups[groups.count - 1].append(m) } else { groups.append([m]) }
         }
         return groups.map { g in

@@ -13,7 +13,10 @@ struct WeekTimeline: View {
     @Environment(Router.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("calendar.weekVisible") private var visible = 3
-    @State private var first = 0
+    /// 一番左に見えている日（はじめは今日。週の区切りに関係なく、日をまたいで続けて流れる）
+    @State private var leftDay: EpochMs?
+    /// 前後にあらかじめ並べておく日数（指を離すまでに見える分）
+    private let pad = 7
     @State private var dragX: CGFloat = 0
     @State private var hourHeight: CGFloat = 52
     @State private var tick = 0
@@ -21,16 +24,18 @@ struct WeekTimeline: View {
     @State private var lastSwipe = Date.distantPast
     static let gutter: CGFloat = 44
 
-    private var weekStart: EpochMs {
-        let d = model.time.startOfDay(model.time.ms(selected))
-        return model.time.addDays(d, -model.time.weekday(d))
+    /// 並べる最初の日（一番左の日の pad 日前）
+    private var base: EpochMs {
+        let l = leftDay ?? model.time.startOfDay(now)
+        return model.time.addDays(l, -pad)
     }
+    private var columns: Int { visible + pad * 2 }
 
     var body: some View {
         GeometryReader { geo in
             let w = max(1, geo.size.width - Self.gutter)
             let colW = w / CGFloat(visible)
-            let x = -CGFloat(first) * colW + dragX
+            let x = -CGFloat(pad) * colW + dragX
             VStack(spacing: 0) {
                 header(colW: colW, width: w, x: x)
                 ScrollViewReader { proxy in
@@ -39,8 +44,8 @@ struct WeekTimeline: View {
                             gutterColumn
                             ZStack(alignment: .topLeading) {
                                 HStack(spacing: 0) {
-                                    ForEach(0..<7, id: \.self) { i in
-                                        dayColumn(model.time.addDays(weekStart, i), width: colW)
+                                    ForEach(0..<columns, id: \.self) { i in
+                                        dayColumn(model.time.addDays(base, i), width: colW)
                                     }
                                 }
                                 .offset(x: x)
@@ -52,9 +57,11 @@ struct WeekTimeline: View {
                     }
                     .guardsTaps()
                     .onAppear {
-                        first = clampFirst(model.time.weekday(model.time.ms(selected)) - visible / 2)
+                        // はじめは今日を一番左に（別の日を選んでいたら、その日を一番左に）
+                        if leftDay == nil { leftDay = model.time.startOfDay(model.time.ms(selected)) }
+                        // 「いま」を画面の上から3割ほどに
                         let h = model.time.minutesOfDay(now) / 60
-                        proxy.scrollTo("w\(max(0, min(23, h - 1)))", anchor: .top)
+                        proxy.scrollTo("w\(max(0, min(23, h)))", anchor: UnitPoint(x: 0.5, y: 0.3))
                     }
                 }
             }
@@ -63,44 +70,46 @@ struct WeekTimeline: View {
                 MagnifyGesture().onEnded { v in
                     let next = v.magnification < 1 ? 7 : 3
                     guard next != visible else { return }
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85)) {
-                        visible = next
-                        first = clampFirst(first)
-                    }
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85)) { visible = next }
                 }
             )
         }
         .sensoryFeedback(.selection, trigger: tick)
-    }
-
-    private func clampFirst(_ f: Int) -> Int { max(0, min(7 - visible, f)) }
-
-    /// 指を離したら列の境目にそろえる。週の端を越えたら前後の週へ
-    private func settle(_ target: Int) {
-        let anim: Animation? = reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)
-        if target < 0 {
-            selected = model.time.date(model.time.addDays(weekStart, -7 + max(0, 7 - visible)))
-            first = 7 - visible
-            dragX = 0
-            tick += 1
-        } else if target > 7 - visible {
-            selected = model.time.date(model.time.addDays(weekStart, 7))
-            first = 0
-            dragX = 0
-            tick += 1
-        } else {
-            let changed = target != first
-            withAnimation(anim) { first = target; dragX = 0 }
-            if changed { tick += 1 }
-            selected = model.time.date(model.time.addDays(weekStart, target))
+        // 「今日」や日付の選び直しで、見えていない日になったら、その日を一番左へ
+        .onChange(of: selected) { _, d in
+            let sd = model.time.startOfDay(model.time.ms(d))
+            let l = leftDay ?? sd
+            if sd < l || sd >= model.time.addDays(l, visible) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) { leftDay = sd }
+            }
         }
     }
+
+    /// 指を離したら、勢いに合わせて列の境目にそろえる（最大7日）。動き終わったら並べ直して、続けて流れるように
+    private func settle(dx: CGFloat, predicted: CGFloat, colW: CGFloat) {
+        let n = max(-pad, min(pad, Int((-(dx + predicted * 0.6) / colW).rounded())))
+        let anim: Animation? = reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)
+        withAnimation(anim, completionCriteria: .logicallyComplete) {
+            dragX = -CGFloat(n) * colW
+        } completion: {
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) {
+                leftDay = model.time.addDays(leftDay ?? model.time.startOfDay(now), n)
+                dragX = 0
+            }
+            if let l = leftDay { selected = model.time.date(l) }
+        }
+        if n != 0 { tick += 1 }
+    }
+
+    /// 今日を一番左へ（「今日」ボタン）
+    func goToday() { leftDay = model.time.startOfDay(now) }
 
     // MARK: 見出し（日付・終日の予定）
 
     private func header(colW: CGFloat, width: CGFloat, x: CGFloat) -> some View {
         HStack(spacing: 0) {
-            Button { withAnimation(.snappy) { visible = visible == 3 ? 7 : 3; first = clampFirst(first) } } label: {
+            Button { withAnimation(.snappy) { visible = visible == 3 ? 7 : 3 } } label: {
                 Text(visible == 3 ? "3日" : "7日").font(.caption2.weight(.bold)).foregroundStyle(Color.accentColor)
                     .frame(width: Self.gutter - 6, height: 26)
                     .glass(Capsule(), interactive: true)
@@ -109,8 +118,9 @@ struct WeekTimeline: View {
             .frame(width: Self.gutter)
             .accessibilityLabel(visible == 3 ? "7日表示にする" : "3日表示にする")
             HStack(spacing: 0) {
-                ForEach(0..<7, id: \.self) { i in
-                    let d = model.time.addDays(weekStart, i)
+                ForEach(0..<columns, id: \.self) { k in
+                    let d = model.time.addDays(base, k)
+                    let i = model.time.weekday(d)
                     let today = model.time.isSameDay(d, now)
                     let allDay = model.visibleEvents(from: d, to: model.time.addDays(d, 1), includeStruck: true).filter(\.event.allDay)
                     Button { onOpenDay(d) } label: {
@@ -237,8 +247,7 @@ struct WeekTimeline: View {
                         onHorizontalPan: { dx in dragX = dx; lastSwipe = Date() },
                         onHorizontalPanEnded: { dx, predicted in
                             lastSwipe = Date()
-                            let moved = Int((-(dx + predicted) / 2 / width).rounded())
-                            settle(first + moved)
+                            settle(dx: dx, predicted: predicted - dx, colW: width)
                         }
                     )
                 }

@@ -161,6 +161,10 @@ enum NotificationScheduler {
                 }
             }
         }
+        // 自動の起床：本物のアラームで予約できなかったときだけ、通知で代わりに知らせる
+        for w in model.autoWakeAlarms where !AlarmService.confirmed.contains("wake:\(w.key)") && w.at < now + 7 * DAY {
+            all.append(Plan(id: "morning:wake-\(w.key)", title: "起床", body: w.first ? "15分後が起きる時刻です" : "朝の準備を始める時刻です", at: w.at, alarm: true, subtitle: model.hm(w.at)))
+        }
         // アラームの通知は、本物のアラームとして予約できなかったものだけ（二重に鳴らさない）
         func coveredByAlarm(_ p: Plan) -> Bool {
             let c = AlarmService.confirmed

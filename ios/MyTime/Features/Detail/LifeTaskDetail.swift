@@ -61,18 +61,51 @@ struct MorningTaskDetail: View {
                 }
             }
 
-            // 出発の目安（その日の一番初めの予定）
-            if let f = first {
-                let plan = DeparturePlan.make(eventStart: f.start, travelMinutes: f.event.travelMinutes, routine: r)
-                Section("出発の目安") {
-                    LabeledContent("最初の予定", value: "\(model.hm(f.start)) \(f.title)")
-                    if let leave = plan.leaveAt {
-                        LabeledContent("家を出る", value: model.hm(leave)).monospacedDigit()
-                        if let p = plan.prepStartAt { LabeledContent("準備を始める", value: model.hm(p)).monospacedDigit() }
-                    } else {
-                        Text("予定に移動時間を入れると、家を出る時刻を出します。").font(.caption).foregroundStyle(.secondary)
+            // 朝のまとめ（出発・起床・準備の見込み）を横にめくるカードに（縦に長くしない）
+            Section {
+                let plan = first.map { DeparturePlan.make(eventStart: $0.start, travelMinutes: $0.event.travelMinutes, routine: r) }
+                let wakes = model.autoWakeAlarms.filter { w in first.map { model.time.isSameDay(w.at, $0.start) } ?? false }
+                CardCarousel(count: 3, height: 128) { i in
+                    switch i {
+                    case 0:
+                        CarouselCard(title: "出発の目安", symbol: "figure.walk.departure", tint: .orange) {
+                            if let f = first {
+                                Text(plan?.leaveAt.map { "\(model.hm($0))に出発" } ?? "\(model.hm(f.start))に開始")
+                                    .font(.title2.weight(.bold)).monospacedDigit()
+                                Text("\(model.hm(f.start)) \(f.title)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                if plan?.leaveAt == nil { Text("予定に移動時間を入れると、出発の時刻を出します").font(.caption2).foregroundStyle(.tertiary) }
+                            } else {
+                                Text("この日は予定がありません").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                    case 1:
+                        CarouselCard(title: "起床アラーム", symbol: "alarm.fill", tint: .orange) {
+                            if wakes.isEmpty {
+                                Text(r.alarms.contains(where: \.enabled) ? "自分で決めたアラームで鳴らします" : "鳴らすアラームはありません")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            } else {
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    ForEach(wakes, id: \.key) { w in
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            Text(model.hm(w.at)).font(.title2.weight(.bold)).monospacedDigit()
+                                            Text(w.first ? "1つ目" : "起きる時刻").font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                                Text("予定に合わせて自動（ゆとり30分）").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                    default:
+                        CarouselCard(title: "準備にかかる見込み", symbol: "timer", tint: .blue) {
+                            Text(est.minutes > 0 ? "約\(est.minutes)分" : "—").font(.title2.weight(.bold)).monospacedDigit()
+                            Text(est.unknown > 0 ? "時間の分からない工程が\(est.unknown)つ" : "工程 \(r.enabledSteps.count)つ")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if let p = plan?.prepStartAt { Text("\(model.hm(p))までに準備を始める").font(.caption2).foregroundStyle(.tertiary) }
+                        }
                     }
                 }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
             }
 
             // 工程（見込みの時間つき）
@@ -94,20 +127,6 @@ struct MorningTaskDetail: View {
                 Text("工程（\(r.enabledSteps.count)）")
             } footer: {
                 Text(est.minutes > 0 ? "見込み 約\(est.minutes)分" + (est.unknown > 0 ? "（時間の分からない工程が\(est.unknown)つ）" : "") : "工程を1回通すと、かかった時間から見込みを出します。")
-            }
-
-            if !r.alarms.isEmpty {
-                Section("起床アラーム") {
-                    ForEach(r.alarms) { a in
-                        HStack {
-                            Text(String(format: "%d:%02d", a.hour, a.minute)).font(.title3.weight(.semibold)).monospacedDigit()
-                                .foregroundStyle(a.enabled ? .primary : .tertiary)
-                            Text(a.label.isEmpty ? "アラーム" : a.label).font(.subheadline).foregroundStyle(.secondary)
-                            Spacer()
-                            Image(systemName: a.enabled ? "alarm.fill" : "alarm").foregroundStyle(a.enabled ? .orange : .secondary)
-                        }
-                    }
-                }
             }
 
             Section {
@@ -185,21 +204,28 @@ struct CleaningTaskDetail: View {
                 }
             } header: { Text("今日やるとよい所") }
 
-            // 場所ごとの達成（目標どおりの割合）
-            Section("場所") {
-                ForEach(b.areas) { a in
-                    HStack(spacing: 12) {
-                        Image(systemName: a.symbol).foregroundStyle(.teal).frame(width: 24)
-                        Text(a.name)
-                        Spacer()
-                        if let v = b.areaAchievement(a, now: now, time: model.time) {
-                            Gauge(value: v) { EmptyView() }
-                                .gaugeStyle(.accessoryCircularCapacity).tint(.teal).scaleEffect(0.55).frame(width: 30, height: 30)
+            // 場所ごとの達成：横にめくるカード（輪が目標どおりの割合まで伸びる）
+            Section {
+                CardCarousel(count: max(1, b.areas.count), height: 118) { i in
+                    if b.areas.indices.contains(i) {
+                        let a = b.areas[i]
+                        let v = b.areaAchievement(a, now: now, time: model.time)
+                        CarouselCard(title: a.name, symbol: a.symbol, tint: .teal, action: { router.closeAll(); router.openTasks(.cleaning) }) {
+                            HStack(spacing: 14) {
+                                AchievementRing(value: v ?? 0, tint: .teal).frame(width: 58, height: 58)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(v.map { "\(Int(($0 * 100).rounded()))%" } ?? "—").font(.title2.weight(.bold)).monospacedDigit()
+                                    Text("目標どおり・\(a.items.count)項目").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
+                    } else {
+                        CarouselCard(title: "場所", symbol: "house", tint: .teal) { Text("場所がありません").foregroundStyle(.secondary) }
                     }
                 }
-                Button("場所と項目を編集", systemImage: "slider.horizontal.3") { router.closeAll(); router.openTasks(.cleaning) }
-            }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
+            } header: { Text("場所") }
 
             if let last = b.history.first {
                 Section("前回") {
@@ -214,5 +240,24 @@ struct CleaningTaskDetail: View {
                 Button(role: .destructive, action: onDelete) { Text("このタスクを削除").frame(maxWidth: .infinity) }
             }
         }
+    }
+}
+
+
+/// 達成の輪（表示されたときに0から伸びる）
+struct AchievementRing: View {
+    var value: Double
+    var tint: Color
+    var lineWidth: CGFloat = 8
+    @State private var shown = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        ZStack {
+            Circle().stroke(tint.opacity(0.15), lineWidth: lineWidth)
+            Circle().trim(from: 0, to: shown).stroke(tint.gradient, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)).rotationEffect(.degrees(-90))
+        }
+        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.8, dampingFraction: 0.85).delay(0.1)) { shown = value } }
+        .onChange(of: value) { _, v in withAnimation(.snappy) { shown = v } }
+        .accessibilityHidden(true)
     }
 }

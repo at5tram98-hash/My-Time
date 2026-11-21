@@ -199,8 +199,12 @@ struct PlaceTravelScreen: View {
             // 今の移動時間と出発の時刻（大きく1行）
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(travel.map { "移動 \(durationLabel($0))" } ?? "移動なし").font(.title3.weight(.semibold)).monospacedDigit()
-                        .contentTransition(.numericText())
+                    if calculating && travel == nil {
+                        SkeletonBlock(cornerRadius: 5).frame(width: 120, height: 22)
+                    } else {
+                        Text(travel.map { "移動 \(durationLabel($0))" } ?? "移動なし").font(.title3.weight(.semibold)).monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
                     if let t = travel, t > 0 {
                         Text("\(model.hm(model.time.ms(start) - EpochMs(t) * MINUTE))に出発").font(.subheadline).foregroundStyle(.orange).monospacedDigit()
                     }
@@ -308,9 +312,13 @@ struct PlaceMapPreview: View {
                             Marker(place.name, coordinate: c).tint(.red)
                         }
                         .allowsHitTesting(false)
+                        .transition(.opacity)
+                    } else if loading {
+                        // 地図を読み込むまでは、地図の形の仮の面（光が流れる）
+                        SkeletonBlock(cornerRadius: 0)
                     } else {
                         Color(.tertiarySystemFill)
-                        if loading { ProgressView() } else { Image(systemName: "map").font(.title2).foregroundStyle(.secondary) }
+                        Image(systemName: "map").font(.title2).foregroundStyle(.secondary)
                     }
                 }
                 .frame(height: height)
@@ -332,6 +340,10 @@ struct PlaceMapPreview: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Apple マップで開きます")
-        .task(id: place.name) { loading = true; coord = await AppleMaps.mapItem(place)?.placemark.coordinate; loading = false }
+        .task(id: place.name) {
+            loading = true
+            let c = await AppleMaps.mapItem(place)?.placemark.coordinate
+            withAnimation(.easeOut(duration: 0.35)) { coord = c; loading = false }
+        }
     }
 }

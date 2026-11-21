@@ -35,19 +35,35 @@ struct MorningHomeView: View {
             departureSection(r)
 
             Section {
-                // 予定に合わせて自動で（最初の予定 − 移動 − 準備の見込み。2つまで）
+                // 予定に合わせて自動で（最初の予定 − 移動 − 準備の見込み − ゆとり30分。毎朝2つ）
                 Toggle(isOn: Binding(get: { autoWake }, set: { v in
                     autoWake = v
-                    if v { model.saveMorning(MorningAuto.turnOffManualAlarms(model.morning)); model.syncWakeAlarms() }
-                    else { model.saveMorning(MorningAuto.applyWakeAlarms(model.morning, wakeMinute: nil, weekday: 0), message: "自動のアラームを外しました") }
+                    if v { model.saveMorning(MorningAuto.turnOffManualAlarms(model.morning), message: "自動の起床アラームにしました") }
+                    model.scheduleNotifications()
                 })) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("予定に合わせて自動で設定")
-                        Text(autoWake ? (r.alarms.contains { $0.label.hasPrefix(MorningAuto.autoLabelPrefix) } ? "最初の予定・移動時間・準備の見込みから2つ" : "次の朝は予定が無いので鳴らしません") : "最初の予定・移動時間・準備の見込みから2つ")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text("予定に合わせて自動で鳴らす")
+                        Text("最初の予定・移動・準備の見込みから、ゆとりを30分とって2回").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .tint(.orange)
+                if autoWake {
+                    let wakes = model.autoWakeAlarms.filter { !$0.first }.prefix(4)
+                    if wakes.isEmpty {
+                        Label("これから7日間は、朝に予定がありません", systemImage: "moon.zzz")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(wakes), id: \.key) { w in
+                        HStack {
+                            Text(model.time.dayLabel(w.day)).font(.subheadline).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(model.hm(w.at - 15 * MINUTE))・\(model.hm(w.at))")
+                                .font(.title3.weight(.semibold)).monospacedDigit()
+                                .contentTransition(.numericText())
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
                 ForEach(r.alarms) { a in
                     Button { editingAlarm = a } label: { alarmRow(a) }
                         .buttonStyle(.plain)
@@ -74,6 +90,15 @@ struct MorningHomeView: View {
             Section {
                 ForEach(r.steps) { s in
                     NavigationLink { MorningStepEditor(stepId: s.id) } label: { stepRow(s, routine: r) }
+                        // 右へなぞると、その工程を今朝から使う・使わない（削除はしない）
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                var x = model.morning
+                                if let i = x.steps.firstIndex(where: { $0.id == s.id }) { x.steps[i].enabled.toggle() }
+                                model.saveMorning(x, message: s.enabled ? "「\(s.name)」を使わないようにしました" : "「\(s.name)」を使うようにしました")
+                            } label: { Label(s.enabled ? "使わない" : "使う", systemImage: s.enabled ? "pause.circle" : "play.circle") }
+                            .tint(s.enabled ? .gray : .orange)
+                        }
                 }
                 .onMove { from, to in
                     var x = model.morning

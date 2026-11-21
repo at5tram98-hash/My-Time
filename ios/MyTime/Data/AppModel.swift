@@ -96,29 +96,25 @@ final class AppModel {
         syncWakeAlarms()
     }
 
-    /// 起床アラームを次の朝の最初の予定・移動時間に合わせる（2つまで。「朝」の画面で切れる）
+    /// 自動の起床アラーム（これから7日分）。最初の予定・移動時間・準備の見込みから、ゆとりを持った時刻を毎回計算する。
+    /// 予定が変わるたびに通知・アラームの予約し直しで入れ替わるので、アプリを開かなくても毎朝その日に合った時刻で鳴る
+    var autoWakeAlarms: [WakeAlarm] {
+        guard UserDefaults.standard.object(forKey: Self.autoWakeKey) as? Bool ?? true else { return [] }
+        let prep = max(30, morning.estimate().minutes)
+        return MorningAuto.wakeAlarms(now: now, prepMinutes: prep, time: time) { d in
+            self.myEvents(from: d, to: self.time.addDays(d, 1))
+                .filter { !$0.event.allDay && $0.start >= d }
+                .min { $0.start < $1.start }
+                .map { (start: $0.start, travel: $0.event.travelMinutes) }
+        }
+    }
+
+    /// 前の形（曜日くり返しの「自動」アラームを朝の設定に入れていた）を外す
     func syncWakeAlarms() {
-        guard !isPreview, UserDefaults.standard.object(forKey: Self.autoWakeKey) as? Bool ?? true else { return }
+        guard !isPreview else { return }
         let r = morning
-        let prep = max(30, r.estimate().minutes)
-        let today = time.startOfDay(now)
-        var pick: (minute: Int?, day: EpochMs) = (nil, time.addDays(today, 1))
-        for i in 0..<2 {
-            let d = time.addDays(today, i)
-            let first = myEvents(from: d, to: time.addDays(d, 1)).filter { !$0.event.allDay && $0.start >= d }.min { $0.start < $1.start }
-            let w = first.flatMap { MorningAuto.wakeMinute(firstStart: $0.start, travelMinutes: $0.event.travelMinutes, prepMinutes: prep, day: d, time: time) }
-            // 今日の起きる時刻がもう過ぎていれば明日
-            if let w, d + EpochMs(w) * MINUTE > now { pick = (w, d); break }
-            if i == 1 { pick = (w, d) }
-        }
-        var base = r
-        // 自動にしてから初めて：自分で作ったアラームはオフにする（消さない）
-        if !UserDefaults.standard.bool(forKey: "morning.autoWakeMigrated") {
-            base = MorningAuto.turnOffManualAlarms(base)
-            UserDefaults.standard.set(true, forKey: "morning.autoWakeMigrated")
-        }
-        let next = MorningAuto.applyWakeAlarms(base, wakeMinute: pick.minute, weekday: time.weekday(pick.day))
-        if next.alarms != r.alarms { saveMorning(next) }
+        let cleaned = MorningAuto.removeLegacyAutoAlarms(r)
+        if cleaned.alarms != r.alarms { saveMorning(cleaned) }
     }
     static let autoWakeKey = "morning.autoWake"
 

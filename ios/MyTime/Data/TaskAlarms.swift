@@ -57,18 +57,18 @@ enum AlarmService {
 
     static func sync(model: AppModel) async {
         let cps = (0..<8).flatMap { model.checkpoints(on: model.time.addDays(model.time.startOfDay(model.now), $0)) }.filter { $0.at > model.now }
-        await sync(tasks: model.tasks, checkpoints: cps, morning: model.morning, now: model.now, time: model.time)
+        await sync(tasks: model.tasks, checkpoints: cps, morning: model.morning, wakes: model.autoWakeAlarms, now: model.now, time: model.time)
     }
 
     /// 本物のアラーム（AlarmKit）として予約できたもの（通知で代わりに鳴らす必要がないもの）。
     /// 鍵：タスクは "task:ID@時刻"、チェックポイントは "cp:ID@時刻"、朝は "morning:ID"
     static private(set) var confirmed: Set<String> = []
 
-    static func sync(tasks: [MTTask], checkpoints: [Checkpoint], morning: MorningRoutine, now: EpochMs, time: DomainTime) async {
+    static func sync(tasks: [MTTask], checkpoints: [Checkpoint], morning: MorningRoutine, wakes: [WakeAlarm] = [], now: EpochMs, time: DomainTime) async {
         #if canImport(AlarmKit)
         guard #available(iOS 26.0, *), AlarmManager.shared.authorizationState == .authorized else { return }
         let manager = AlarmManager.shared
-        enum Item { case once(MTTask, EpochMs), morning(MorningAlarm) }
+        enum Item { case once(MTTask, EpochMs), morning(MorningAlarm), wake(WakeAlarm) }
         var wanted: [UUID: Item] = [:]
         for t in tasks {
             guard let at = NotificationScheduler.alarmTime(t), at > now, at < now + 7 * DAY else { continue }
@@ -81,6 +81,10 @@ enum AlarmService {
         // 朝：起床完了を押した日は、その日の残りのアラームを鳴らさない（翌日以降の分は次の照合で戻す）
         let woke = UserDefaults.standard.double(forKey: "morning.wokeDay")
         let wokeToday = woke > 0 && time.isSameDay(EpochMs(woke), now)
+        // 自動の起床（その日の予定に合わせた1回ずつのアラーム）
+        for w in wakes where w.at > now && !(wokeToday && time.isSameDay(w.at, now)) {
+            wanted[TaskAlarms.alarmID(taskId: "wake-" + w.key, at: w.at)] = .wake(w)
+        }
         for a in morning.alarms.prefix(MorningRoutine.maxAlarms) where a.enabled {
             if wokeToday, let next = a.next(after: now, time: time), time.isSameDay(next, now) { continue }
             wanted[TaskAlarms.morningAlarmID(a)] = .morning(a)
@@ -90,6 +94,7 @@ enum AlarmService {
             switch item {
             case .once(let t, let at): keyOf[id] = (t.id.hasPrefix("cp-") ? "cp:\(t.id.dropFirst(3))" : "task:\(t.id)") + "@\(at)"
             case .morning(let a): keyOf[id] = "morning:\(a.id)"
+            case .wake(let w): keyOf[id] = "wake:\(w.key)"
             }
         }
         let existing: Set<UUID>
@@ -113,6 +118,19 @@ enum AlarmService {
                 let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>.alarm(schedule: .fixed(Date(timeIntervalSince1970: TimeInterval(at) / 1000)), attributes: attributes)
                 do { _ = try await manager.schedule(id: id, configuration: config); if let k = keyOf[id] { ok.insert(k) } }
                 catch { failed += 1; Diagnostics.failure("alarm", error, context: "アラームの予約（通知で代わりに知らせます）") }
+            case .wake(let w):
+                let alert = AlarmPresentation.Alert(
+                    title: LocalizedStringResource(stringLiteral: "起床"),
+                    stopButton: AlarmButton(text: "止める", textColor: .white, systemImageName: "stop.circle.fill"),
+                    secondaryButton: AlarmButton(text: "スヌーズ", textColor: .white, systemImageName: "zzz"),
+                    secondaryButtonBehavior: .countdown
+                )
+                let attributes = AlarmAttributes<TaskAlarmMetadata>(presentation: AlarmPresentation(alert: alert), metadata: TaskAlarmMetadata(taskId: "wake-" + w.key), tintColor: .orange)
+                let config = AlarmManager.AlarmConfiguration<TaskAlarmMetadata>(
+                    countdownDuration: Alarm.CountdownDuration(preAlert: nil, postAlert: 5 * 60),
+                    schedule: .fixed(Date(timeIntervalSince1970: TimeInterval(w.at) / 1000)), attributes: attributes, sound: .default)
+                do { _ = try await manager.schedule(id: id, configuration: config); if let k = keyOf[id] { ok.insert(k) } }
+                catch { failed += 1; Diagnostics.failure("alarm", error, context: "起床アラームの予約（通知で代わりに知らせます）") }
             case .morning(let a):
                 let snooze = a.snoozeMinutes > 0
                 let alert = AlarmPresentation.Alert(
