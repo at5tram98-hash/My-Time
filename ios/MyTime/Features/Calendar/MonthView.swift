@@ -164,7 +164,7 @@ struct MonthView: View {
             // 月の名前（今の月は赤）。いちばん上の月は上の大きな見出しと重なるので出さない
             if offset != shownOffset || offset == range.lowerBound {
                 Text(cal.component(.month, from: start) == 1 ? start.formatted(.dateTime.year().month(.wide)) : start.formatted(.dateTime.month(.wide)))
-                    .font(.title2.weight(.bold))
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(isCurrent ? Color.red : Color.primary)
                     .padding(.leading, 16)
                     .padding(.top, 18).padding(.bottom, 6)
@@ -221,7 +221,7 @@ struct MonthView: View {
         let lv = detailLevel(rowHeight)
         let past = d < model.time.startOfDay(model.now)
         // 札の高さ：時刻つきの予定は2〜3行、終日・タスク・ほかの人の予定は1行
-        let room = CGFloat(rowHeight) - 40
+        let room = CGFloat(rowHeight) - 38
         var used: CGFloat = 0
         var shown: [CellItem] = []
         for it in items {
@@ -230,18 +230,18 @@ struct MonthView: View {
             used += h; shown.append(it)
         }
         let hidden = items.count - shown.count
-        return VStack(spacing: 2) {
+        return VStack(spacing: 3) {
             Text("\(n)")
-                .font(.system(size: 20, weight: today ? .bold : (wd == 0 || wd == 6) ? .regular : .semibold)).monospacedDigit()
+                .font(.system(size: 17, weight: today ? .bold : (wd == 0 || wd == 6) ? .regular : .medium)).monospacedDigit()
                 .foregroundStyle(today ? Color.white : (wd == 0 || wd == 6 || past) ? Color.secondary : Color.primary)
-                .frame(width: 34, height: 34)
+                .frame(width: 28, height: 28)
                 .background { if today { Circle().fill(Color.red) } }
-                .padding(.top, 4)
+                .padding(.top, 5)
             if lv >= 1 {
-                VStack(spacing: 2) {
+                VStack(spacing: 1.5) {
                     ForEach(shown) { it in chip(it, level: lv) }
                     if hidden > 0 {
-                        Text("+\(hidden)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        Text("+\(hidden)").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4)
                     }
                 }
@@ -300,9 +300,9 @@ struct MonthView: View {
     private func chipHeight(_ it: CellItem, level: Int) -> CGFloat {
         switch it {
         case .event(let o):
-            if o.event.allDay || model.isOtherPerson(o.event.calendarId) || o.isStruck { return 18 }
-            return level >= 3 ? 52 : level >= 2 ? 40 : 18
-        case .task: return 18
+            if o.event.allDay || model.isOtherPerson(o.event.calendarId) || o.isStruck { return 15 }
+            return level >= 3 ? 44 : level >= 2 ? 33 : 15
+        case .task: return 15
         }
     }
 
@@ -328,42 +328,42 @@ struct MonthView: View {
                     if other {
                         Circle().fill(c.opacity(0.45)).frame(width: 5, height: 5)
                     } else if o.event.allDay {
-                        Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(c)
+                        Image(systemName: "circle.fill").font(.system(size: 5.5)).foregroundStyle(c)
                     }
-                    Text(o.title).font(.system(size: 11, weight: other ? .regular : .semibold)).lineLimit(1)
+                    Text(o.title).font(.system(size: 9.5, weight: other ? .regular : .semibold)).lineLimit(1)
                         .strikethrough(o.isStruck)
                 }
                 .foregroundStyle(other || o.isStruck ? Color.secondary : o.event.allDay ? Color.primary : c)
                 .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 15, maxHeight: 15, alignment: .leading)
                 .background {
                     if other || o.isStruck { Color.clear }
                     else if o.event.allDay { Capsule().fill(Color(.tertiarySystemFill)) }
-                    else { RoundedRectangle(cornerRadius: 5, style: .continuous).fill(c.opacity(0.18)) }
+                    else { RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(c.opacity(0.18)) }
                 }
                 .opacity(other ? 0.75 : 1)
             } else {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 2) {
                         if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 8, weight: .bold)) }
-                        Text(o.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(2)
+                        Text(o.title).font(.system(size: 10, weight: .semibold)).lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(model.hm(o.start)).font(.system(size: 10.5)).monospacedDigit().opacity(0.85)
+                    Text(model.hm(o.start)).font(.system(size: 9)).monospacedDigit().opacity(0.8)
                     if level >= 3, let sub, !sub.isEmpty {
-                        Text(sub).font(.system(size: 9.5)).lineLimit(1).opacity(0.75)
+                        Text(sub).font(.system(size: 8.5)).lineLimit(1).opacity(0.7)
                     }
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(c.deepened)
-                .padding(.horizontal, 4).padding(.vertical, 3)
+                .padding(.horizontal, 3).padding(.vertical, 2)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: level >= 3 ? 52 : 40)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(c.opacity(0.2)))
+                .frame(height: level >= 3 ? 44 : 33)
+                .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(c.opacity(0.2)))
             }
         }
         .contentShape(Rectangle())
-        .deliberateTap { router.open(.event(o.id)) }
+        .chipTap { router.open(.event(o.id)) }
         .accessibilityElement(children: .combine)
         .accessibilityAction { router.open(.event(o.id)) }
         .accessibilityAddTraits(.isButton)
@@ -374,15 +374,15 @@ struct MonthView: View {
     private func taskChip(_ t: MTTask, at: EpochMs) -> some View {
         let tint = t.kind == .check ? Color.checkTask : Color.doTask
         return HStack(spacing: 3) {
-            Image(systemName: t.isDone ? "checkmark.circle.fill" : "circle").font(.system(size: 9, weight: .semibold)).foregroundStyle(tint)
-            Text(t.title).font(.system(size: 11, weight: .medium)).lineLimit(1).strikethrough(t.isDone)
+            Image(systemName: t.isDone ? "checkmark.circle.fill" : "circle").font(.system(size: 7.5, weight: .bold)).foregroundStyle(tint)
+            Text(t.title).font(.system(size: 9.5, weight: .medium)).lineLimit(1).strikethrough(t.isDone)
         }
         .foregroundStyle(t.isDone ? Color.secondary : Color.primary)
         .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 15, maxHeight: 15, alignment: .leading)
         .background(Capsule().fill(Color(.quaternarySystemFill)))
         .contentShape(Rectangle())
-        .deliberateTap { router.open(.task(t.id)) }
+        .chipTap { router.open(.task(t.id)) }
         .accessibilityElement(children: .combine)
         .accessibilityAction { router.open(.task(t.id)) }
         .accessibilityAddTraits(.isButton)
@@ -517,5 +517,28 @@ struct CopyToDaysSheet: View {
             }
         }
         if ok { done += 1; dismiss() }
+    }
+}
+
+
+/// 月の表示の札を押したとき：ボタンにして、日のタップより先に受け取り、予定・タスクの詳細を開く。
+/// スクロールの邪魔をしない（ボタンはスクロールと取り合わない）。押している間はうすく
+private struct ChipPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.5 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+extension View {
+    fileprivate func chipTap(_ action: @escaping () -> Void) -> some View {
+        Button {
+            guard Date().timeIntervalSince(TapGuard.lastScroll) >= TapGuard.quiet else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: { self }
+        .buttonStyle(ChipPressStyle())
     }
 }

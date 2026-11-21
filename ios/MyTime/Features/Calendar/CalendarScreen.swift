@@ -83,47 +83,20 @@ struct CalendarScreen: View {
             .background(Color(.systemBackground))
             .navigationTitle(mode == "month" ? "" : title(day))
             .navigationBarTitleDisplayMode(.inline)
-            // 「今日」は純正と同じく左下に浮かべる（今日を見ていないときだけ）
-            .overlay(alignment: .bottomLeading) {
-                if !isShowingToday(day) {
-                    Button { goToday() } label: {
-                        Text("今日").font(.body.weight(.semibold))
-                            .padding(.horizontal, 20).frame(height: 46)
-                            .glass(Capsule(), interactive: true)
-                    }
-                    .buttonStyle(PressableStyle())
-                    .padding(.leading, 16).padding(.bottom, 10)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-                    .accessibilityLabel("今日へ移動")
-                }
-            }
-            // 右下：カレンダーの一覧と未割当（純正のカレンダー・受信箱のボタンと同じ位置）
-            .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 0) {
-                    Button { showCalendars = true } label: {
-                        Image(systemName: "calendar").font(.title3).frame(width: 50, height: 46)
-                    }
-                    .accessibilityLabel("カレンダー")
-                    Button { router.open(.inbox) } label: {
-                        Image(systemName: "tray").font(.title3).frame(width: 50, height: 46)
-                            .overlay(alignment: .topTrailing) {
-                                if !model.inbox.isEmpty {
-                                    Text("\(min(99, model.inbox.count))").font(.caption2.weight(.bold)).foregroundStyle(.white)
-                                        .padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
-                                        .background(Capsule().fill(Color.red)).offset(x: -6, y: 6)
-                                }
-                            }
-                    }
-                    .accessibilityLabel("未割当のタスク \(model.inbox.count)件")
-                }
-                .foregroundStyle(.primary)
-                .glass(Capsule(), interactive: true)
-                .padding(.trailing, 16).padding(.bottom, 10)
-            }
             .sheet(isPresented: $showCalendars) { CalendarsSheet().environment(model) }
             .animation(reduceMotion ? nil : .snappy, value: isShowingToday(day))
             .toolbar {
+                // 左上：戻る（年・月）と「今日」（下に浮かべず、バーの空いている所に）
                 ToolbarItem(placement: .topBarLeading) { backButton }
+                ToolbarItem(placement: .topBarLeading) {
+                    if !isShowingToday(day) {
+                        Button { goToday() } label: {
+                            Text("今日").font(.body.weight(.semibold)).foregroundStyle(Color.red)
+                        }
+                        .accessibilityLabel("今日へ移動")
+                        .transition(.opacity)
+                    }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     modeMenu
                     Button { searching = true } label: { Image(systemName: "magnifyingglass") }
@@ -144,7 +117,7 @@ struct CalendarScreen: View {
         let isNow = model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .month)
         return HStack(alignment: .firstTextBaseline) {
             Text(visibleMonth.formatted(.dateTime.month(.wide)))
-                .font(.system(size: 34, weight: .bold))
+                .font(.system(size: 30, weight: .bold))
                 .foregroundStyle(isNow ? Color.red : Color.primary)
                 .contentTransition(.numericText())
             if !model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .year) {
@@ -202,6 +175,13 @@ struct CalendarScreen: View {
                 modeButton("日", "calendar.day.timeline.left", "day")
                 modeButton("週", "calendar.badge.clock", "week")
                 modeButton("リスト", "list.bullet", "list")
+            }
+            // カレンダーの一覧と未割当（下に浮かべていたボタンをここへ）
+            Section {
+                Button { showCalendars = true } label: { Label("カレンダー", systemImage: "calendar") }
+                Button { router.open(.inbox) } label: {
+                    Label(model.inbox.isEmpty ? "未割当" : "未割当（\(model.inbox.count)）", systemImage: "tray")
+                }
             }
         } label: {
             Image(systemName: mode == "list" ? "list.bullet" : mode == "month" ? "rectangle.split.1x2" : mode == "week" ? "calendar.badge.clock" : "calendar.day.timeline.left")
