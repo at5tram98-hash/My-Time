@@ -31,35 +31,24 @@ struct NowTicker: View {
             let it = items[i]
             HStack(spacing: 8) {
                 Image(systemName: it.symbol)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(it.tint)
                     .frame(width: 20)
                     .contentTransition(.symbolEffect(.replace))
                 Text(it.text)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 6)
                 if let t = it.trailing {
-                    Text(t).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(it.tint)
+                    Text(t).font(.footnote.weight(.medium)).monospacedDigit().foregroundStyle(.secondary)
                         .lineLimit(1)
-                }
-                // いくつ目か（2つ以上のとき）
-                if items.count > 1 {
-                    HStack(spacing: 3) {
-                        ForEach(0..<min(items.count, 6), id: \.self) { k in
-                            Capsule().fill(k == i ? Color.primary.opacity(0.55) : Color.primary.opacity(0.15))
-                                .frame(width: k == i ? 10 : 4, height: 4)
-                        }
-                    }
-                    .animation(reduceMotion ? nil : .snappy, value: i)
-                    .accessibilityHidden(true)
                 }
             }
             .id(it.id)
-            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .move(edge: .top).combined(with: .opacity)))
-            .frame(height: 22)
+            .transition(.opacity)
+            .frame(height: 18)
             .clipped()
             .contentShape(Rectangle())
             // 押すと次へ、長押しでそのお知らせを開く
@@ -78,13 +67,12 @@ struct NowTicker: View {
                     advance(items.count)
                 }
             }
-            .sensoryFeedback(.selection, trigger: index)
         }
     }
 
     private func advance(_ count: Int) {
         guard count > 1 else { return }
-        withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.9)) { index = (index + 1) % count }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.6)) { index = (index + 1) % count }
     }
 
     private func open(_ it: Item) {
@@ -159,7 +147,7 @@ struct NowTicker: View {
                 out.append(Item(id: "tomorrow", symbol: "sunrise.fill", tint: .indigo, text: "明日の最初は\(t.hm(f.start)) \(f.title)", open: .event(f.id)))
             }
         }
-        return Array(out.prefix(6))
+        return Array(out.prefix(4))
     }
 
     /// 今から今日の終わりまでで、予定のない最初の時間
