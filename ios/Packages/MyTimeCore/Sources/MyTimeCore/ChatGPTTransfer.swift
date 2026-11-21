@@ -15,7 +15,7 @@ public enum ChatGPTTransfer {
 
         fileprivate var fields: Set<String> {
             switch self {
-            case .event: return ["title", "notes", "calendarId", "start", "end", "timeZone", "allDay", "place", "color"]
+            case .event: return ["title", "notes", "calendarId", "start", "end", "timeZone", "allDay", "place", "color", "specType", "subjectName", "room", "bring", "recurrence"]
             case .task: return ["title", "notes", "calendarId", "plannedStart", "plannedEnd", "timeZone", "location", "estimateMinutes", "checkAt"]
             case .checkpoint: return ["title", "notes", "at", "alarm", "notifyBefore", "repeat"]
             }
@@ -147,6 +147,10 @@ public enum ChatGPTTransfer {
             values["allDay"] = record["extra"]?["allDay"] ?? .bool(false)
             values["place"] = record["extra"]?["place"]?["name"]
             values["color"] = record["extra"]?["color"]
+            values["specType"] = record["extra"]?["spec"]?["type"]
+            values["bring"] = record["extra"]?["bring"]
+            values["subjectName"] = record["classInfo"]?["subjectName"]
+            values["room"] = record["extra"]?["spec"]?["details"]?["room"] ?? record["classInfo"]?["room"]
         }
         return values
     }
@@ -228,6 +232,7 @@ public enum ChatGPTTransfer {
                                 _ patch: [String: JSONValue], _ now: EpochMs, _ calendars: Set<String>) throws -> JSONValue {
         var extra = current?["extra"]?.objectValue ?? [:]
         var values = patch
+        var classInfo = current?["classInfo"]?.objectValue ?? [:]
         for (key, value) in patch {
             try validate(key, value, calendars)
             switch key {
@@ -237,6 +242,20 @@ public enum ChatGPTTransfer {
                     if place["name"]?.stringValue != name { place = ["name": name.json] }
                     extra["place"] = .object(place)
                 } else { extra.removeValue(forKey: "place") }
+                values.removeValue(forKey: key)
+            case "specType":
+                if value.isNull {
+                    extra["spec"] = nil
+                } else if extra["spec"]?["type"] != value {
+                    extra["spec"] = .object(["type": value, "details": .object([:])])
+                }
+                values.removeValue(forKey: key)
+            case "subjectName", "room":
+                classInfo[key] = value.isNull ? nil : value
+                values.removeValue(forKey: key)
+            case "bring":
+                let items = BelongingSuggest.split((value.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "、"))
+                extra["bring"] = items.isEmpty ? nil : .array(items.map(\.json))
                 values.removeValue(forKey: key)
             case "allDay", "color":
                 extra[key] = value.isNull ? nil : value
@@ -248,7 +267,18 @@ public enum ChatGPTTransfer {
         switch kind {
         case .event:
             initial = MTEvent.make(title: "", calendarId: MTCalendar.selfId, start: 0, end: 0, now: now, id: id).json
+            if let room = patch["room"], var spec = extra["spec"]?.objectValue,
+               spec["type"]?.stringValue == SpecTypeId.class.rawValue {
+                var details = spec["details"]?.objectValue ?? [:]
+                details["room"] = room.isNull ? nil : room
+                spec["details"] = .object(details)
+                extra["spec"] = .object(spec)
+            }
             if !extra.isEmpty || current?["extra"]?.objectValue != nil { values["extra"] = .object(extra) }
+            if patch["room"] != nil || patch["subjectName"] != nil {
+                values["classInfo"] = classInfo.isEmpty ? .null : .object(classInfo)
+            }
+            if patch["recurrence"]?.isNull == true { values["exceptions"] = .array([]) }
             if current == nil, patch["start"] == nil || patch["end"] == nil { throw RepositoryError("開始と終了を指定してください") }
         case .task: initial = MTTask.make(title: "", now: now, id: id).json
         case .checkpoint:
@@ -291,7 +321,13 @@ public enum ChatGPTTransfer {
         case "start", "end", "at": valid = timestamp(value)
         case "plannedStart", "plannedEnd", "checkAt": valid = value.isNull || timestamp(value)
         case "alarm", "allDay": valid = value.boolValue != nil
-        case "location", "place": valid = value.isNull || (value.stringValue?.count ?? 501) <= 500
+        case "specType": valid = value.isNull || SpecTypeId(rawValue: value.stringValue ?? "").flatMap { SPEC_BY_ID[$0] }?.isEvent == true
+        case "subjectName", "room", "location", "place": valid = value.isNull || (value.stringValue?.count ?? 501) <= 500
+        case "bring":
+            valid = value.isNull || value.arrayValue.map { items in
+                items.count <= 100 && items.allSatisfy { (1...200).contains($0.stringValue?.count ?? 0) }
+            } == true
+        case "recurrence": valid = value.isNull || validRecurrence(value)
         case "color": valid = value.isNull || (value.stringValue?.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil)
         case "repeat": valid = value.isNull || ["daily", "weekdays", "weekly"].contains(value.stringValue ?? "")
         case "notifyBefore": valid = value.isNull || value.intValue.map { (0...1440).contains($0) } == true
@@ -299,6 +335,19 @@ public enum ChatGPTTransfer {
         default: valid = false
         }
         guard valid else { throw RepositoryError("\(key) の値が正しくありません") }
+    }
+
+    private static func validRecurrence(_ value: JSONValue) -> Bool {
+        guard let fields = value.objectValue, let rule = RecurrenceRule(value),
+              Set(fields.keys).isSubset(of: ["freq", "interval", "byWeekday", "until"]),
+              fields["interval"].map({ $0.intValue.map { (1...366).contains($0) } == true }) ?? true,
+              fields["until"].map({ $0.isNull || timestamp($0) }) ?? true else { return false }
+        guard let days = fields["byWeekday"], !days.isNull else { return true }
+        return rule.freq == .weekly && days.arrayValue.map { items in
+            let weekdays = items.compactMap(\.intValue)
+            return !weekdays.isEmpty && weekdays.count == items.count && Set(weekdays).count == weekdays.count
+                && weekdays.allSatisfy { (0...6).contains($0) }
+        } == true
     }
 
     private static func timestamp(_ value: JSONValue) -> Bool {
@@ -358,6 +407,19 @@ public enum ChatGPTTransfer {
                      "calendarId": target.json, "timeZone": displayZone.identifier.json]
         patch["notes"] = (source["description"] ?? source["notes"])?.stringValue?.json
         patch["place"] = source["location"]?.stringValue?.json ?? source["location"]?["name"]?.stringValue?.json
+        let titleText = title.stringValue ?? ""
+        let classified = SPEC_ORDER.first { SPEC_BY_ID[$0]?.isEvent == true && SPEC_KEYWORDS[$0]?.test(titleText) == true }
+        let shiftTitle = Regexes.shift.test(titleText)
+        let room = patch["place"]?.stringValue.flatMap { Regexes.room.test($0) ? $0 : nil }
+        let hasClassroom = source["myTimeRoom"]?.stringValue != nil || room?.contains("号館") == true
+        let inferred: SpecTypeId? = shiftTitle ? .shift : classified ?? (hasClassroom ? .class : nil)
+        let spec = source["myTimeSpecType"] ?? inferred.map { $0.rawValue.json }
+        patch["specType"] = spec
+        if spec?.stringValue == SpecTypeId.class.rawValue {
+            patch["subjectName"] = source["myTimeSubjectName"] ?? title
+            patch["room"] = source["myTimeRoom"] ?? room?.json
+        }
+        patch["bring"] = source["myTimeBring"]
         let color = (source["color"] ?? source["label"]?["color"])?.stringValue
         if let color, color.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil { patch["color"] = color.json }
 
@@ -374,6 +436,11 @@ public enum ChatGPTTransfer {
         }
         return Change(kind: .event, action: .copy, id: id, before: nil, after: event.json,
                       changedFields: patch.keys.sorted(), affectsSeries: false, relatedTasks: 0)
+    }
+
+    private enum Regexes {
+        static let shift = Rx(#"^(?:GU|無印(?:良品)?)\s*[0-9０-９]{1,2}(?=[:：.．〜～−–-])"#, .caseInsensitive)
+        static let room = Rx(#"^(?:[0-9０-９]{1,2}号館\s*[0-9０-９]{3}(?:教室)?|[0-9０-９]{4,5})$"#)
     }
 
     private static func milliseconds(_ date: Date) -> EpochMs {

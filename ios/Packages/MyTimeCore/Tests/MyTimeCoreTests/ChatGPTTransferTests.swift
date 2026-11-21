@@ -102,6 +102,39 @@ final class ChatGPTTransferTests: XCTestCase {
         XCTAssertEqual(try ChatGPTTransfer.apply(again, to: repo), 0)
     }
 
+    func testImportedClassroomAndShiftCanBeEdited() throws {
+        let repo = Repository(store: InMemoryStore(), clock: { self.now })
+        try repo.ensureDefaults()
+        let input = Data("""
+            {"format":"my-time-timetree-v1","events":[
+              {"id":"lesson","calendarId":"tt","title":"マクロ経済学","myTimeSpecType":"class","myTimeRoom":"5302","start":"2026-11-20T10:45:00+09:00","end":"2026-11-20T12:15:00+09:00","allDay":false},
+              {"id":"shift","calendarId":"tt","title":"無印18-23","start":"2026-11-20T18:00:00+09:00","end":"2026-11-20T23:00:00+09:00","allDay":false}
+            ]}
+            """.utf8)
+        let imported = try ChatGPTTransfer.preview(input, in: repo)
+        XCTAssertEqual(try ChatGPTTransfer.apply(imported, to: repo), 2)
+        let lesson = try XCTUnwrap(repo.events().first { $0.specType == .class })
+        XCTAssertEqual(lesson.classInfo?["room"]?.stringValue, "5302")
+        XCTAssertEqual(lesson.classInfo?["subjectName"]?.stringValue, "マクロ経済学")
+        XCTAssertTrue(repo.events().contains { $0.specType == .shift })
+
+        let snapshot = ChatGPTTransfer.snapshot(repo, kinds: [.event], from: lesson.start, to: lesson.start + 86_400_000)
+        let summary = try XCTUnwrap(snapshot["event"]?.arrayValue?.first { $0["id"]?.stringValue == lesson.id })
+        let edit = change("edit", "event", lesson.id, [
+            "room": "6301".json, "bring": .array(["ノート".json]),
+            "recurrence": .object(["freq": "weekly".json]),
+        ], revision: summary["revision"])
+        let preview = try ChatGPTTransfer.preview(file([edit]), in: repo)
+        XCTAssertEqual(try ChatGPTTransfer.apply(preview, to: repo), 1)
+
+        let updated = try XCTUnwrap(repo.event(lesson.id))
+        XCTAssertEqual(updated.classInfo?["room"]?.stringValue, "6301")
+        XCTAssertEqual(updated.extra?["spec"]?["details"]?["room"]?.stringValue, "6301")
+        XCTAssertEqual(updated.extra?["bring"]?.arrayValue, ["ノート".json])
+        XCTAssertEqual(updated.recurrence?.freq, .weekly)
+        XCTAssertEqual(updated.classInfo?["subjectName"]?.stringValue, "マクロ経済学")
+    }
+
     private func token(_ snapshot: JSONValue, _ kind: String) -> JSONValue? {
         snapshot[kind]?.arrayValue?.first?["revision"]
     }
