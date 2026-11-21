@@ -661,11 +661,28 @@ struct InboxView: View {
                         TaskRow(task: t)
                             .swipeActions(edge: .leading) {
                                 Button("今日の空き時間に", systemImage: "calendar.badge.plus") { placeToday(t) }.tint(.indigo)
+                                // 明日に入れる（日付だけ決める。時刻は後で）
+                                Button("明日に", systemImage: "sunrise") {
+                                    var x = t
+                                    let d = model.time.addDays(model.time.startOfDay(model.now), 1)
+                                    x.extra = (x.extra ?? .object([:])).merging(.object(["onDay": .number(Double(d))]))
+                                    model.perform("明日に入れました", undo: { try model.repo.saveTask(t, isNew: false) }) { try model.repo.saveTask(x, isNew: false) }
+                                }.tint(.orange)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button("削除", systemImage: "trash", role: .destructive) {
+                                    model.perform("削除しました", undo: { try model.repo.saveTask(t, isNew: true) }) { try model.repo.deleteTask(t.id) }
+                                }
+                                Button(t.flagged ? "フラグを外す" : "フラグ", systemImage: t.flagged ? "flag.slash" : "flag") {
+                                    var x = t; x.flagged.toggle()
+                                    model.perform(nil, undo: { try model.repo.saveTask(t, isNew: false) }) { try model.repo.saveTask(x, isNew: false) }
+                                }.tint(.orange)
                             }
                     }
                 }
             }
             .navigationTitle("未割当")
+            .refreshable { await model.refreshAll() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
         }

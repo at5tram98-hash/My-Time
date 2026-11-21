@@ -149,7 +149,8 @@ final class DeliberateTapRecognizer: UIGestureRecognizer {
 /// 誤タップよけの決まり（今日・カレンダーの札で共通）
 enum TapGuard {
     /// 指を置いておく最短の時間
-    static let minDuration: TimeInterval = 0.05
+    /// 「表示と動き」の「押して開く速さ」（はやい 0.02・ふつう 0.05・ゆっくり 0.12 秒）
+    static var minDuration: TimeInterval { [0.02, 0.05, 0.12][max(0, min(2, Prefs.int(Prefs.tapSpeed, 1)))] }
     /// スクロールが止まってから、この秒数は札を開かない
     static let quiet: TimeInterval = 0.25
     /// SwiftUI のスクロールが最後に動いた時刻

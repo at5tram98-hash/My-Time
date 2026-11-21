@@ -166,12 +166,12 @@ struct TodayView: View {
                         HStack(spacing: 3) {
                             Image(systemName: model.dayPlan(day)?.isApproved == true ? "checkmark.seal" : "list.clipboard").imageScale(.small)
                             Text("計画").fontWeight(.semibold)
-                            Text("\(tomorrow)").foregroundStyle(.tertiary).monospacedDigit()
+                            if tomorrow > 0 { Text("\(tomorrow)").foregroundStyle(.tertiary).monospacedDigit() }
                             Spacer(minLength: 0)
                         }
                         .font(.caption).foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
-                        .frame(width: full * t, height: 28, alignment: .leading)
+                        .frame(width: full * t, height: 24, alignment: .leading)
                         .background(Color(.secondarySystemFill).opacity(0.5))
                         .contentShape(Rectangle())
                     }
@@ -180,7 +180,7 @@ struct TodayView: View {
                 }
             }
         }
-        .frame(height: 28)
+        .frame(height: 24)
         .animation(reduceMotion ? nil : Motion.sheet, value: mainFraction)
         .overlay(alignment: .bottom) { Divider() }
     }
@@ -190,13 +190,14 @@ struct TodayView: View {
             HStack(spacing: 4) {
                 Image(systemName: symbol).imageScale(.small)
                 Text(title).fontWeight(.semibold)
-                Text("\(count)").foregroundStyle(.tertiary).monospacedDigit()
+                // 0件のときは数を出さない（見出しをすっきり）
+                if count > 0 { Text("\(count)").foregroundStyle(.tertiary).monospacedDigit().contentTransition(.numericText()) }
                 Spacer(minLength: 0)
             }
             .font(.caption)
             .foregroundStyle(on ? Color.accentColor : .secondary)
             .padding(.horizontal, 6)
-            .frame(width: max(0, width), height: 28, alignment: .leading)
+            .frame(width: max(0, width), height: 24, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -206,7 +207,8 @@ struct TodayView: View {
     /// 状況チップの1行（遅れ・締切・タスク・空き時間・未割当・要約をたたむ）。0件のものは出さない
     private func statusRow(taskLabel: String, taskValue: String, freeMin: Int, isToday: Bool, now: EpochMs) -> some View {
         let overdue = model.tasks.filter { t in
-            !t.isDone && t.kind == .do && (t.plannedEnd.map { $0 < now } ?? false)
+            // 遅れは「今日」の分だけ数える（前の日のやり残しで数が大きくならないように）
+            !t.isDone && t.kind == .do && (t.plannedEnd.map { $0 < now && $0 >= model.time.startOfDay(now) } ?? false)
         }.count
         let dueSoon = model.tasks.filter { t in !t.isDone && (t.deadline.map { $0 >= now && $0 < now + 48 * HOUR } ?? false) }.count
         let m = model.morning

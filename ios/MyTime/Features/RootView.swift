@@ -457,7 +457,8 @@ struct AlarmView: View {
 struct MinimizeTabBarOnScroll: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.tabBarMinimizeBehavior(.onScrollDown)
+            // 「表示と動き」でオフにできる（いつも大きいまま）
+            content.tabBarMinimizeBehavior(Prefs.bool(Prefs.tabMinimize, true) ? .onScrollDown : .never)
         } else {
             content
         }

@@ -133,6 +133,8 @@ struct DayTimeline: View {
                                 )
                                 .frame(width: max(8, laneWidth(b.lane, width) / CGFloat(b.placed.columns) - 3), height: max(22, CGFloat(b.placed.height) / 60 * hourHeight - 2))
                                 .offset(x: Self.gutter + laneX(b.lane, width) + laneWidth(b.lane, width) * CGFloat(b.placed.column) / CGFloat(b.placed.columns) + 1, y: CGFloat(b.placed.top) / 60 * hourHeight + 1)
+                                // 日を開いたとき、朝から順に札がふわっと出る
+                                .appearIn(delay: min(0.25, Double(b.placed.top) / 1440 * 0.35), rise: 6)
                             }
                             if let c = creating { creatingGhost(c, width: width) }
                             // 出発の時刻：チェックポイントと同じ位置（時刻の列）に「8:35 ◆」だけを出す（移動時間のある予定）
@@ -164,6 +166,8 @@ struct DayTimeline: View {
                 .frame(height: hourHeight * 24 + 8)
             }
             .guardsTaps()
+            // 下に引っぱって最新に（予定・朝・ChatGPT・ロック画面）
+            .refreshable { await model.refreshAll() }
             .scrollIndicators(.hidden)
             // 長押しで作る・動かす間だけスクロールを止める（ふだんは上下になぞってスクロールできる）
             .scrollDisabled(creating != nil || dragging)
@@ -643,7 +647,7 @@ struct TimelineBlock: View {
         // 予定＝色で塗った札、タスク＝白い札に色の帯、確認＝丸い札、翌日計画＝灰色
         // 取り消した予定は計画と同じく灰色（塗らずに枠だけ）
         // ほかの人の予定は塗らずに、うすい枠だけ（自分の予定より目立たせない）
-        let filled = block.kind == .event && !block.tomorrow && !block.struck && block.person == nil
+        let filled = block.kind == .event && !block.tomorrow && !block.struck && !(block.person != nil && Prefs.dimOthers)
         let fg: Color = block.tomorrow || block.struck ? .secondary : filled ? .white : .primary
         let sub: Color = block.tomorrow || block.struck ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
         // 取り消した予定・横に並んで細い札は、名前と時刻だけ（場所などは出さない）
@@ -703,7 +707,7 @@ struct TimelineBlock: View {
             else if block.tomorrow { shape.strokeBorder(Color.gray.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
             else if !filled { shape.strokeBorder(Color(.separator).opacity(0.6), style: StrokeStyle(lineWidth: 0.5, dash: block.kind == .session ? [3, 2] : [])) }
         }
-        .opacity(block.faded && !filled ? 0.55 : block.person != nil ? 0.6 : 1)
+        .opacity(block.faded && !filled ? 0.55 : block.person != nil && Prefs.dimOthers ? 0.6 : 1)
         .clipShape(shape)
         // ほかの人の予定：右上に人のしるし（自分の予定には付けない）
         .overlay(alignment: .topTrailing) {

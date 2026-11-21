@@ -284,6 +284,12 @@ final class ChatGPTLiveConnection {
         if let d = try? JSONEncoder().encode(activity) { UserDefaults.standard.set(d, forKey: "chatgpt.activity") }
     }
 
+    /// 反映できなかった依頼を、もう一度反映してみる
+    func retry(_ id: String, model: AppModel) {
+        held.removeValue(forKey: id)
+        if applyPending(model) { Task { await sync(model) } }
+    }
+
     func removeActivity(_ id: String) {
         activity.removeAll { $0.id == id }
         if let d = try? JSONEncoder().encode(activity) { UserDefaults.standard.set(d, forKey: "chatgpt.activity") }

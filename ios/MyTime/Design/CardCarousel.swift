@@ -21,6 +21,8 @@ struct CardCarousel<Content: View>: View {
                     ForEach(0..<count, id: \.self) { i in
                         content(i)
                             .frame(height: height)
+                            // はじめて出るとき、右から順にふわっと
+                            .appearIn(delay: 0.06 * Double(min(i, 4)), rise: 0)
                             .containerRelativeFrame(.horizontal) { w, _ in count > 1 ? w - peek - 10 : w }
                             .scrollTransition(.interactive, axis: .horizontal) { v, phase in
                                 // 端に寄ったカードは少し小さく薄く（めくっている感じを出す）

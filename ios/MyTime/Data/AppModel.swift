@@ -57,6 +57,7 @@ final class AppModel {
     func reload() {
         // カレンダーは「自分」「みお」の2つ（取り込みで増えても、ここでまとめる。済んでいれば何もしない）
         _ = try? repo.consolidateCalendars()
+        Prefs.apply()
         load()
         // 朝の自動配置（予定を変えたらすぐ付いて動く）。変えたら読み直す
         if !isPreview, placeMornings() { load() }
@@ -206,8 +207,27 @@ final class AppModel {
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
         let all = expandAll(includeArchived ? analysisEvents : events, from: from, to: to, time: time)
             .filter { !hidden.contains($0.event.calendarId) && !($0.event.specType.map(hiddenTypes.contains) ?? false) }
-        return includeStruck ? all : all.filter { !$0.isStruck }
+        // 「表示と動き」で「ほかの人の予定を出さない」にしたとき
+        let shown = Prefs.hideOthers ? all.filter { $0.event.calendarId == MTCalendar.selfId } : all
+        return includeStruck ? shown : shown.filter { !$0.isStruck }
     }
+    /// 下に引っぱって最新にする：読み直し・朝の置き直し・ChatGPT の同期・ロック画面と通知の照合
+    @MainActor
+    func refreshAll() async {
+        let started = Date()
+        reload()
+        autoPlaceMornings()
+        await chatGPT.sync(self)
+        LiveActivityCoordinator.shared.refresh(model: self)
+        scheduleNotifications()
+        // すぐ終わっても、引っぱった手応えが分かるよう少しだけ待つ
+        let wait = 0.45 - Date().timeIntervalSince(started)
+        if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// ほかの人の予定をうすく出すか（「表示と動き」で選ぶ）
+    func dimOther(_ calendarId: String?) -> Bool { isOtherPerson(calendarId) && Prefs.dimOthers }
     /// 「自分」の予定だけ（今日の画面・朝の目安。カレンダーの表示の切り替えに関係なく出す）
     func myEvents(from: EpochMs, to: EpochMs, includeStruck: Bool = false) -> [EventOccurrence] {
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))

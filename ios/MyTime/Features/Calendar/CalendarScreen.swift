@@ -113,7 +113,9 @@ struct CalendarScreen: View {
                 switch mode {
                 case "month":
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        // 月の名前を押すと今月（今日の週）へ戻る
                         Text(visibleMonth.formatted(.dateTime.month(.wide)))
+                            .onTapGesture { if !isNow { goToday() } }
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(isNow ? Color.red : Color.primary)
                             .contentTransition(.numericText())
@@ -277,7 +279,7 @@ struct CalendarScreen: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassGroup(spacing: 6) {
                     HStack(spacing: 6) {
-                        ForEach(allDay.prefix(allDay.count > 3 ? 2 : 3)) { o in
+                        ForEach(allDay.prefix(allDay.count > 2 ? 1 : 2)) { o in
                             let c = model.occurrenceColor(o)
                             Button { router.open(.event(o.id)) } label: {
                                 HStack(spacing: 5) {
@@ -292,17 +294,17 @@ struct CalendarScreen: View {
                             .buttonStyle(.plain)
                         }
                         // 4件以上は「ほか N件」にまとめる（時刻のある予定の場所を取らない）
-                        if allDay.count > 3 {
+                        if allDay.count > 2 {
                             Menu {
-                                ForEach(allDay.dropFirst(2)) { o in
+                                ForEach(allDay.dropFirst(1)) { o in
                                     Button(o.title) { router.open(.event(o.id)) }
                                 }
                             } label: {
-                                Text("ほか\(allDay.count - 2)件").font(.caption.weight(.semibold))
+                                Text("ほか\(allDay.count - 1)件").font(.caption.weight(.semibold))
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                                     .glass(Capsule(), interactive: true)
                             }
-                            .accessibilityLabel("終日の予定 ほか\(allDay.count - 2)件")
+                            .accessibilityLabel("終日の予定 ほか\(allDay.count - 1)件")
                         }
                     }
                 }
@@ -395,6 +397,7 @@ struct AgendaList: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .refreshable { await model.refreshAll() }
             .onAppear { proxy.scrollTo(selected, anchor: .top) }
         }
     }
@@ -418,13 +421,13 @@ struct AgendaList: View {
                 HStack(spacing: 10) {
                     // 人のしるし（取り消した予定は灰色）
                     // ほかの人の予定は小さく・うすく（自分の予定を目立たせる）
-                    let other = model.isOtherPerson(o.event.calendarId)
+                    let other = model.dimOther(o.event.calendarId)
                     PersonAvatar(calendar: model.calendar(o.event.calendarId), size: other ? 18 : 24)
                         .saturation(o.isStruck || other ? 0.2 : 1).opacity(o.isStruck ? 0.5 : other ? 0.6 : 1)
                         .frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck || model.isOtherPerson(o.event.calendarId) ? .secondary : .primary).lineLimit(1)
-                            .font(model.isOtherPerson(o.event.calendarId) ? .subheadline : .body)
+                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck || model.dimOther(o.event.calendarId) ? .secondary : .primary).lineLimit(1)
+                            .font(model.dimOther(o.event.calendarId) ? .subheadline : .body)
                         HStack(spacing: 6) {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
@@ -475,6 +478,23 @@ struct AgendaList: View {
                 }
         case .due(let t, let at):
             dueRow(t, at: at)
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button { model.perform("完了しました", undo: { try model.repo.taskAction(t.id, .undoFinish) }) { try model.repo.taskAction(t.id, .finish) } } label: {
+                        Label("完了", systemImage: "checkmark")
+                    }.tint(.green)
+                }
+                .swipeActions(edge: .trailing) {
+                    // 締切を1日のばす（予定の種類の締切 dueAt を動かす）
+                    Button {
+                        var x = t
+                        var spec = x.extra?["spec"]?.objectValue ?? [:]
+                        var det = spec["details"]?.objectValue ?? [:]
+                        det["dueAt"] = .number(Double(at + DAY))
+                        spec["details"] = .object(det)
+                        x.extra = (x.extra ?? .object([:])).merging(.object(["spec": .object(spec)]))
+                        model.perform("締切を1日のばしました", undo: { try model.repo.saveTask(t, isNew: false) }) { try model.repo.saveTask(x, isNew: false) }
+                    } label: { Label("1日のばす", systemImage: "calendar.badge.plus") }.tint(.orange)
+                }
         }
     }
 

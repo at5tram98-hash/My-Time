@@ -38,8 +38,11 @@ struct MoreScreen: View {
                     NavigationLink(value: MoreRoute.employers) {
                         row("勤務先と給与", "yensign.circle.fill", .green, model.employers.isEmpty ? "時給・交通費・締め日を登録" : "勤務先 \(model.employers.count)・給与の見込み")
                     }
-                    NavigationLink { ShiftPendingView() } label: {
-                        row("シフトの調整中", "hourglass", .orange, pendingSummary)
+                    // 調整中のシフトがあるときだけ出す
+                    if model.events.contains(where: { isShiftPending($0) }) {
+                        NavigationLink { ShiftPendingView() } label: {
+                            row("シフトの調整中", "hourglass", .orange, pendingSummary)
+                        }
                     }
                 }
 
@@ -74,6 +77,9 @@ struct MoreScreen: View {
                 }
 
                 Section("通知・アラーム・表示") {
+                    NavigationLink { DisplayPrefsView() } label: {
+                        row("表示と動き", "slider.horizontal.3", .blue, "押す速さ・ほかの人の予定・お知らせ・朝のゆとり")
+                    }
                     Toggle(isOn: Binding(get: { model.notificationsEnabled }, set: setNotify)) {
                         row("通知", "bell.badge.fill", .red, model.notificationsEnabled ? "予定の\(model.notifyMinutesBefore == 0 ? "開始時刻" : "\(model.notifyMinutesBefore)分前")に知らせる" : "オフ")
                     }
@@ -88,16 +94,15 @@ struct MoreScreen: View {
                 }
 
                 Section {
-                    LabeledContent("バージョン", value: version)
-                    LabeledContent("保存している予定", value: "\(model.events.count)件")
-                    LabeledContent("保存しているタスク", value: "\(model.tasks.count)件")
-                } header: {
-                    Text("このアプリについて")
+                    // 1行にまとめる（バージョンと、保存している件数）
+                    LabeledContent("My Time \(version)", value: "予定 \(model.events.count)・タスク \(model.tasks.count)")
+                        .font(.subheadline)
                 } footer: {
-                    Text("データはこの iPhone の中だけに保存されます（自動の同期はまだありません）。Web 版とは「設定 › データの移行」で手動でやり取りできます。")
+                    Text("データはこの iPhone の中に保存されます。")
                 }
             }
             .navigationTitle("その他")
+            .refreshable { await model.refreshAll() }
             .toolbar {
                 // アカウント（名前の頭文字の丸）：押すとアカウント・自宅と学校・データ
                 ToolbarItem(placement: .topBarLeading) {
@@ -135,9 +140,9 @@ struct MoreScreen: View {
 
     private func header(_ s: WeekStats) -> some View {
         HStack(spacing: 10) {
-            stat(s.streak > 0 ? "\(s.streak)日" : "-", "続けて記録", "flame.fill", .orange)
-            stat(formatDuration(EpochMs(s.weekMinutes) * MINUTE), "今週の作業", "timer", .blue)
-            stat("\(s.weekDone)件", "今週の完了", "checkmark.seal.fill", .green)
+            stat(s.streak > 0 ? "\(s.streak)日" : "-", "続けて記録", "flame.fill", .orange).appearIn(delay: 0)
+            stat(formatDuration(EpochMs(s.weekMinutes) * MINUTE), "今週の作業", "timer", .blue).appearIn(delay: 0.07)
+            stat("\(s.weekDone)件", "今週の完了", "checkmark.seal.fill", .green).appearIn(delay: 0.14)
         }
         .padding(.vertical, 4)
     }
@@ -145,7 +150,9 @@ struct MoreScreen: View {
     private func stat(_ value: String, _ title: String, _ symbol: String, _ tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
+                .symbolEffect(.bounce, value: value)
             Text(value).font(.title3.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
             Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

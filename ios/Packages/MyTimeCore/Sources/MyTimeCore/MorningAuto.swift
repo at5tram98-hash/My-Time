@@ -10,7 +10,8 @@ import Foundation
 
 public enum MorningAuto {
     /// 最初の予定の何分前に始めるか
-    public static let leadMinutes = 120
+    /// 最初の予定の何分前に朝を置くか（アプリの「表示と動き」で変えられる）
+    nonisolated(unsafe) public static var leadMinutes = 120
     /// これより早い時刻には置かない（最初の予定が深夜・早朝のとき）
     public static let earliestHour = 4
 
@@ -103,9 +104,9 @@ public extension Repository {
 public extension MorningAuto {
     static let autoLabelPrefix = "自動"
         /// 起きてから準備を始めるまでの余裕（分）。ゆとりを持って30分
-    static let wakeMargin = 30
+    nonisolated(unsafe) static var wakeMargin = 30
     /// 1つ目のアラームは起きる時刻の何分前か
-    static let firstAlarmLead = 15
+    nonisolated(unsafe) static var firstAlarmLead = 15
 
     /// 起きる時刻（その日の0時からの分）。早すぎる・遅すぎる（4時より前・12時より後）は nil
     static func wakeMinute(firstStart: EpochMs, travelMinutes: Int?, prepMinutes: Int, day: EpochMs, time: DomainTime = .current) -> Int? {

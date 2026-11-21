@@ -369,7 +369,6 @@ struct EditorView: View {
                 BelongingsEditor(items: $bring, spec: spec)
             } header: { Text("持ち物") }
         }
-        Section("色") { colorStrip }
     }
 
     /// バイトのシフトか（種類が勤務シフト、またはアルバイトのカレンダー）
@@ -466,6 +465,8 @@ struct EditorView: View {
 
     @ViewBuilder
     private var optionPage: some View {
+        // 色は「オプション」へ（基本のページをすっきり）
+        Section("色") { colorStrip }
         if kind == .event {
             Section(model.calendars.count > 1 ? "誰の予定" : "カレンダー") { calendarChips }
         } else {

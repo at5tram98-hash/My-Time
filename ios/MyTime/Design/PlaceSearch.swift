@@ -179,6 +179,10 @@ struct PlaceTravelScreen: View {
             }
             if !completer.results.isEmpty || !query.isEmpty {
                 Section("マップの候補") {
+                    // マップの候補が届くまでは、行の形の仮の表示
+                    if completer.results.isEmpty && !completer.failed && !query.isEmpty {
+                        ForEach(0..<3, id: \.self) { _ in SkeletonRow() }
+                    }
                     ForEach(completer.results, id: \.self) { c in
                         suggestionRow(PlaceValue(name: c.title, address: c.subtitle), symbol: "mappin") {
                             Task { choose(await completer.resolve(c)) }

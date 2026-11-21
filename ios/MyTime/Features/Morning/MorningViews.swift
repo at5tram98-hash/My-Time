@@ -68,6 +68,15 @@ struct MorningHomeView: View {
                     Button { editingAlarm = a } label: { alarmRow(a) }
                         .buttonStyle(.plain)
                         .swipeActions { Button("削除", systemImage: "trash", role: .destructive) { deleteAlarm(a) } }
+                        // 右へなぞってオン・オフ
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                var x = model.morning
+                                if let i = x.alarms.firstIndex(where: { $0.id == a.id }) { x.alarms[i].enabled.toggle() }
+                                model.saveMorning(x, message: a.enabled ? "アラームをオフにしました" : "アラームをオンにしました")
+                            } label: { Label(a.enabled ? "オフ" : "オン", systemImage: a.enabled ? "alarm" : "alarm.fill") }
+                            .tint(a.enabled ? .gray : .orange)
+                        }
                 }
                 if r.alarms.count < MorningRoutine.maxAlarms {
                     Button("アラームを追加", systemImage: "plus.circle.fill") {
@@ -147,6 +156,7 @@ struct MorningHomeView: View {
             }
         }
         .navigationTitle("朝")
+        .refreshable { await model.refreshAll() }
         .navigationDestination(isPresented: $running) { MorningRunView() }
         .sheet(item: $editingAlarm) { a in MorningAlarmEditor(alarm: a).environment(model) }
         .alert("工程を追加", isPresented: $addingStep) {
@@ -161,8 +171,8 @@ struct MorningHomeView: View {
 
     private var alarmFooter: String {
         let st = AlarmService.stateText
-        if st == "許可済み" { return "時計アプリと同じアラーム（AlarmKit）で鳴らします。マナーモードでも鳴り、スヌーズできます。起床アラームは曜日ごとにくり返し予約します（タスクのアラームは7日先までを予約し、アプリを開くたびに足します）。" }
-        return "アラームの許可：\(st)。許可が無いときは通知で代わりに知らせますが、通知は目覚ましのアラームと同じではありません（マナーモード・集中モードでは鳴らないことがあります）。"
+        if st == "許可済み" { return "時計アプリと同じアラームで鳴らします。マナーモードでも鳴ります。" }
+        return "アラームの許可：\(st)。許可が無いときは通知で知らせます（マナーモードでは鳴らないことがあります）。"
     }
 
     @ViewBuilder
@@ -170,26 +180,39 @@ struct MorningHomeView: View {
         let now = model.now
         let next = model.visibleEvents(from: now, to: now + 30 * HOUR).filter { !$0.event.allDay && $0.start > now }.min { $0.start < $1.start }
         let est = r.estimate()
+        let plan = next.map { DeparturePlan.make(eventStart: $0.start, travelMinutes: $0.event.travelMinutes, routine: r) }
+        // 次の予定・出発・準備の見込みを、横にめくるカードで（行を縦に並べない）
         Section {
-            if let n = next {
-                let plan = DeparturePlan.make(eventStart: n.start, travelMinutes: n.event.travelMinutes, routine: r)
-                LabeledContent("次の予定", value: "\(model.time.isSameDay(n.start, now) ? "" : model.time.dayLabel(n.start) + " ")\(model.hm(n.start)) \(n.title)")
-                if let leave = plan.leaveAt, let prep = plan.prepStartAt {
-                    LabeledContent("出発の目安", value: model.hm(leave))
-                    LabeledContent("準備を始める目安", value: model.hm(prep)).fontWeight(.semibold)
-                } else {
-                    Label("移動時間が未入力のため、出発時刻は決めていません（予定の「場所と移動」で入れられます）", systemImage: "questionmark.circle")
-                        .font(.footnote).foregroundStyle(.secondary)
+            CardCarousel(count: 3, height: 112) { i in
+                switch i {
+                case 0:
+                    CarouselCard(title: "次の予定", symbol: "calendar", tint: .red) {
+                        if let n = next {
+                            Text("\(model.time.isSameDay(n.start, now) ? "" : model.time.dayLabel(n.start) + " ")\(model.hm(n.start))").font(.title2.weight(.bold)).monospacedDigit()
+                            Text(n.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        } else {
+                            Text("30時間以内に予定はありません").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                case 1:
+                    CarouselCard(title: "出発の目安", symbol: "figure.walk.departure", tint: .orange) {
+                        if let leave = plan?.leaveAt {
+                            Text(model.hm(leave)).font(.title2.weight(.bold)).monospacedDigit()
+                            if let prep = plan?.prepStartAt { Text("\(model.hm(prep))に準備を始める").font(.subheadline).foregroundStyle(.secondary) }
+                        } else {
+                            Text("予定に移動時間を入れると出ます").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                default:
+                    CarouselCard(title: "準備にかかる見込み", symbol: "timer", tint: .blue) {
+                        Text("約\(est.minutes)分").font(.title2.weight(.bold)).monospacedDigit()
+                        Text(est.unknown > 0 ? "\(est.unknown)工程は時間が分かりません" : "実測\(est.measured)・目安\(est.planned)工程から")
+                            .font(.caption).foregroundStyle(est.unknown > 0 ? .orange : .secondary)
+                    }
                 }
-            } else {
-                Text("30時間以内に予定はありません").foregroundStyle(.secondary)
             }
-            LabeledContent("準備にかかる見込み", value: "\(est.minutes)分")
-            if est.unknown > 0 {
-                Text("\(est.unknown)工程は実測も目安も無いため0分で数えています").font(.caption).foregroundStyle(.orange)
-            }
-        } header: { Text("出発の目安") } footer: {
-            Text("実測 \(est.measured)工程・目安 \(est.planned)工程から計算します。")
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
+            .listRowBackground(Color.clear)
         }
     }
 

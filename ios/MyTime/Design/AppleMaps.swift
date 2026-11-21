@@ -37,7 +37,8 @@ enum AppleMaps {
     }
 
     /// 移動時間の余裕（分）。Apple マップの所要時間に足す
-    static let bufferMinutes = 20
+    /// 移動時間の余裕（「表示と動き」で選ぶ。既定20分）
+    static var bufferMinutes: Int { Prefs.int(Prefs.travelBuffer, 20) }
     /// 所要時間＋余裕を5分単位に
     static func withBuffer(_ m: Int) -> Int { (m + bufferMinutes + 4) / 5 * 5 }
 
@@ -147,10 +148,14 @@ struct EventMapCard: View {
             Section {
                 PlaceMapPreview(place: place, height: 140, subline: subline)
                     .listRowInsets(EdgeInsets())
+                // 段取りがまだ無いときは、場所の中の小さな1行だけ（空の見出しの段を出さない）
+                if TravelPlan.legs(event.extra).isEmpty { TravelPlanSummary(event: event, start: start).font(.subheadline) }
             } header: { Text("場所") }
-            Section {
-                TravelPlanSummary(event: event, start: start)
-            } header: { Text("移動の段取り") }
+            if !TravelPlan.legs(event.extra).isEmpty {
+                Section {
+                    TravelPlanSummary(event: event, start: start)
+                } header: { Text("移動の段取り") }
+            }
         }
     }
 

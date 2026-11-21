@@ -33,7 +33,7 @@ struct ChatGPTTransferView: View {
                     row("ファイルでやりとり", "doc.badge.arrow.up", .gray, sub: "書き出し・読み込み・TimeTree からのコピー")
                 }
             } footer: {
-                Text("自動の連携を使わずに、JSON ファイルを ChatGPT に渡したり、ChatGPT が作ったファイルを読み込んだりできます。")
+                Text("JSON ファイルで ChatGPT とやりとりします。")
             }
             if live.connected {
                 Section {
@@ -43,6 +43,7 @@ struct ChatGPTTransferView: View {
             }
         }
         .navigationTitle("ChatGPT")
+        .refreshable { await model.refreshAll() }
         .navigationBarTitleDisplayMode(.inline)
         .animation(reduceMotion ? nil : .snappy, value: live.connected)
         .animation(reduceMotion ? nil : .snappy, value: live.activity)
@@ -154,6 +155,16 @@ struct ChatGPTTransferView: View {
                             }
                         }
                     }
+                    // 左へなぞると却下、右へなぞるともう一度反映を試す
+                    .swipeActions(edge: .trailing) {
+                        Button("却下", systemImage: "xmark", role: .destructive) {
+                            model.perform("依頼を却下しました") { try model.repo.store.transaction { live.recordResult(p.id, applied: false, repo: model.repo) } }
+                            Task { await live.sync(model) }
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button("反映する", systemImage: "bolt.fill") { live.retry(p.id, model: model) }.tint(.green)
+                    }
                 }
             } header: {
                 Text("確認が必要")
@@ -227,32 +238,33 @@ struct ChatGPTTransferView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// ChatGPT 側の設定（3つの手順）
+    /// ChatGPT 側の設定（3つの手順）を、横にめくるカードで
     private var howTo: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            step(1, "ChatGPT の「設定」→「コネクタ」（または「プラグイン」）で、カスタムの MCP サーバーを追加")
-            step(2, "名前を「My Time」、URL を下のものに、認証を「OAuth」にする")
-            HStack(spacing: 8) {
-                Text(Self.serverURL)
-                    .font(.caption.monospaced())
-                    .lineLimit(1).truncationMode(.middle)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(.tertiarySystemFill)))
-                Button {
-                    UIPasteboard.general.string = Self.serverURL
-                    copied.toggle()
-                } label: {
-                    Image(systemName: "doc.on.doc").frame(width: 34, height: 34)
-                        .background(Circle().fill(Color(.tertiarySystemFill)))
+        CardCarousel(count: 3, height: 128) { i in
+            switch i {
+            case 0:
+                CarouselCard(title: "手順 1", symbol: "1.circle.fill", tint: Color(hex: "#10A37F")) {
+                    Text("ChatGPT の「設定」→「コネクタ」で、カスタムの MCP サーバーを追加").font(.subheadline).fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("URL をコピー")
+            case 1:
+                CarouselCard(title: "手順 2", symbol: "2.circle.fill", tint: Color(hex: "#10A37F")) {
+                    Text("名前は「My Time」、認証は「OAuth」。URL は下をコピー").font(.subheadline)
+                    Button {
+                        UIPasteboard.general.string = Self.serverURL
+                        copied.toggle()
+                    } label: {
+                        Label("URL をコピー", systemImage: "doc.on.doc").font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered).tint(Color(hex: "#10A37F")).controlSize(.small)
+                }
+            default:
+                CarouselCard(title: "手順 3", symbol: "3.circle.fill", tint: Color(hex: "#10A37F")) {
+                    Text("認証の画面に、下の「接続コード」を入れる。あとはチャットで「@My Time」と頼むだけ").font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(.leading, 34)
-            step(3, "認証の画面で、下の「接続コード」を入れる。あとはチャットで「@My Time」と頼むだけ")
         }
-        .padding(.vertical, 6)
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 0))
+        .listRowBackground(Color.clear)
     }
 
     private func step(_ n: Int, _ text: String) -> some View {

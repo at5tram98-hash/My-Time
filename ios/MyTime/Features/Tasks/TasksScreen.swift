@@ -89,6 +89,7 @@ struct TasksScreen: View {
             // 下に浮かぶガラスの入力欄（改行で続けて追加）
             .safeAreaInset(edge: .bottom) { if filter == .open || filter == .inbox { quickAddBar } }
             .navigationTitle("タスク")
+            .refreshable { await model.refreshAll() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -266,6 +267,14 @@ struct TasksScreen: View {
                         Button("開始", systemImage: "play.fill") { model.startTask(t, router: router) }
                         .tint(.blue)
                     }
+                }
+                // 時間の決まっていないタスクは、右へなぞって今日に入れる（日付だけ）
+                if t.plannedStart == nil && t.onDay.map({ !model.time.isSameDay($0, model.now) }) ?? true && !t.isDone {
+                    Button("今日に", systemImage: "sun.max") {
+                        var x = t
+                        x.extra = (x.extra ?? .object([:])).merging(.object(["onDay": .number(Double(model.time.startOfDay(model.now)))]))
+                        model.perform("今日に入れました", undo: { try model.repo.saveTask(t, isNew: false) }) { try model.repo.saveTask(x, isNew: false) }
+                    }.tint(.orange)
                 }
             }
             // 長押しのメニュー（純正リマインダーと同じく、よく使う操作をまとめる）

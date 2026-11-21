@@ -28,6 +28,8 @@ struct YearView: View {
                                     let start = cal.date(from: DateComponents(year: y, month: m, day: 1)) ?? Date()
                                     Button { onPick(start) } label: { MiniMonth(start: start, now: now) }
                                         .buttonStyle(PressableStyle())
+                                        // 月が順にふわっと出る
+                                        .appearIn(delay: 0.025 * Double(m - 1), rise: 8)
                                         .accessibilityLabel(start.formatted(.dateTime.year().month(.wide)))
                                 }
                             }

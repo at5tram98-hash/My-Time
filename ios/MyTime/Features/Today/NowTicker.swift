@@ -25,7 +25,8 @@ struct NowTicker: View {
     }
 
     var body: some View {
-        let items = makeItems()
+        // 「表示と動き」でお知らせの行をオフにできる
+        let items = Prefs.bool(Prefs.tickerOn, true) ? makeItems() : []
         if !items.isEmpty {
             let i = index % items.count
             let it = items[i]
@@ -34,6 +35,8 @@ struct NowTicker: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(it.tint)
                     .frame(width: 20)
+                    // 入れ替わったとき、記号が小さくはねる
+                    .symbolEffect(.bounce, value: index)
                     .contentTransition(.symbolEffect(.replace))
                 Text(it.text)
                     .font(.footnote)
@@ -62,7 +65,7 @@ struct NowTicker: View {
             .task(id: items.count) {
                 // 5秒ごとに次へ（読み上げ中・動きを減らす設定では、自動では変えない）
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(5))
+                    try? await Task.sleep(for: .seconds(Prefs.int(Prefs.tickerSeconds, 5)))
                     guard !Task.isCancelled, !UIAccessibility.isVoiceOverRunning, !reduceMotion else { continue }
                     advance(items.count)
                 }

@@ -56,6 +56,7 @@ struct MonthView: View {
                 .coordinateSpace(name: "monthScroll")
                 .scrollIndicators(.hidden)
                 .guardsTaps()
+                .refreshable { await model.refreshAll() }
                 // 一番上に見えている月を見出しへ
                 .onPreferenceChange(MonthTopKey.self) { tops in
                     guard let m = tops.filter({ $0.value <= 60 }).max(by: { $0.value < $1.value })?.key ?? tops.min(by: { $0.value < $1.value })?.key,
@@ -235,11 +236,12 @@ struct MonthView: View {
                 .font(.system(size: 17, weight: today ? .bold : (wd == 0 || wd == 6) ? .regular : .medium)).monospacedDigit()
                 .foregroundStyle(today ? Color.white : (wd == 0 || wd == 6 || past) ? Color.secondary : Color.primary)
                 .frame(width: 28, height: 28)
-                .background { if today { Circle().fill(Color.red) } }
+                .background { if today { Circle().fill(Color.red).popIn() } }
                 .padding(.top, 5)
             if lv >= 1 {
                 VStack(spacing: 1.5) {
-                    ForEach(shown) { it in chip(it, level: lv) }
+                    // 過ぎた日の札はうすく（今日から先が目に入りやすい）
+                    ForEach(shown) { it in chip(it, level: lv).opacity(past ? 0.55 : 1) }
                     if hidden > 0 {
                         Text("+\(hidden)").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4)
@@ -293,7 +295,7 @@ struct MonthView: View {
 
     private func dotColor(_ it: CellItem) -> Color {
         switch it {
-        case .event(let o): return model.isOtherPerson(o.event.calendarId) ? Color.secondary.opacity(0.5) : model.occurrenceColor(o)
+        case .event(let o): return model.dimOther(o.event.calendarId) ? Color.secondary.opacity(0.5) : model.occurrenceColor(o)
         case .task: return .secondary
         }
     }
@@ -301,7 +303,7 @@ struct MonthView: View {
     private func chipHeight(_ it: CellItem, level: Int) -> CGFloat {
         switch it {
         case .event(let o):
-            if o.event.allDay || model.isOtherPerson(o.event.calendarId) || o.isStruck { return 15 }
+            if o.event.allDay || model.dimOther(o.event.calendarId) || o.isStruck { return 15 }
             return level >= 3 ? 38 : level >= 2 ? 28 : 15
         case .task: return 15
         }
@@ -319,7 +321,7 @@ struct MonthView: View {
     /// ほかの人（みお）の予定は目立たせない：色を付けず、灰色の細い札に小さな人の点だけ
     private func eventChip(_ o: EventOccurrence, level: Int) -> some View {
         let c = model.occurrenceColor(o)
-        let other = model.isOtherPerson(o.event.calendarId)
+        let other = model.dimOther(o.event.calendarId)
         let compact = o.event.allDay || other || o.isStruck || level < 2
         let room = o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) }
         let sub = room ?? o.event.placeName

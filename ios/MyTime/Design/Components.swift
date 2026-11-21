@@ -84,6 +84,7 @@ struct StatusChip: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: symbol).imageScale(.small).foregroundStyle(tint)
+                    .symbolEffect(.bounce, value: value)
                 Text(label).foregroundStyle(.secondary)
                 Text(value).fontWeight(.bold).monospacedDigit().foregroundStyle(tint == .secondary ? .primary : tint)
                     .contentTransition(.numericText())
@@ -93,7 +94,8 @@ struct StatusChip: View {
             .frame(minHeight: 36)
             .background(Capsule().fill(tint == .secondary ? Color(.tertiarySystemFill) : tint.opacity(0.15)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
+        .appearIn(rise: 6)
         .accessibilityLabel("\(label) \(value)")
     }
 }

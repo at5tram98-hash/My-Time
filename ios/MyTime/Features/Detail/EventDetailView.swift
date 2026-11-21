@@ -219,10 +219,15 @@ struct EventDetailView: View {
             RoundedRectangle(cornerRadius: 3, style: .continuous).fill(tint).frame(width: 6)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28).grayscale(struck ? 1 : 0).opacity(struck ? 0.6 : 1) }
+                    if ev.specType != nil { SpecBadge(type: ev.specType, isEvent: true, size: 28).grayscale(struck ? 1 : 0).opacity(struck ? 0.6 : 1).popIn(delay: 0.1) }
                     Text(ev.title).font(.title2.weight(.bold)).lineLimit(3)
                         .strikethrough(struck)
                         .foregroundStyle(struck ? .secondary : .primary)
+                        // 長押しで名前をコピー
+                        .contextMenu {
+                            Button("名前をコピー", systemImage: "doc.on.doc") { UIPasteboard.general.string = ev.title }
+                            Button("日時つきでコピー", systemImage: "calendar") { UIPasteboard.general.string = "\(ev.title) \(model.time.dayLabel(start)) \(model.hm(start))〜\(model.hm(end))" }
+                        }
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dateText(start, end, allDay: ev.allDay)).font(.subheadline.weight(.medium))

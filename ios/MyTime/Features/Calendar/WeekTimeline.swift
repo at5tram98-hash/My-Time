@@ -56,9 +56,14 @@ struct WeekTimeline: View {
                         .background(alignment: .topLeading) { gridLines }
                     }
                     .guardsTaps()
+                    .refreshable { await model.refreshAll() }
                     .onAppear {
                         // はじめは今日を一番左に（別の日を選んでいたら、その日を一番左に）
-                        if leftDay == nil { leftDay = model.time.startOfDay(model.time.ms(selected)) }
+                        // 「表示と動き」で「日曜から」にしたときは、その週の日曜を一番左に
+                        if leftDay == nil {
+                            let d = model.time.startOfDay(model.time.ms(selected))
+                            leftDay = Prefs.bool(Prefs.weekFromToday, true) ? d : model.time.addDays(d, -model.time.weekday(d))
+                        }
                         // 「いま」を画面の上から3割ほどに
                         let h = model.time.minutesOfDay(now) / 60
                         proxy.scrollTo("w\(max(0, min(23, h)))", anchor: UnitPoint(x: 0.5, y: 0.3))
@@ -148,6 +153,12 @@ struct WeekTimeline: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(model.time.dayLabel(d))を日の表示で開く")
+                    // 長押しで、その日に新しい予定・タスク
+                    .contextMenu {
+                        Button("この日に予定を追加", systemImage: "calendar.badge.plus") { router.open(.editor(EditorSeed(kind: .event, start: d + 9 * HOUR, end: d + 10 * HOUR))) }
+                        Button("この日にタスクを追加", systemImage: "checklist") { router.open(.editor(EditorSeed(kind: .task, start: d + 9 * HOUR, end: d + 10 * HOUR))) }
+                        Button("日の表示で開く", systemImage: "calendar.day.timeline.left") { onOpenDay(d) }
+                    }
                 }
             }
             .offset(x: x)
@@ -214,7 +225,7 @@ struct WeekTimeline: View {
                  symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
                  sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) } ?? o.event.placeName),
                  travel: o.isStruck || o.start < d ? nil : o.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil },
-                 other: model.isOtherPerson(o.event.calendarId))
+                 other: model.dimOther(o.event.calendarId))
         }
         for t in model.tasks {
             if t.kind == .do, let s = t.plannedStart, let e = t.plannedEnd, s < d1, e > d {

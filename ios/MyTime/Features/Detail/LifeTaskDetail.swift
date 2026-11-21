@@ -200,6 +200,7 @@ struct CleaningTaskDetail: View {
                             Text(n.overdue.map { "\($0)日過ぎ" } ?? "まだ一度も").font(.caption.weight(.semibold))
                                 .foregroundStyle(n.overdue == nil ? Color.secondary : Color.orange)
                         }
+                        .appearIn(delay: 0.05 * Double(i), rise: 6)
                     }
                 }
             } header: { Text("今日やるとよい所") }
