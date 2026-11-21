@@ -317,12 +317,50 @@ public func expandEvent(_ ev: MTEvent, from: EpochMs, to: EpochMs, time: DomainT
     var byStart: [EpochMs: RecurrenceException] = [:]
     for x in ev.exceptions { byStart[x.originalStart] = x }
     let dur = ev.end - ev.start
-    return ruleStarts(ev, from: from - 7 * DAY, to: to + 7 * DAY, time: time).compactMap { s in
+    var starts = Set(ruleStarts(ev, from: from, to: to, time: time))
+    for exception in ev.exceptions where exception.kind == .override {
+        let start = exception.start ?? exception.originalStart
+        let end = exception.end ?? exception.originalStart + dur
+        if start < to && end > from, !starts.contains(exception.originalStart),
+           ruleStarts(ev, from: exception.originalStart, to: exception.originalStart + 1, time: time).contains(exception.originalStart) {
+            starts.insert(exception.originalStart)
+        }
+    }
+    return starts.sorted().compactMap { s in
         let x = byStart[s]
         if let x, x.kind == .cancelled || x.kind == .archived { return nil }
         let start = x?.start ?? s, end = x?.end ?? s + dur
         guard start < to && end > from else { return nil }
-        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: ev, start: start, end: end, title: x?.title ?? ev.title)
+        let effective = ev.applyingOccurrence(x)
+        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: effective, start: start, end: end, title: effective.title)
+    }
+}
+
+public extension MTEvent {
+    /// Applies one occurrence's display and scheduling fields without changing its master.
+    func applyingOccurrence(_ exception: RecurrenceException?) -> MTEvent {
+        guard let exception, exception.kind == .override else { return self }
+        var event = self
+        if let title = exception.title { event.title = title }
+        if let notes = exception.notes { event.notes = notes }
+        guard let fields = exception.raw["mcpOverrides"]?.objectValue else { return event }
+        var extra = event.extra?.objectValue ?? [:]
+        var classInfo = event.classInfo?.objectValue ?? [:]
+        for (key, value) in fields {
+            switch key {
+            case "calendarId": if let id = value.stringValue { event.calendarId = id }
+            case "timeZone": if let zone = value.stringValue { event.timeZone = zone }
+            case "employerId": event.employerId = value.stringValue
+            case "hideAfterEnd": if let hidden = value.boolValue { event.hideAfterEnd = hidden }
+            case "subjectName", "room": classInfo[key] = value.isNull ? nil : value
+            case "color", "place", "travelMinutes", "meetingUrl", "notifies", "urls", "spec", "studio", "bring", "allDay", "shiftPending":
+                extra[key] = value.isNull ? nil : value
+            default: break
+            }
+        }
+        event.extra = extra.isEmpty ? nil : .object(extra)
+        event.classInfo = classInfo.isEmpty ? nil : .object(classInfo)
+        return event
     }
 }
 

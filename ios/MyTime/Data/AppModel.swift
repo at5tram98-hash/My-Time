@@ -126,7 +126,6 @@ final class AppModel {
     private func placeMornings() -> Bool {
         let est = morning.estimate().minutes
         let minutes = est > 0 ? est : 60
-        let mine = events.filter { $0.calendarId == MTCalendar.selfId }
         var changed = false
         // 試作の版が置いた形の古い朝（autoMorning が文字の日付）は外す（新しい形で置き直す）
         for t in tasks where t.extra?["autoMorning"]?.stringValue != nil && t.status == .notStarted {
@@ -134,7 +133,7 @@ final class AppModel {
         }
         for i in 0..<2 {
             let d = time.addDays(time.startOfDay(now), i)
-            let occ = expandAll(mine, from: d, to: time.addDays(d, 1), time: time)
+            let occ = expandAll(events, from: d, to: time.addDays(d, 1), time: time).filter { $0.event.calendarId == MTCalendar.selfId }
             if (try? repo.autoPlaceMorning(day: d, events: occ, minutes: minutes, time: time)) != nil { changed = true }
         }
         return changed
@@ -209,13 +208,15 @@ final class AppModel {
         let hidden = Set(calendars.filter { !$0.visible }.map(\.id))
         // 種類の設定で「出さない」にした種類は出さない
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
-        let all = expandAll((includeArchived ? analysisEvents : events).filter { !hidden.contains($0.calendarId) && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        let all = expandAll(includeArchived ? analysisEvents : events, from: from, to: to, time: time)
+            .filter { !hidden.contains($0.event.calendarId) && !($0.event.specType.map(hiddenTypes.contains) ?? false) }
         return includeStruck ? all : all.filter { !$0.isStruck }
     }
     /// 「自分」の予定だけ（今日の画面・朝の目安。カレンダーの表示の切り替えに関係なく出す）
     func myEvents(from: EpochMs, to: EpochMs, includeStruck: Bool = false) -> [EventOccurrence] {
         let hiddenTypes = Set(specDisplay.filter { $0.value == "hidden" }.map(\.key))
-        let all = expandAll(events.filter { $0.calendarId == MTCalendar.selfId && !($0.specType.map(hiddenTypes.contains) ?? false) }, from: from, to: to, time: time)
+        let all = expandAll(events, from: from, to: to, time: time)
+            .filter { $0.event.calendarId == MTCalendar.selfId && !($0.event.specType.map(hiddenTypes.contains) ?? false) }
         return includeStruck ? all : all.filter { !$0.isStruck }
     }
     /// 予定の色：自分で決めた色 → 勤務先の色（勤務先の画面で決めたとき）→ カレンダーの色

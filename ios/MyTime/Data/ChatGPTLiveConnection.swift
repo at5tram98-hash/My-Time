@@ -179,10 +179,17 @@ final class ChatGPTLiveConnection {
                                    uniquingKeysWith: { first, _ in first })
         let occurrences: [JSONValue] = expandAll(model.events, from: from, to: to, time: model.time).compactMap { occurrence in
             guard !occurrence.isStruck, let summary = summaries[occurrence.masterId] else { return nil }
-            var fields = summary.objectValue ?? [:]
-            fields.removeValue(forKey: "exceptions")
+            var fields = ChatGPTTransfer.occurrenceFields(occurrence.event)
+            fields["id"] = summary["id"]
+            fields["revision"] = summary["revision"]
             fields["title"] = .string(occurrence.title)
             fields["occurrenceId"] = .string(occurrence.id)
+            fields["notes"] = .string(occurrence.event.notes)
+            if let original = occurrence.originalStart {
+                fields["occurrenceStart"] = .number(Double(original))
+                fields["seriesStart"] = summary["start"]
+                fields["seriesEnd"] = summary["end"]
+            }
             fields["start"] = .number(Double(occurrence.start))
             fields["end"] = .number(Double(occurrence.end))
             return .object(fields)
@@ -190,6 +197,10 @@ final class ChatGPTLiveConnection {
         var wire = snapshot.objectValue ?? [:]
         wire.removeValue(forKey: "event")
         wire["occurrences"] = .array(occurrences)
+        let checkpoints = model.repo.settings().raw[ChatGPTTransfer.checkpointsKey]?.arrayValue ?? []
+        wire["checkpointOccurrences"] = .array((-30...90).flatMap { delta in
+            ChatGPTTransfer.checkpoints(checkpoints, on: model.time.addDays(today, delta), time: model.time, forSync: true)
+        })
         return .object(wire)
     }
 

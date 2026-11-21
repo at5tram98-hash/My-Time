@@ -285,8 +285,8 @@ struct AgendaList: View {
     }
 
     private func deleteEvent(_ o: EventOccurrence) {
-        let snapshot = o.event
-        if let os = o.originalStart, o.event.recurrence != nil {
+        guard let snapshot = model.repo.event(o.masterId) else { return }
+        if let os = o.originalStart, snapshot.recurrence != nil {
             model.perform("この回を削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: false) }) { try model.repo.cancelOccurrence(masterId: o.masterId, originalStart: os) }
         } else {
             model.perform("削除しました", undo: { try model.repo.saveEvent(snapshot, isNew: true) }) { try model.repo.deleteEvent(o.masterId) }

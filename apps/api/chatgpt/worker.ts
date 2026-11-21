@@ -185,9 +185,27 @@ const string = { type: 'string' };
 const epoch = { type: 'integer', description: 'UNIX milliseconds' };
 const permissions = [{ type: 'oauth2', scopes: [SCOPE] }];
 const schema = (properties: Dict, required: string[]) => ({ type: 'object', properties, required, additionalProperties: false });
+const legacyEditFields: Record<string, readonly string[]> = {
+  event: ['title', 'notes', 'calendarId', 'start', 'end', 'timeZone', 'allDay', 'place', 'color'],
+  task: ['title', 'notes', 'calendarId', 'plannedStart', 'plannedEnd', 'timeZone', 'location', 'estimateMinutes', 'checkAt'],
+  checkpoint: ['title', 'notes', 'at', 'alarm', 'notifyBefore', 'repeat'],
+};
+
+function requiresUpdatedPhone(entry: unknown): boolean {
+  const item = obj(entry);
+  if (item.occurrenceStart !== undefined) return true;
+  const kind = value(item.kind);
+  return Object.entries(obj(item.fields)).some(([key, field]) => {
+    if (kind === 'task' && key === 'kind' && item.action === 'add') return false;
+    if (key === 'place' && field !== null && typeof field !== 'string') return true;
+    if (kind === 'task' && key === 'calendarId' && field === null) return true;
+    return !legacyEditFields[kind]?.includes(key);
+  });
+}
+
 const tools = [
-  { name: 'mytime_list', description: 'Read the latest My Time iPhone sync. Report lastSyncedAt and warn if stale or outside coverage. Events include occurrences and their master record ID and revision.', inputSchema: schema({ from: epoch, to: epoch, kind: { enum: ['event', 'task', 'checkpoint'] }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 50 } }, ['from', 'to', 'kind']), annotations: { readOnlyHint: true, openWorldHint: false } },
-  { name: 'mytime_propose_changes', description: 'Queue a change for review in the My Time iPhone app. State it is pending until the iPhone approves. For edits/deletes use exact ID and revision from mytime_list; explicitly confirm recurring series. For TimeTree, preserve original events in a my-time-timetree-v1 payload.', inputSchema: schema({ requestId: { type: 'string', description: 'A new UUID for this request. Reuse on retry.' }, payload: { type: 'object', description: 'my-time-changes-v1 with changes array (action add/edit/delete, kind event/task/checkpoint, id, revision for edit/delete, fields for add/edit); or my-time-timetree-v1 with events array.' } }, ['requestId', 'payload']), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  { name: 'mytime_list', description: 'Read the latest My Time iPhone sync. Report lastSyncedAt and warn if stale or outside coverage. Use editVersion to detect the editor generation. Events and checkpoints can include occurrenceStart and their series ID and revision.', inputSchema: schema({ from: epoch, to: epoch, kind: { enum: ['event', 'task', 'checkpoint'] }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 50 } }, ['from', 'to', 'kind']), annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'mytime_propose_changes', description: 'Queue a change for review in the My Time iPhone app. State it is pending until the iPhone approves. For edits/deletes use exact ID and revision from mytime_list; Use occurrenceStart to edit just one event or checkpoint occurrence, or wholeSeries=true for a series-wide change. For TimeTree, preserve original events in a my-time-timetree-v1 payload.', inputSchema: schema({ requestId: { type: 'string', description: 'A new UUID for this request. Reuse on retry.' }, payload: { type: 'object', description: 'my-time-changes-v1 with changes array (action add/edit/delete, kind event/task/checkpoint, id, revision for edit/delete, fields for add/edit, optional occurrenceStart or wholeSeries for repeats). Version 2 supports place/color/notifications/links/recurrence and task flags, timing, status via taskAction, progress, and subtasks (complete ordered list using existing IDs for kept items); or my-time-timetree-v1 with events array.' } }, ['requestId', 'payload']), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: 'mytime_change_status', description: 'Check whether an iPhone approved or rejected a queued My Time change.', inputSchema: schema({ requestId: string }, ['requestId']), annotations: { readOnlyHint: true, openWorldHint: false } },
 ].map(tool => ({ ...tool, securitySchemes: permissions, _meta: { securitySchemes: permissions } }));
 
@@ -197,6 +215,11 @@ async function callTool(name: unknown, args: Dict, db: D1Database, now: number, 
     const entries = payload.format === 'my-time-changes-v1' ? list(payload.changes) : payload.format === 'my-time-timetree-v1' ? list(payload.events) : [];
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id) ||
         !entries.length || entries.length > 50 || new TextEncoder().encode(text).byteLength > 120_000) throw new Error('変更は1〜50件、リクエストIDはUUIDを指定してください');
+    if (payload.format === 'my-time-changes-v1' && entries.some(requiresUpdatedPhone)) {
+      const device = await db.prepare("SELECT json_extract(snapshot, '$.editVersion') AS version FROM device WHERE id=1")
+        .first<{version: number | null}>();
+      if ((device?.version ?? 1) < 2) throw new Error('この項目の編集には最新版のMy Timeで一度同期してください');
+    }
     await db.prepare("DELETE FROM proposals WHERE created<=?").bind(now - 7 * DAY).run();
     await db.prepare("INSERT OR IGNORE INTO proposals(id,created,status,payload) SELECT ?,?,'pending',? WHERE (SELECT COUNT(*) FROM proposals WHERE status='pending')<50 AND EXISTS (SELECT 1 FROM oauth WHERE hash=? AND kind='access' AND expires>?)")
       .bind(id, now, text, accessHash, now).run();
@@ -218,15 +241,18 @@ async function callTool(name: unknown, args: Dict, db: D1Database, now: number, 
   const s = obj(JSON.parse(row.snapshot));
   const offset = Number.isSafeInteger(args.offset) ? Math.max(0, Number(args.offset)) : 0;
   const limit = Number.isSafeInteger(args.limit) ? Math.max(1, Math.min(50, Number(args.limit))) : 25;
-  const data = list(kind === 'event' ? s.occurrences : s[value(kind)]).map(obj).filter(x => {
+  const expandedCheckpoints = kind === 'checkpoint' && Array.isArray(s.checkpointOccurrences);
+  const records = kind === 'event' ? s.occurrences : expandedCheckpoints ? s.checkpointOccurrences : s[value(kind)];
+  const data = list(records).map(obj).filter(x => {
     const start = (x.start ?? x.plannedStart ?? x.checkAt ?? x.onDay ?? x.at) as number | undefined;
     const end = (x.end ?? x.plannedEnd) as number | undefined;
-    return start == null || (start < to && ((end ?? start + 1) > from || (kind === 'checkpoint' && Boolean(x.repeat))));
+    return start == null || (start < to && ((end ?? start + 1) > from || (kind === 'checkpoint' && !expandedCheckpoints && Boolean(x.repeat))));
   });
   const covered = from >= Number(s.from) && to <= Number(s.to);
   return { status: 'synced', covered, coverage: { from: s.from, to: s.to }, lastSyncedAt: new Date(row.synced).toISOString(),
     stale: now - row.synced > 5 * MIN, timeZone: s.timeZone, calendars: s.calendars,
-    items: data.slice(offset, offset + limit).map(x => ({ ...x, ...(typeof x.notes === 'string' && x.notes.length > 400 ? { notes: x.notes.slice(0, 400), notesTruncated: true } : {}) })),
+    editVersion: s.editVersion ?? 1, employers: s.employers, studioTypes: s.studioTypes,
+    items: data.slice(offset, offset + limit).map(x => ({ ...x, ...(limit > 1 && typeof x.notes === 'string' && x.notes.length > 400 ? { notes: x.notes.slice(0, 400), notesTruncated: true } : {}) })),
     nextOffset: offset + limit < data.length ? offset + limit : null };
 }
 
