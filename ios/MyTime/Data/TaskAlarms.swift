@@ -116,7 +116,7 @@ enum AlarmService {
             case .morning(let a):
                 let snooze = a.snoozeMinutes > 0
                 let alert = AlarmPresentation.Alert(
-                    title: LocalizedStringResource(stringLiteral: a.label.isEmpty ? "起床" : a.label),
+                    title: LocalizedStringResource(stringLiteral: a.label.isEmpty || a.label.hasPrefix(MorningAuto.autoLabelPrefix) ? "起床" : a.label),
                     stopButton: AlarmButton(text: "止める", textColor: .white, systemImageName: "stop.circle.fill"),
                     secondaryButton: snooze ? AlarmButton(text: "スヌーズ", textColor: .white, systemImageName: "zzz") : nil,
                     secondaryButtonBehavior: snooze ? .countdown : nil

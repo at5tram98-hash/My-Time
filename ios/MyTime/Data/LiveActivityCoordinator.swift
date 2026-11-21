@@ -136,7 +136,9 @@ final class LiveActivityCoordinator {
         if r.failed == 0 { Diagnostics.record("live", ok: true, "表示 \(r.active)件・予約 \(r.scheduled)件") }
         // 次に表示が変わる時刻（移動の区間の切り替わりなど）に、裏でもう一度照合を頼む（OS の都合で遅れることがある）
         let next = items.filter { keep.contains($0.candidate.id) }.map(\.staleAt).filter { $0 > now }.min()
-        LiveBackground.schedule(at: next.map { model.time.date($0) })
+        // ChatGPT とつないでいれば、遅くとも30分後には見に来る（変更を取り込むため）
+        let poll: Date? = model.chatGPT.connected ? Date().addingTimeInterval(30 * 60) : nil
+        LiveBackground.schedule(at: [next.map { model.time.date($0) }, poll].compactMap { $0 }.min())
         #endif
         lastReport = r
         return r

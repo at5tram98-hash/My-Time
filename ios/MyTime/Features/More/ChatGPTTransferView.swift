@@ -3,7 +3,10 @@ import UniformTypeIdentifiers
 import UIKit
 import MyTimeCore
 
-struct ChatGPTTransferView: View {
+/// ファイルでのやりとり（書き出し・読み込み・反映前の確認）と、自動で反映できなかった依頼の確認
+struct ChatGPTFileExchangeView: View {
+    /// 開いたときに確認する依頼（連携の画面の「確認が必要」から）
+    var initialProposal: ChatGPTLiveConnection.Proposal? = nil
     @Environment(AppModel.self) private var model
     @State private var kinds: Set<ChatGPTTransfer.Kind> = Set(ChatGPTTransfer.Kind.allCases)
     @State private var from = Calendar.current.startOfDay(for: .now)
@@ -22,7 +25,6 @@ struct ChatGPTTransferView: View {
 
     var body: some View {
         Form {
-            liveSection
             Section {
                 DatePicker("開始日", selection: $from, displayedComponents: .date)
                 DatePicker("終了日", selection: $through, in: from..., displayedComponents: .date)
@@ -66,7 +68,8 @@ struct ChatGPTTransferView: View {
                 }
             }
         }
-        .navigationTitle("ChatGPT・TimeTree連携")
+        .navigationTitle(initialProposal == nil ? "ファイルでやりとり" : "変更の確認")
+        .onAppear { if let p = initialProposal, preview == nil, reviewing == nil { read(p.payload.data, proposal: p) } }
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: from) { _, date in if through < date { through = date } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
@@ -101,46 +104,6 @@ struct ChatGPTTransferView: View {
         } message: {
             Text(message ?? "")
         }
-    }
-
-    private var liveSection: some View {
-        Section {
-            if model.chatGPT.connected {
-                if let synced = model.chatGPT.lastSent {
-                    LabeledContent("最終同期") { Text(synced, format: .dateTime.month().day().hour().minute()) }
-                }
-                if let failure = model.chatGPT.failure { Text(failure).foregroundStyle(.secondary) }
-                Button("今すぐ同期", systemImage: "arrow.clockwise") { Task { await model.chatGPT.sync(model) } }
-                Button("ChatGPT接続コードを発行") { run { pairingCode = try await model.chatGPT.pairingCode() } }
-                if let pairingCode {
-                    Button("接続コードをコピー", systemImage: "doc.on.doc") {
-                        UIPasteboard.general.setItems([["public.utf8-plain-text": pairingCode]], options: [
-                            .localOnly: true, .expirationDate: Date.now.addingTimeInterval(600)
-                        ])
-                    }
-                    Text("ChatGPTの認証ページに貼り付けてください。有効期限は10分です。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                ForEach(model.chatGPT.proposals) { proposal in
-                    Button {
-                        read(proposal.payload.data, proposal: proposal)
-                    } label: {
-                        LabeledContent("ChatGPTの編集依頼", value: model.hm(proposal.created))
-                    }
-                }
-                Button("連携を解除", role: .destructive) { disconnecting = true }
-            } else {
-                SecureField("一度だけ使うセットアップコード", text: $setupCode)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("自動連携を有効にする") { run { try await model.chatGPT.connect(setupCode, model: model); setupCode = "" } }
-                    .disabled(setupCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.storeFailure != nil)
-            }
-        } header: {
-            Text("ChatGPTとの自動連携")
-        } footer: {
-            Text("有効にすると、My Timeを開いている間に前30日・先90日の予定などを同期します。ChatGPTからの変更はこの画面で確認して反映します。")
-        }
-        .disabled(busy)
     }
 
     private func run(_ action: @escaping @MainActor () async throws -> Void) {

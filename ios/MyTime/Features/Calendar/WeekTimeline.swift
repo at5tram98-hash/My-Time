@@ -193,6 +193,8 @@ struct WeekTimeline: View {
         var sub: String? = nil
         /// 予定の前の移動時間（分）。出発の ◆ を出す
         var travel: Int? = nil
+        /// ほかの人（みお）の予定：塗らずに目立たせない
+        var other = false
     }
 
     private func items(_ d: EpochMs) -> [Item] {
@@ -201,7 +203,8 @@ struct WeekTimeline: View {
             Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: o.isStruck ? .gray : Color(hex: model.eventColor(o.event)), isEvent: true, done: o.isStruck, pending: isShiftPending(o.event), open: .event(o.id),
                  symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
                  sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName),
-                 travel: o.isStruck || o.start < d ? nil : o.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil })
+                 travel: o.isStruck || o.start < d ? nil : o.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil },
+                 other: model.isOtherPerson(o.event.calendarId))
         }
         for t in model.tasks {
             if t.kind == .do, let s = t.plannedStart, let e = t.plannedEnd, s < d1, e > d {
@@ -293,12 +296,19 @@ struct WeekTimeline: View {
                     .font(.system(size: visible == 7 ? 8 : 9)).opacity(0.85)
                 }
             }
-            .padding(.horizontal, 3).padding(.vertical, 2)
+            .padding(.leading, 5).padding(.trailing, 3).padding(.vertical, 2)
             .frame(width: max(8, width), height: height, alignment: .topLeading)
-            .foregroundStyle(it.isEvent ? Color.white : it.color)
-            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(it.isEvent ? AnyShapeStyle(it.color.gradient.opacity(it.done ? 0.4 : 0.9)) : AnyShapeStyle(it.color.opacity(0.14))))
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(it.isEvent ? .clear : it.color.opacity(0.5), lineWidth: 0.8))
-            .opacity(it.done ? 0.55 : 1)
+                        // 純正カレンダーと同じ：淡い色の札に、左の色の帯と同じ色の文字。ほかの人の予定は枠だけでうすく
+            .foregroundStyle(it.other || it.done ? Color.secondary : it.isEvent ? it.color.deepened : it.color)
+            .background(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(it.other ? AnyShapeStyle(Color.clear) : AnyShapeStyle(it.color.opacity(it.isEvent ? 0.22 : 0.12)))
+                if it.isEvent && !it.other {
+                    UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 5).fill(it.color).frame(width: 3)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(it.other ? Color(.separator) : it.isEvent ? .clear : it.color.opacity(0.45), style: StrokeStyle(lineWidth: 0.8, dash: it.other ? [3, 2] : [])))
+            .opacity(it.done ? 0.55 : it.other ? 0.7 : 1)
         .contentShape(Rectangle())
         .deliberateTap { if Date().timeIntervalSince(lastSwipe) > 0.4 { router.open(it.open) } }
         .accessibilityAddTraits(.isButton)

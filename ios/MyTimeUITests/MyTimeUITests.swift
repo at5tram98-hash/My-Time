@@ -55,7 +55,9 @@ final class MyTimeUITests: XCTestCase {
         for name in ["自動削除", "ロック画面の表示", "種類ごとの設定"] {
             let cell = app.staticTexts[name]
             var tries = 0
-            while !cell.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
+            // 前の項目から戻ると一覧が下にずれているので、まず一番上へ戻してから下へ探す
+            for _ in 0..<3 where !cell.isHittable { app.swipeDown(velocity: .fast) }
+            while !cell.isHittable && tries < 10 { app.swipeUp(velocity: .slow); tries += 1 }
             XCTAssertTrue(cell.isHittable, name)
             cell.tap()
             XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 3), name)

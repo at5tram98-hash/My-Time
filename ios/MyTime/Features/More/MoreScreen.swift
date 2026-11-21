@@ -84,8 +84,9 @@ struct MoreScreen: View {
 
                 Section("データ") {
                     NavigationLink { ChatGPTTransferView() } label: {
-                        row("ChatGPT・TimeTree連携", "arrow.left.arrow.right.circle.fill", .teal,
-                            model.chatGPT.proposals.isEmpty ? "予定・タスク・チェックポイントを同期" : "確認待ち \(model.chatGPT.proposals.count)件")
+                        row("ChatGPT", "bubble.left.and.text.bubble.right.fill", Color(hex: "#10A37F"),
+                            !model.chatGPT.proposals.isEmpty ? "確認が必要 \(model.chatGPT.proposals.count)件"
+                            : model.chatGPT.connected ? "つながっています・変更はすぐ反映" : "話しかけて予定を編集・TimeTree からコピー")
                     }
                     NavigationLink(value: MoreRoute.autoDelete) {
                         row("自動削除", "trash.slash.fill", .red, model.autoDeletePrefs.enabled ? "終わって\(model.autoDeletePrefs.days)日後に削除" : "オフ")

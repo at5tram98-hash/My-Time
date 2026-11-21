@@ -193,6 +193,8 @@ struct RootView: View {
                 .tabItem { Label("その他", systemImage: "ellipsis") }
                 .tag(AppTab.more)
         }
+        // 下にスクロールしたらタブバーを小さく（画面を広く使う。iOS 26 以降）
+        .modifier(MinimizeTabBarOnScroll())
         .environment(router)
         // 秒の表示：iOS の時計のすぐ下のすき間（ステータスバーとナビゲーションバーの間）。どこにも重ならない
         .overlay(alignment: .topLeading) { SecondsAccessory() }
@@ -447,5 +449,17 @@ struct AlarmView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("アラーム \(task.title)")
+    }
+}
+
+
+/// 下にスクロールするとタブバーを小さくまとめる（iOS 26 以降。それより前は何もしない）
+struct MinimizeTabBarOnScroll: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
     }
 }

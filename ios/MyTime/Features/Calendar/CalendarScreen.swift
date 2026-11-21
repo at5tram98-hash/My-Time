@@ -15,72 +15,242 @@ struct CalendarScreen: View {
     /// 月から日へ広がるときの起点（タップした位置）
     @State private var zoomAnchor: UnitPoint = .center
 
+    /// 月の表示で、いま画面の一番上に見えている月（大きな見出しに出す）
+    @State private var visibleMonth = Date()
+    /// 年の表示（純正カレンダーの「< 2026年」）
+    @State private var showYear = false
+    @State private var searching = false
+    @State private var showCalendars = false
+    /// 月の表示の密度（純正の「コンパクト・スタック・詳細」）。月の表示の行の高さと同じ値
+    @AppStorage("calendar.monthRowHeight2") private var monthRow: Double = 128
+    @Namespace private var zoom
+
     var body: some View {
         NavigationStack {
             let day = model.time.startOfDay(model.time.ms(selected))
             TimelineView(.periodic(from: .now, by: 60)) { ctx in
                 let now = model.time.ms(ctx.date)
-                VStack(spacing: 8) {
-                    GlassSegmented(items: [
-                        .init(value: "day", title: "日"), .init(value: "week", title: "週"),
-                        .init(value: "month", title: "月"), .init(value: "list", title: "一覧"),
-                    ], selection: $mode.animation(reduceMotion ? nil : Motion.sheet))
-                    .padding(.horizontal)
+                VStack(spacing: 6) {
+                    // 日・週・月・一覧の切り替えは右上のボタンへ（純正と同じく、画面の上を空ける）
+                    if mode == "month" && !showYear {
+                        monthHeader
+                            .transition(.opacity)
+                    }
                     if mode == "day" || mode == "list" {
                         WeekStrip(selected: $selected)
                             .padding(.horizontal)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                    if mode == "day" { allDayChips(day) }
+                    if mode == "day" {
+                        // 純正と同じ、選んだ日の見出し（2026年11月21日・土曜日）
+                        Text(model.time.date(day).formatted(.dateTime.year().month().day()) + "・" + model.time.date(day).formatted(.dateTime.weekday(.wide)))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.red : Color.primary)
+                            .contentTransition(.numericText())
+                            .animation(reduceMotion ? nil : .snappy, value: day)
+                        allDayChips(day)
+                    }
                     Group {
-                        switch mode {
-                        case "week":
-                            WeekTimeline(selected: $selected, now: now) { d in open(d, from: .center) }
-                        case "month":
-                            MonthView(selected: $selected, todayTick: todayTick) { d, p in open(d, from: p) }
-                                // 日へ行くとき：月はタップした所へ吸い込まれるように拡大して消える
-                                .transition(.asymmetric(insertion: .opacity, removal: .scale(scale: 2.2, anchor: zoomAnchor).combined(with: .opacity)))
-                        case "list":
-                            AgendaList(from: day, days: 30, now: now, selected: day, hideEmpty: true) { selected = model.time.date($0) }
-                        default:
-                            dayView(day: day, now: now)
-                                // 月から来たとき：タップした日の位置から「ひゅっ」と広がる
-                                .transition(.asymmetric(insertion: .scale(scale: 0.08, anchor: zoomAnchor).combined(with: .opacity), removal: .opacity))
+                        if showYear {
+                            YearView(year: model.time.calendar.component(.year, from: visibleMonth), now: now) { m in
+                                visibleMonth = m
+                                selected = m
+                                withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.86)) { showYear = false }
+                                todayTick += 0
+                            }
+                            .transition(.asymmetric(insertion: .scale(scale: 1.15).combined(with: .opacity), removal: .scale(scale: 1.15).combined(with: .opacity)))
+                        } else {
+                            switch mode {
+                            case "week":
+                                WeekTimeline(selected: $selected, now: now) { d in open(d, from: .center) }
+                            case "month":
+                                MonthView(selected: $selected, todayTick: todayTick, visibleMonth: $visibleMonth) { d, p in open(d, from: p) }
+                                    // 日へ行くとき：月はタップした所へ吸い込まれるように拡大して消える
+                                    .transition(.asymmetric(insertion: .scale(scale: 0.92).combined(with: .opacity), removal: .scale(scale: 2.2, anchor: zoomAnchor).combined(with: .opacity)))
+                            case "list":
+                                AgendaList(from: day, days: 30, now: now, selected: day, hideEmpty: true) { selected = model.time.date($0) }
+                            default:
+                                dayView(day: day, now: now)
+                                    // 月から来たとき：タップした日の位置から「ひゅっ」と広がる
+                                    .transition(.asymmetric(insertion: .scale(scale: 0.08, anchor: zoomAnchor).combined(with: .opacity), removal: .opacity))
+                            }
                         }
                     }
                     .frame(maxHeight: .infinity)
                 }
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
             .background(Color(.systemBackground))
-            .navigationTitle(title(day))
+            .navigationTitle(mode == "month" ? "" : title(day))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        withAnimation(reduceMotion ? nil : Motion.sheet) { selected = Date() }
-                        todayTick += 1
-                    } label: {
-                        Text("今日").font(.subheadline.weight(.semibold))
-                            .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.secondary : Color.red)
+            // 「今日」は純正と同じく左下に浮かべる（今日を見ていないときだけ）
+            .overlay(alignment: .bottomLeading) {
+                if !isShowingToday(day) {
+                    Button { goToday() } label: {
+                        Text("今日").font(.body.weight(.semibold))
+                            .padding(.horizontal, 20).frame(height: 46)
+                            .glass(Capsule(), interactive: true)
                     }
+                    .buttonStyle(PressableStyle())
+                    .padding(.leading, 16).padding(.bottom, 10)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
                     .accessibilityLabel("今日へ移動")
                 }
-                // 誰の予定を出すか（自分・みお）：＋の左のボタンから選ぶ（画面の上を占めない）
-                if model.calendars.count > 1 {
-                    ToolbarItem(placement: .topBarTrailing) { PeopleMenu() }
+            }
+            // 右下：カレンダーの一覧と未割当（純正のカレンダー・受信箱のボタンと同じ位置）
+            .overlay(alignment: .bottomTrailing) {
+                HStack(spacing: 0) {
+                    Button { showCalendars = true } label: {
+                        Image(systemName: "calendar").font(.title3).frame(width: 50, height: 46)
+                    }
+                    .accessibilityLabel("カレンダー")
+                    Button { router.open(.inbox) } label: {
+                        Image(systemName: "tray").font(.title3).frame(width: 50, height: 46)
+                            .overlay(alignment: .topTrailing) {
+                                if !model.inbox.isEmpty {
+                                    Text("\(min(99, model.inbox.count))").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                        .padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
+                                        .background(Capsule().fill(Color.red)).offset(x: -6, y: 6)
+                                }
+                            }
+                    }
+                    .accessibilityLabel("未割当のタスク \(model.inbox.count)件")
+                }
+                .foregroundStyle(.primary)
+                .glass(Capsule(), interactive: true)
+                .padding(.trailing, 16).padding(.bottom, 10)
+            }
+            .sheet(isPresented: $showCalendars) { CalendarsSheet().environment(model) }
+            .animation(reduceMotion ? nil : .snappy, value: isShowingToday(day))
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { backButton }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    modeMenu
+                    Button { searching = true } label: { Image(systemName: "magnifyingglass") }
+                        .accessibilityLabel("検索")
+                    // 誰の予定を出すか（自分・みお）
+                    if model.calendars.count > 1 { PeopleMenu() }
                 }
                 MainToolbar(addKind: .event)
             }
+            .sheet(isPresented: $searching) { CalendarSearchView().environment(model).environment(router) }
+            .sensoryFeedback(.selection, trigger: mode)
+            .sensoryFeedback(.impact(weight: .light), trigger: showYear)
         }
+    }
+
+    /// 月の表示の上の大きな月の名前（今の月は赤。純正と同じ）
+    private var monthHeader: some View {
+        let isNow = model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .month)
+        return HStack(alignment: .firstTextBaseline) {
+            Text(visibleMonth.formatted(.dateTime.month(.wide)))
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(isNow ? Color.red : Color.primary)
+                .contentTransition(.numericText())
+            if !model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .year) {
+                Text(visibleMonth.formatted(.dateTime.year())).font(.title3.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .animation(reduceMotion ? nil : .snappy, value: visibleMonth)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// 左上：月なら「< 2026年」（年の表示へ）、日・週・一覧なら「< 11月」（月へ戻る）
+    @ViewBuilder
+    private var backButton: some View {
+        if mode == "month" {
+            if showYear {
+                EmptyView()
+            } else {
+                Button {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.86)) { showYear = true }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").font(.body.weight(.semibold))
+                        Text(visibleMonth.formatted(.dateTime.year())).font(.body.weight(.medium))
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .accessibilityLabel("年の表示へ")
+            }
+        } else {
+            Button {
+                visibleMonth = selected
+                withAnimation(reduceMotion ? nil : Motion.sheet) { mode = "month" }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.body.weight(.semibold))
+                    Text(selected.formatted(.dateTime.month(.wide))).font(.body.weight(.medium))
+                }
+                .padding(.horizontal, 4)
+            }
+            .accessibilityLabel("月の表示へ")
+        }
+    }
+
+    /// 表示の切り替え（純正と同じ）：月の密度「コンパクト・スタック・詳細」、日・週、「リスト」
+    private var modeMenu: some View {
+        Menu {
+            Section {
+                densityButton("コンパクト", "rectangle.compress.vertical", 56)
+                densityButton("スタック", "rectangle.split.1x2", 96)
+                densityButton("詳細", "rectangle.grid.1x2", 128)
+            }
+            Section {
+                modeButton("日", "calendar.day.timeline.left", "day")
+                modeButton("週", "calendar.badge.clock", "week")
+                modeButton("リスト", "list.bullet", "list")
+            }
+        } label: {
+            Image(systemName: mode == "list" ? "list.bullet" : mode == "month" ? "rectangle.split.1x2" : mode == "week" ? "calendar.badge.clock" : "calendar.day.timeline.left")
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .accessibilityLabel("表示の切り替え")
+    }
+
+    /// 月の表示で、その密度にする（今の表示が月でなければ月へ）
+    private func densityButton(_ title: String, _ symbol: String, _ h: Double) -> some View {
+        let on = mode == "month" && abs(monthRow - h) < 20 || (h == 128 && mode == "month" && monthRow > 148)
+        return Button {
+            showYear = false
+            withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.86)) { mode = "month"; monthRow = h }
+        } label: {
+            Label(title, systemImage: on ? "checkmark" : symbol)
+        }
+    }
+
+    private func modeButton(_ title: String, _ symbol: String, _ m: String) -> some View {
+        Button {
+            showYear = false
+            withAnimation(reduceMotion ? nil : Motion.sheet) { mode = m }
+        } label: {
+            Label(title, systemImage: mode == m ? "checkmark" : symbol)
+        }
+    }
+
+    private func isShowingToday(_ day: EpochMs) -> Bool {
+        if showYear { return false }
+        if mode == "month" { return model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .month) }
+        return model.time.isSameDay(day, model.now)
+    }
+
+    private func goToday() {
+        withAnimation(reduceMotion ? nil : Motion.sheet) {
+            showYear = false
+            selected = Date()
+            visibleMonth = Date()
+        }
+        todayTick += 1
     }
 
     private func title(_ day: EpochMs) -> String {
         switch mode {
         case "month": return "カレンダー"
         case "week":
-            let ws = model.time.addDays(day, -model.time.weekday(day))
-            return "\(model.time.calendar.component(.month, from: model.time.date(ws)))月\(model.time.calendar.component(.day, from: model.time.date(ws)))日の週"
+            // 純正と同じく、週の表示の見出しは月の名前だけ
+            return model.time.date(day).formatted(.dateTime.month(.wide))
         default: return model.dayTitle(day)
         }
     }
@@ -137,17 +307,8 @@ struct CalendarScreen: View {
     /// 日の表示：予定が主、右にタスクの細いレーン（今日の画面より細く）
     private func dayView(day: EpochMs, now: EpochMs) -> some View {
         let occ = model.visibleEvents(from: model.time.addDays(day, -1), to: model.time.addDays(day, 2), includeStruck: true)
+        // 純正と同じく、見出しの行（予定・タスク）は出さずに時間軸を広く
         return VStack(spacing: 0) {
-            GeometryReader { geo in
-                let w = geo.size.width - DayTimeline.gutter
-                HStack(spacing: 0) {
-                    Color.clear.frame(width: DayTimeline.gutter)
-                    Label("予定", systemImage: "calendar").frame(width: w * 0.7, alignment: .leading).padding(.leading, 6)
-                    Label("タスク", systemImage: "checklist").frame(width: w * 0.3, alignment: .leading).padding(.leading, 4)
-                }
-                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            }
-            .frame(height: 18)
             Divider()
             DayTimeline(day: day, now: now, events: occ, tasks: model.tasks, mainFraction: 0.7, onSwipeDay: { n in
                 swipeEdge = n < 0 ? .trailing : .leading
@@ -214,9 +375,10 @@ struct AgendaList: View {
                         } header: {
                             Button { select(d) } label: {
                                 HStack {
+                                    // 純正の一覧と同じ見出し：今日は赤
                                     Text(model.time.dayLabel(d)).font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(model.time.isSameDay(d, now) ? Color.accentColor : d == selected ? .primary : .secondary)
-                                    if model.time.isSameDay(d, now) { Text("今日").font(.caption2.weight(.bold)).foregroundStyle(Color.accentColor) }
+                                        .foregroundStyle(model.time.isSameDay(d, now) ? Color.red : .primary)
+                                    if model.time.isSameDay(d, now) { Text("今日").font(.caption.weight(.bold)).foregroundStyle(Color.red) }
                                 }
                             }
                             .buttonStyle(.plain)
@@ -248,10 +410,14 @@ struct AgendaList: View {
             Button { router.open(.event(o.id)) } label: {
                 HStack(spacing: 10) {
                     // 人のしるし（取り消した予定は灰色）
-                    PersonAvatar(calendar: model.calendar(o.event.calendarId), size: 24)
-                        .saturation(o.isStruck ? 0 : 1).opacity(o.isStruck ? 0.5 : 1)
+                    // ほかの人の予定は小さく・うすく（自分の予定を目立たせる）
+                    let other = model.isOtherPerson(o.event.calendarId)
+                    PersonAvatar(calendar: model.calendar(o.event.calendarId), size: other ? 18 : 24)
+                        .saturation(o.isStruck || other ? 0.2 : 1).opacity(o.isStruck ? 0.5 : other ? 0.6 : 1)
+                        .frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck ? .secondary : .primary).lineLimit(1)
+                        Text(o.title).strikethrough(o.isStruck).foregroundStyle(o.isStruck || model.isOtherPerson(o.event.calendarId) ? .secondary : .primary).lineLimit(1)
+                            .font(model.isOtherPerson(o.event.calendarId) ? .subheadline : .body)
                         HStack(spacing: 6) {
                             Text(o.event.allDay ? "終日" : "\(model.hm(o.start))〜\(model.hm(o.end))").monospacedDigit()
                             if let p = o.event.placeName, !p.isEmpty { Label(p, systemImage: "mappin").lineLimit(1) }
@@ -358,5 +524,63 @@ struct PeopleMenu: View {
             .padding(.horizontal, 2)
         }
         .accessibilityLabel("表示する人：" + shown.map(\.name).joined(separator: "・"))
+    }
+}
+
+
+/// カレンダーの一覧（純正の「カレンダー」と同じ形：人ごとに色の丸のチェック、押して出す・隠す）
+struct CalendarsSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(model.calendars, id: \.id) { c in
+                        Button {
+                            // 全員を隠すことはしない
+                            if c.visible && model.calendars.filter(\.visible).count <= 1 { return }
+                            model.setCalendarVisible(c.id, !c.visible)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: c.visible ? "checkmark.circle.fill" : "circle")
+                                    .font(.title2)
+                                    .foregroundStyle(Color(hex: c.color))
+                                    .contentTransition(.symbolEffect(.replace))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(c.name).foregroundStyle(.primary)
+                                    Text(c.id == MTCalendar.selfId ? "今日の画面にも出ます" : "カレンダーにだけ、うすく出ます")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                PersonAvatar(calendar: c, size: 26)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("人")
+                } footer: {
+                    Text("チェックを外した人の予定は、カレンダーに出しません（予定は消えません）。")
+                }
+                Section {
+                    Button("すべて表示") {
+                        for c in model.calendars where !c.visible { model.setCalendarVisible(c.id, true) }
+                    }
+                    .disabled(model.calendars.allSatisfy(\.visible))
+                }
+            }
+            .navigationTitle("カレンダー")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("閉じる")
+                }
+            }
+            .sensoryFeedback(.selection, trigger: model.calendars.map(\.visible))
+        }
+        .presentationDetents([.medium, .large])
     }
 }

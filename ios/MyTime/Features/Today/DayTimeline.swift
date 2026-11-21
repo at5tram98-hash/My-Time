@@ -632,7 +632,8 @@ struct TimelineBlock: View {
         let h = CGFloat(block.placed.height) / 60 * hourHeight
         // 予定＝色で塗った札、タスク＝白い札に色の帯、確認＝丸い札、翌日計画＝灰色
         // 取り消した予定は計画と同じく灰色（塗らずに枠だけ）
-        let filled = block.kind == .event && !block.tomorrow && !block.struck
+        // ほかの人の予定は塗らずに、うすい枠だけ（自分の予定より目立たせない）
+        let filled = block.kind == .event && !block.tomorrow && !block.struck && block.person == nil
         let fg: Color = block.tomorrow || block.struck ? .secondary : filled ? .white : .primary
         let sub: Color = block.tomorrow || block.struck ? Color.secondary.opacity(0.8) : filled ? .white.opacity(0.85) : .secondary
         // 取り消した予定・横に並んで細い札は、名前と時刻だけ（場所などは出さない）
@@ -692,7 +693,7 @@ struct TimelineBlock: View {
             else if block.tomorrow { shape.strokeBorder(Color.gray.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
             else if !filled { shape.strokeBorder(Color(.separator).opacity(0.6), style: StrokeStyle(lineWidth: 0.5, dash: block.kind == .session ? [3, 2] : [])) }
         }
-        .opacity(block.faded && !filled ? 0.55 : 1)
+        .opacity(block.faded && !filled ? 0.55 : block.person != nil ? 0.6 : 1)
         .clipShape(shape)
         // ほかの人の予定：右上に人のしるし（自分の予定には付けない）
         .overlay(alignment: .topTrailing) {

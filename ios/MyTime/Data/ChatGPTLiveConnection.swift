@@ -29,7 +29,25 @@ final class ChatGPTLiveConnection {
     private var connectingKey: String?
     private var backgroundSync: Task<Void, Never>?
 
+    /// ChatGPT が変えた内容の記録（新しい順・50件まで。この端末だけ）
+    struct Activity: Codable, Identifiable, Hashable {
+        var id = UUID().uuidString
+        var at: Date
+        var kind: String
+        var action: String
+        var title: String
+    }
+
     private(set) var proposals: [Proposal] = []
+    /// 確認なしで反映できなかった依頼（形が合わない・そのあと端末で変わったなど）
+    private(set) var held: [String: String] = [:]
+    private(set) var activity: [Activity] = ChatGPTLiveConnection.loadActivity()
+    /// ChatGPT からの変更を確認なしで反映する（既定でオン）
+    var autoApply: Bool {
+        get { UserDefaults.standard.object(forKey: "chatgpt.autoApply") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "chatgpt.autoApply"); objectWillChangeTick += 1 }
+    }
+    private(set) var objectWillChangeTick = 0
     private(set) var lastSent: Date?
     private(set) var failure: String?
     var connected: Bool { token != nil }
@@ -113,6 +131,7 @@ final class ChatGPTLiveConnection {
         SecItemDelete(Self.keychain as CFDictionary)
         token = nil
         proposals = []
+        held = [:]
         lastSent = nil
         sent = nil
         failure = nil
@@ -163,10 +182,116 @@ final class ChatGPTLiveConnection {
                 return Proposal(id: id, created: created, payload: payload)
             }
             failure = nil
+            // 確認なしで反映して、結果をすぐ ChatGPT に返す
+            if autoApply, !proposals.isEmpty, applyPending(model) {
+                running = false
+                await sync(model)
+            }
         } catch {
             guard !Task.isCancelled else { return }
             failure = (error as? RepositoryError)?.description ?? error.localizedDescription
         }
+    }
+
+    /// 届いた依頼を順に反映する。1件でも反映したら true。
+    /// 反映できなかった依頼は「確認が必要」に残す（ほかの依頼は止めない）。まとめて「取り消す」で元に戻せる
+    @discardableResult
+    func applyPending(_ model: AppModel) -> Bool {
+        var any = false
+        for p in proposals where held[p.id] == nil {
+            let preview: ChatGPTTransfer.Preview
+            do { preview = try ChatGPTTransfer.preview(p.payload.data, in: model.repo) }
+            catch { held[p.id] = (error as? RepositoryError)?.description ?? error.localizedDescription; continue }
+            let restore = undoPoint(model.repo, changes: preview.changes)
+            var count = 0
+            let ok = model.perform(Self.toastText(preview.changes), undo: restore) {
+                try model.repo.store.transaction {
+                    count = try ChatGPTTransfer.apply(preview, to: model.repo)
+                    self.recordResult(p.id, applied: true, repo: model.repo)
+                }
+            }
+            if ok {
+                any = true
+                log(preview.changes.filter { !$0.skipped })
+                proposals.removeAll { $0.id == p.id }
+                _ = count
+            } else {
+                held[p.id] = model.errorMessage ?? "反映できませんでした"
+                model.errorMessage = nil
+            }
+        }
+        return any
+    }
+
+    /// 「ChatGPTが予定を2件変更しました」など（純正アプリの知らせと同じ、短い文）
+    static func toastText(_ changes: [ChatGPTTransfer.Change]) -> String {
+        let live = changes.filter { !$0.skipped }
+        guard let first = live.first else { return "ChatGPTからの変更はありません" }
+        let title = first.value("title", afterChange: first.action != .delete)?.stringValue ?? first.kind.label
+        if live.count == 1 { return "ChatGPTが「\(title)」を\(actionLabel(first.action))しました" }
+        return "ChatGPTが\(live.count)件を変更しました"
+    }
+
+    static func actionLabel(_ a: ChatGPTTransfer.Action) -> String {
+        switch a {
+        case .add: return "追加"
+        case .edit: return "変更"
+        case .delete: return "削除"
+        case .copy: return "コピー"
+        }
+    }
+
+    /// 反映する前の状態を覚え、元に戻す手順を返す
+    private func undoPoint(_ repo: Repository, changes: [ChatGPTTransfer.Change]) -> () throws -> Void {
+        let store = repo.store
+        var records: [(EntityName, String, JSONValue?)] = []
+        var tasks = Set<String>()
+        for c in changes where !c.skipped {
+            switch c.kind {
+            case .event: records.append((.event, c.id, store.get(.event, id: c.id)))
+            case .task: records.append((.task, c.id, store.get(.task, id: c.id))); tasks.insert(c.id)
+            case .checkpoint: break
+            }
+        }
+        let subtasks = store.all(.subtask).filter { tasks.contains($0["taskId"]?.stringValue ?? "") }
+        let checkpoints = repo.settings().raw[ChatGPTTransfer.checkpointsKey]
+        let hasCheckpoints = changes.contains { $0.kind == .checkpoint }
+        return {
+            try store.transaction {
+                for (e, id, old) in records {
+                    if let old { store.put(e, id: id, json: old) } else { store.delete(e, id: id) }
+                }
+                if !tasks.isEmpty {
+                    for s in store.all(.subtask) where tasks.contains(s["taskId"]?.stringValue ?? "") {
+                        if let sid = s["id"]?.stringValue { store.delete(.subtask, id: sid) }
+                    }
+                    for s in subtasks { if let sid = s["id"]?.stringValue { store.put(.subtask, id: sid, json: s) } }
+                }
+                if hasCheckpoints {
+                    repo.updateSettings { st in st.raw = st.raw.merging(.object([ChatGPTTransfer.checkpointsKey: checkpoints ?? .array([])])) }
+                }
+            }
+        }
+    }
+
+    private func log(_ changes: [ChatGPTTransfer.Change]) {
+        let now = Date()
+        let rows = changes.map { c in
+            Activity(at: now, kind: c.kind.rawValue, action: c.action.rawValue,
+                     title: c.value("title", afterChange: c.action != .delete)?.stringValue ?? c.value("title", afterChange: false)?.stringValue ?? "（無題）")
+        }
+        activity = Array((rows + activity).prefix(50))
+        if let d = try? JSONEncoder().encode(activity) { UserDefaults.standard.set(d, forKey: "chatgpt.activity") }
+    }
+
+    func clearActivity() {
+        activity = []
+        UserDefaults.standard.removeObject(forKey: "chatgpt.activity")
+    }
+
+    private static func loadActivity() -> [Activity] {
+        guard let d = UserDefaults.standard.data(forKey: "chatgpt.activity") else { return [] }
+        return (try? JSONDecoder().decode([Activity].self, from: d)) ?? []
     }
 
     private func makeSnapshot(_ model: AppModel) -> JSONValue {

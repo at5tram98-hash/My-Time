@@ -11,8 +11,12 @@ enum LiveBackground {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in
             Task { @MainActor in
                 model.reload()
+                // ChatGPT からの変更も、アプリを開いていない間に取り込む（確認なしで反映）
+                await model.chatGPT.sync(model)
                 await LiveActivityCoordinator.shared.reconcile(model: model)
                 task.setTaskCompleted(success: true)
+                // ChatGPT とつないでいる間は、30分ごとにまた見に来る（iOS が時刻を決める）
+                if model.chatGPT.connected { schedule(at: Date().addingTimeInterval(30 * 60)) }
             }
         }
     }

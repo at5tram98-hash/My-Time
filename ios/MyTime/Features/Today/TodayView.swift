@@ -303,8 +303,14 @@ struct NowCard: View {
 
     var body: some View {
         let task = next.taskId.flatMap { id in model.tasks.first { $0.id == id } }
-        Group {
-            if next.kind == .free { clockCard } else { mainCard(task) }
+        VStack(alignment: .leading, spacing: 10) {
+            Group {
+                if next.kind == .free { clockCard } else { mainCard(task) }
+            }
+            // 5秒ごとに入れ替わるお知らせ（出発・遅れ・このあと・持ち物・空き時間など）
+            NowTicker(now: now)
+                .padding(.top, 2)
+                .overlay(alignment: .top) { Rectangle().fill(Color(.separator).opacity(0.5)).frame(height: 0.5).offset(y: -5) }
         }
         .padding(12)
         .glass(RoundedRectangle(cornerRadius: 22, style: .continuous))

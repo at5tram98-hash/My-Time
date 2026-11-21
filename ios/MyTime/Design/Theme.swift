@@ -53,3 +53,11 @@ enum Motion {
     static var pop: Animation { reduce ? fade : .spring(response: 0.32, dampingFraction: 0.78) }
     static var value: Animation { reduce ? fade : .spring(response: 0.5, dampingFraction: 0.9) }
 }
+
+extension Color {
+    /// 淡い色の札の上の文字の色（同じ色を少し濃く。純正カレンダーの札の文字と同じ考え方）
+    var deepened: Color {
+        if #available(iOS 18.0, *) { return mix(with: .primary, by: 0.35) }
+        return self
+    }
+}
