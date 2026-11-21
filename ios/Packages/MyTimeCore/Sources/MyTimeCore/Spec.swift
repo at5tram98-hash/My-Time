@@ -97,3 +97,13 @@ public func yen(_ n: Int) -> String {
     f.locale = Locale(identifier: "ja_JP")
     return "\(f.string(from: NSNumber(value: n)) ?? "\(n)")円"
 }
+
+/// 教室の書き方をそろえる：「12号館510教室」「１２号館 ５１０」「12-510」なども「12510」のように数字をつなげる。
+/// 「5201教室」「5201号室」は「5201」。号館の無い名前（「図書館」など）はそのまま
+public func compactRoom(_ raw: String) -> String {
+    var s = raw.precomposedStringWithCompatibilityMapping.trimmingCharacters(in: .whitespacesAndNewlines)
+    s = s.replacingOccurrences(of: #"(\d+)\s*号館\s*[-ー−]?\s*(\d+)"#, with: "$1$2", options: .regularExpression)
+    s = s.replacingOccurrences(of: #"^(\d+)\s*[-ー−]\s*(\d+)"#, with: "$1$2", options: .regularExpression)
+    s = s.replacingOccurrences(of: #"\s*(教室|号室)$"#, with: "", options: .regularExpression)
+    return s.trimmingCharacters(in: .whitespaces)
+}

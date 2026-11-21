@@ -482,7 +482,7 @@ struct NowCard: View {
     private var isOngoing: Bool { occurrence.map { $0.start <= now && $0.end > now } ?? next.detail.hasSuffix("まで") }
     private var isClass: Bool { occurrence.map { model.calendar($0.event.calendarId)?.kind == .class || $0.event.specType == .class } ?? false }
     private func room(_ o: EventOccurrence) -> String? {
-        o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : "\($0)教室" }
+        o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) }
     }
 
     private var icon: String {

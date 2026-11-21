@@ -113,7 +113,7 @@ struct NowTicker: View {
         }
         // 4. このあとの予定（いま最中のものの次）
         if let n = upcoming.first(where: { $0.start < d1 }) {
-            let place = n.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : "\($0)教室" } ?? n.event.placeName
+            let place = n.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) } ?? n.event.placeName
             out.append(Item(id: "next:\(n.id)", symbol: "calendar", tint: model.occurrenceColor(n),
                             text: "\(t.hm(n.start)) \(n.title)" + (place.map { "・\($0)" } ?? ""),
                             trailing: "あと\(durationShort(Int((n.start - now) / MINUTE)))", open: .event(n.id)))

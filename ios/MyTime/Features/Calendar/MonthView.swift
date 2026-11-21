@@ -246,6 +246,7 @@ struct MonthView: View {
                     }
                 }
                 .padding(.horizontal, 1.5)
+                .frame(maxWidth: .infinity)
             } else if !items.isEmpty {
                 HStack(spacing: 2) {
                     ForEach(items.prefix(3)) { it in Circle().fill(dotColor(it)).frame(width: 5, height: 5) }
@@ -301,7 +302,7 @@ struct MonthView: View {
         switch it {
         case .event(let o):
             if o.event.allDay || model.isOtherPerson(o.event.calendarId) || o.isStruck { return 15 }
-            return level >= 3 ? 44 : level >= 2 ? 33 : 15
+            return level >= 3 ? 38 : level >= 2 ? 28 : 15
         case .task: return 15
         }
     }
@@ -320,7 +321,7 @@ struct MonthView: View {
         let c = model.occurrenceColor(o)
         let other = model.isOtherPerson(o.event.calendarId)
         let compact = o.event.allDay || other || o.isStruck || level < 2
-        let room = o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : "\($0)" }
+        let room = o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) }
         let sub = room ?? o.event.placeName
         return Group {
             if compact {
@@ -330,11 +331,12 @@ struct MonthView: View {
                     } else if o.event.allDay {
                         Image(systemName: "circle.fill").font(.system(size: 5.5)).foregroundStyle(c)
                     }
-                    Text(o.title).font(.system(size: 9.5, weight: other ? .regular : .semibold)).lineLimit(1)
+                    Text(o.title).font(.system(size: 9.5, weight: other ? .regular : .semibold)).tracking(-0.2)
+                        .lineLimit(1).truncationMode(.tail)
                         .strikethrough(o.isStruck)
                 }
                 .foregroundStyle(other || o.isStruck ? Color.secondary : o.event.allDay ? Color.primary : c)
-                .padding(.horizontal, 4)
+                .padding(.leading, 3).padding(.trailing, 2)
                 .frame(maxWidth: .infinity, minHeight: 15, maxHeight: 15, alignment: .leading)
                 .background {
                     if other || o.isStruck { Color.clear }
@@ -342,24 +344,27 @@ struct MonthView: View {
                     else { RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(c.opacity(0.18)) }
                 }
                 .opacity(other ? 0.75 : 1)
+                .clipped()
             } else {
-                VStack(alignment: .leading, spacing: 1) {
+                // 名前1行・時刻1行（文字の大きさに引っぱられて札からはみ出さないように、高さは決めて中で切る）
+                VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 2) {
-                        if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 8, weight: .bold)) }
-                        Text(o.title).font(.system(size: 10, weight: .semibold)).lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if isShiftPending(o.event) { Image(systemName: "hourglass").font(.system(size: 7, weight: .bold)) }
+                        Text(o.title).font(.system(size: 10, weight: .semibold)).tracking(-0.2)
+                            .lineLimit(1).truncationMode(.tail)
                     }
-                    Text(model.hm(o.start)).font(.system(size: 9)).monospacedDigit().opacity(0.8)
+                    Text(model.hm(o.start)).font(.system(size: 9, weight: .regular)).monospacedDigit().opacity(0.75)
+                        .lineLimit(1)
                     if level >= 3, let sub, !sub.isEmpty {
-                        Text(sub).font(.system(size: 8.5)).lineLimit(1).opacity(0.7)
+                        Text(sub).font(.system(size: 8.5)).lineLimit(1).truncationMode(.tail).opacity(0.65)
                     }
-                    Spacer(minLength: 0)
                 }
                 .foregroundStyle(c.deepened)
-                .padding(.horizontal, 3).padding(.vertical, 2)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: level >= 3 ? 44 : 33)
+                .padding(.leading, 3).padding(.trailing, 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .frame(height: level >= 3 ? 38 : 28)
                 .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(c.opacity(0.2)))
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
             }
         }
         .contentShape(Rectangle())
@@ -375,12 +380,13 @@ struct MonthView: View {
         let tint = t.kind == .check ? Color.checkTask : Color.doTask
         return HStack(spacing: 3) {
             Image(systemName: t.isDone ? "checkmark.circle.fill" : "circle").font(.system(size: 7.5, weight: .bold)).foregroundStyle(tint)
-            Text(t.title).font(.system(size: 9.5, weight: .medium)).lineLimit(1).strikethrough(t.isDone)
+            Text(t.title).font(.system(size: 9.5, weight: .medium)).tracking(-0.2).lineLimit(1).truncationMode(.tail).strikethrough(t.isDone)
         }
         .foregroundStyle(t.isDone ? Color.secondary : Color.primary)
-        .padding(.horizontal, 4)
+        .padding(.leading, 3).padding(.trailing, 2)
         .frame(maxWidth: .infinity, minHeight: 15, maxHeight: 15, alignment: .leading)
         .background(Capsule().fill(Color(.quaternarySystemFill)))
+        .clipShape(Capsule())
         .contentShape(Rectangle())
         .chipTap { router.open(.task(t.id)) }
         .accessibilityElement(children: .combine)

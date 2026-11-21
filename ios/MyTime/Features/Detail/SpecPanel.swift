@@ -53,7 +53,7 @@ struct SpecPanel: View {
         switch spec {
         case .class:
             HStack(alignment: .firstTextBaseline) {
-                metric("教室", str("room") ?? "未設定", symbol: "door.left.hand.open")
+                metric("教室", str("room").map(compactRoom) ?? "未設定", symbol: "door.left.hand.open")
                 Spacer()
                 if let p = str("period") { metric("時限", p, symbol: "number") }
             }

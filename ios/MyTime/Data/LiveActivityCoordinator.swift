@@ -169,12 +169,10 @@ final class LiveActivityCoordinator {
         return t.count <= n ? t : String(t.prefix(n))
     }
 
-    /// 教室の表示。数字だけなら「5302教室」、そうでなければ入力のまま（勝手に読み替えない）
+    /// 教室の表示。「12号館510教室」なども「12510」のようにつなげて出す（大きな見出しも、左の短い表示も同じ）
     static func roomText(_ raw: String) -> (full: String, code: String) {
-        let r = raw.trimmingCharacters(in: .whitespaces)
-        if r.hasSuffix("教室") { return (r, String(r.dropLast(2))) }
-        if r.allSatisfy({ $0.isNumber || $0 == "-" }) { return ("\(r)教室", r) }
-        return ("教室：\(r)", short(r, 6))
+        let r = compactRoom(raw)
+        return (r, short(r, 6))
     }
 
     func candidates(model: AppModel, now: EpochMs) -> [Item] {

@@ -37,7 +37,7 @@ enum NotificationScheduler {
         for e in events where !e.event.allDay && e.start > now {
             let ev = e.event
             let kind = calendarKinds[ev.calendarId]
-            let room = ev.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+            let room = ev.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) }
             let place = ev.placeName.flatMap { $0.isEmpty ? nil : $0 }
             let isClass = kind == .class || ev.specType == .class
             let isShift = kind == .job || ev.specType == .shift
@@ -50,7 +50,7 @@ enum NotificationScheduler {
                 }
             }
             // どこで（教室・場所・オンライン）
-            let whereText: String? = isClass ? room.map { "\($0)教室" } : place ?? (ev.extra?["meetingUrl"]?.stringValue != nil ? "オンライン" : nil)
+            let whereText: String? = isClass ? room : place ?? (ev.extra?["meetingUrl"]?.stringValue != nil ? "オンライン" : nil)
             if let tm = ev.travelMinutes, tm > 0 {
                 // 出発：純正の「出発時刻」と同じく、出発のときに知らせる
                 let leave = e.start - EpochMs(tm) * MINUTE

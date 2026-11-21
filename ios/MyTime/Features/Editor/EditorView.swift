@@ -909,7 +909,7 @@ struct EditorView: View {
             if isClassKind {
                 var ci = e.classInfo?.objectValue ?? [:]
                 ci["subjectName"] = .string(subjectName.trimmingCharacters(in: .whitespaces).isEmpty ? name : subjectName.trimmingCharacters(in: .whitespaces))
-                ci["room"] = .string(room.trimmingCharacters(in: .whitespaces))
+                ci["room"] = .string(compactRoom(room))
                 e.classInfo = .object(ci)
             }
             e.extra = mergeExtra(e.extra, dueAt: nil)

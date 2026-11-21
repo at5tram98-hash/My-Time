@@ -32,8 +32,9 @@ struct CalendarScreen: View {
                 let now = model.time.ms(ctx.date)
                 VStack(spacing: 6) {
                     // 日・週・月・一覧の切り替えは右上のボタンへ（純正と同じく、画面の上を空ける）
-                    if mode == "month" && !showYear {
-                        monthHeader
+                    // 見出しの行：左に月（日の表示は日付）、右に日・週・月の切り替え（純正と同じく1回で切り替える）
+                    if !showYear && mode != "list" {
+                        headerRow(day: day)
                             .transition(.opacity)
                     }
                     if mode == "day" || mode == "list" {
@@ -42,12 +43,6 @@ struct CalendarScreen: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     if mode == "day" {
-                        // 純正と同じ、選んだ日の見出し（2026年11月21日・土曜日）
-                        Text(model.time.date(day).formatted(.dateTime.year().month().day()) + "・" + model.time.date(day).formatted(.dateTime.weekday(.wide)))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.red : Color.primary)
-                            .contentTransition(.numericText())
-                            .animation(reduceMotion ? nil : .snappy, value: day)
                         allDayChips(day)
                     }
                     Group {
@@ -81,7 +76,7 @@ struct CalendarScreen: View {
                 .padding(.top, 2)
             }
             .background(Color(.systemBackground))
-            .navigationTitle(mode == "month" ? "" : title(day))
+            .navigationTitle(mode == "list" ? title(day) : "")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showCalendars) { CalendarsSheet().environment(model) }
             .animation(reduceMotion ? nil : .snappy, value: isShowingToday(day))
@@ -112,21 +107,44 @@ struct CalendarScreen: View {
         }
     }
 
-    /// 月の表示の上の大きな月の名前（今の月は赤。純正と同じ）
-    private var monthHeader: some View {
+    /// 見出しの行。月：大きな月の名前（今月は赤）／週：月の名前／日：2026年11月21日・土曜日。右に日・週・月の切り替え
+    private func headerRow(day: EpochMs) -> some View {
         let isNow = model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .month)
-        return HStack(alignment: .firstTextBaseline) {
-            Text(visibleMonth.formatted(.dateTime.month(.wide)))
-                .font(.system(size: 30, weight: .bold))
-                .foregroundStyle(isNow ? Color.red : Color.primary)
-                .contentTransition(.numericText())
-            if !model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .year) {
-                Text(visibleMonth.formatted(.dateTime.year())).font(.title3.weight(.semibold)).foregroundStyle(.secondary)
+        return HStack(alignment: .center, spacing: 8) {
+            Group {
+                switch mode {
+                case "month":
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(visibleMonth.formatted(.dateTime.month(.wide)))
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(isNow ? Color.red : Color.primary)
+                            .contentTransition(.numericText())
+                        if !model.time.calendar.isDate(visibleMonth, equalTo: Date(), toGranularity: .year) {
+                            Text(visibleMonth.formatted(.dateTime.year())).font(.headline).foregroundStyle(.secondary)
+                        }
+                    }
+                case "week":
+                    Text(selected.formatted(.dateTime.year().month(.wide)))
+                        .font(.title3.weight(.bold))
+                default:
+                    Text(model.time.date(day).formatted(.dateTime.month().day()) + " " + model.time.date(day).formatted(.dateTime.weekday(.wide)))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(model.time.isSameDay(day, model.now) ? Color.red : Color.primary)
+                        .contentTransition(.numericText())
+                }
             }
-            Spacer()
+            .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            ModeSwitch(mode: Binding(get: { mode }, set: { v in
+                showYear = false
+                if v == "month" { visibleMonth = selected }
+                withAnimation(reduceMotion ? nil : Motion.sheet) { mode = v }
+            }))
         }
         .padding(.horizontal, 16)
+        .frame(height: 38)
         .animation(reduceMotion ? nil : .snappy, value: visibleMonth)
+        .animation(reduceMotion ? nil : .snappy, value: day)
         .accessibilityAddTraits(.isHeader)
     }
 
@@ -562,5 +580,44 @@ struct CalendarsSheet: View {
             .sensoryFeedback(.selection, trigger: model.calendars.map(\.visible))
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+
+/// 日・週・月の小さな切り替え（見出しの行の右。押すとすぐ切り替わる）
+struct ModeSwitch: View {
+    @Binding var mode: String
+    @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let items = [("day", "日"), ("week", "週"), ("month", "月")]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(items, id: \.0) { item in
+                let on = mode == item.0
+                Button { mode = item.0 } label: {
+                    Text(item.1)
+                        .font(.subheadline.weight(on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.primary : Color.secondary)
+                        .frame(width: 38, height: 28)
+                        .background {
+                            if on {
+                                // 明るい画面では白、暗い画面では一段明るい灰色（純正の切り替えと同じ）
+                                Capsule().fill(Color(.tertiarySystemBackground))
+                                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                                    .matchedGeometryEffect(id: "pill", in: ns)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.1 + "の表示")
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(Color(.tertiarySystemFill)))
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: mode)
+        .sensoryFeedback(.selection, trigger: mode)
     }
 }

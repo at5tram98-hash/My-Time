@@ -109,3 +109,14 @@ final class TravelPlanTests: XCTestCase {
         XCTAssertEqual(TravelPlan.legs(extra)[1].line, "市バス10")
     }
 }
+
+final class RoomFormatTests: XCTestCase {
+    func testRoomsAreJoined() {
+        XCTAssertEqual(compactRoom("12号館510教室"), "12510")
+        XCTAssertEqual(compactRoom("１２号館 ５１０"), "12510")
+        XCTAssertEqual(compactRoom("12号館-510"), "12510")
+        XCTAssertEqual(compactRoom("5201教室"), "5201")
+        XCTAssertEqual(compactRoom("12-510"), "12510")
+        XCTAssertEqual(compactRoom("図書館"), "図書館")
+    }
+}

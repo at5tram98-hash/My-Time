@@ -425,7 +425,7 @@ struct DayTimeline: View {
 
     private func eventMeta(_ e: MTEvent) -> [Meta] {
         var m: [Meta] = []
-        if let r = e.classInfo?["room"]?.stringValue, !r.isEmpty { m.append(Meta(symbol: "door.left.hand.open", text: "\(r)教室")) }
+        if let r = e.classInfo?["room"]?.stringValue, !r.isEmpty { m.append(Meta(symbol: "door.left.hand.open", text: compactRoom(r))) }
         // その日に小テストがあれば目立たせる
         if let q = e.extra?["spec"]?["details"]?["quizAt"]?.intValue, model.time.isSameDay(q, day) {
             let scope = e.extra?["spec"]?["details"]?["quizScope"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }

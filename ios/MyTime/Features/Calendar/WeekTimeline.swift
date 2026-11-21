@@ -202,7 +202,7 @@ struct WeekTimeline: View {
         var out: [Item] = model.visibleEvents(from: d, to: d1, includeStruck: true).filter { !$0.event.allDay && $0.start < d1 && $0.end > d }.map { o in
             Item(id: "e:\(o.id)", title: o.title, start: max(o.start, d), end: min(o.end, d1), color: o.isStruck ? .gray : Color(hex: model.eventColor(o.event)), isEvent: true, done: o.isStruck, pending: isShiftPending(o.event), open: .event(o.id),
                  symbol: o.event.specType.flatMap { SPEC_BY_ID[$0]?.symbol } ?? (model.calendar(o.event.calendarId)?.kind == .class ? "graduationcap.fill" : model.calendar(o.event.calendarId)?.kind == .job ? "briefcase.fill" : "calendar"),
-                 sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? o.event.placeName),
+                 sub: o.isStruck ? nil : (o.event.classInfo?["room"]?.stringValue.flatMap { $0.isEmpty ? nil : compactRoom($0) } ?? o.event.placeName),
                  travel: o.isStruck || o.start < d ? nil : o.event.travelMinutes.flatMap { $0 > 0 ? $0 : nil },
                  other: model.isOtherPerson(o.event.calendarId))
         }
@@ -242,7 +242,8 @@ struct WeekTimeline: View {
                         }
                     )
                 }
-            Rectangle().fill(Color(.separator).opacity(0.5)).frame(width: 0.5).frame(maxHeight: .infinity).allowsHitTesting(false)
+            // 日の境目の線はごく薄く（目立つ縦線にしない）
+            Rectangle().fill(Color(.separator).opacity(0.18)).frame(width: 0.5).frame(maxHeight: .infinity).allowsHitTesting(false)
             ForEach(list) { it in
                 if let p = placed[it.id] {
                     let cw = (width - 4) / CGFloat(p.columns)
@@ -281,33 +282,31 @@ struct WeekTimeline: View {
         VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 2) {
                     if it.pending { Image(systemName: "hourglass").font(.system(size: 8, weight: .bold)) }
-                    Image(systemName: !it.isEvent && it.done ? "checkmark.circle.fill" : it.symbol).font(.system(size: visible == 7 ? 7 : 9, weight: .bold))
-                    Text(it.title).lineLimit(height > 40 ? 2 : 1).strikethrough(it.done)
+                    Image(systemName: !it.isEvent && it.done ? "checkmark.circle.fill" : it.symbol).font(.system(size: visible == 7 ? 6.5 : 8, weight: .bold))
+                    Text(it.title).tracking(-0.2).lineLimit(height > 44 ? 2 : 1).truncationMode(.tail).strikethrough(it.done)
                 }
-                .font(.system(size: visible == 7 ? 9 : 11, weight: .semibold))
+                .font(.system(size: visible == 7 ? 8.5 : 10.5, weight: .semibold))
                 if height > 30 {
-                    Text(visible == 3 ? "\(model.hm(it.start))〜\(model.hm(it.end))" : model.hm(it.start)).font(.system(size: visible == 7 ? 8 : 9)).monospacedDigit().opacity(0.85).lineLimit(1)
+                    Text(visible == 3 ? "\(model.hm(it.start))〜\(model.hm(it.end))" : model.hm(it.start)).font(.system(size: visible == 7 ? 7.5 : 9)).monospacedDigit().opacity(0.75).lineLimit(1)
                 }
                 if height > 48, let sub = it.sub, !sub.isEmpty {
                     HStack(spacing: 2) {
-                        Image(systemName: "mappin").font(.system(size: 7))
-                        Text(sub).lineLimit(1)
+                        Image(systemName: "mappin").font(.system(size: 6.5))
+                        Text(sub).lineLimit(1).truncationMode(.tail)
                     }
-                    .font(.system(size: visible == 7 ? 8 : 9)).opacity(0.85)
+                    .font(.system(size: visible == 7 ? 7.5 : 8.5)).opacity(0.7)
                 }
             }
-            .padding(.leading, 5).padding(.trailing, 3).padding(.vertical, 2)
+            .padding(.leading, 4).padding(.trailing, 2).padding(.vertical, 3)
             .frame(width: max(8, width), height: height, alignment: .topLeading)
                         // 純正カレンダーと同じ：淡い色の札に、左の色の帯と同じ色の文字。ほかの人の予定は枠だけでうすく
             .foregroundStyle(it.other || it.done ? Color.secondary : it.isEvent ? it.color.deepened : it.color)
             .background(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(it.other ? AnyShapeStyle(Color.clear) : AnyShapeStyle(it.color.opacity(it.isEvent ? 0.22 : 0.12)))
-                if it.isEvent && !it.other {
-                    UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 5).fill(it.color).frame(width: 3)
-                }
             }
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(it.other ? Color(.separator) : it.isEvent ? .clear : it.color.opacity(0.45), style: StrokeStyle(lineWidth: 0.8, dash: it.other ? [3, 2] : [])))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(it.other ? Color(.separator) : it.isEvent ? .clear : it.color.opacity(0.45), style: StrokeStyle(lineWidth: 0.8, dash: it.other ? [3, 2] : [])))
             .opacity(it.done ? 0.55 : it.other ? 0.7 : 1)
         .contentShape(Rectangle())
         .deliberateTap { if Date().timeIntervalSince(lastSwipe) > 0.4 { router.open(it.open) } }
