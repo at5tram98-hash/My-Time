@@ -24,11 +24,11 @@ struct EventDetailView: View {
         NavigationStack {
             if let master = model.events.first(where: { $0.id == masterId }) {
                 let ex = parsed.flatMap { p in master.exceptions.first { $0.originalStart == p.originalStart } }
-                let displayed = displayedEvent(master, exception: ex)
+                let displayed = master.applyingOccurrence(ex)
                 let ev = master
                 let start = ex?.start ?? parsed?.originalStart ?? ev.start
                 let end = ex?.end ?? start + (ev.end - ev.start)
-                let tint = Color(hex: model.eventColor(ev))
+                let tint = Color(hex: model.eventColor(displayed))
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
                     let now = model.time.ms(ctx.date)
                     List {
@@ -38,12 +38,12 @@ struct EventDetailView: View {
                         // 純正カレンダーと同じ、時刻の目盛りに予定を置いたプレビュー。押すと5分ごとの詳細スケジュール
                         // 取り消した予定は、見出し・操作・基本の情報だけ（プレビュー・場所・持ち物などは出さない）
                         let struckNow = isStruck(ev, parsed)
-                        if !ev.allDay && end > start && !struckNow {
+                        if !displayed.allDay && end > start && !struckNow {
                             Section {
                                 NavigationLink {
                                     SubScheduleView(eventId: ev.id, start: start, end: end)
                                 } label: {
-                                    EventDayPreview(event: ev, start: start, end: end, tint: tint, struck: isStruck(ev, parsed))
+                                    EventDayPreview(event: displayed, start: start, end: end, tint: tint, struck: isStruck(ev, parsed))
                                 }
                                 .buttonStyle(.plain)
                             } footer: {
@@ -54,7 +54,7 @@ struct EventDetailView: View {
                             }
                         }
                         Section {
-                            actions(ev, parsed: parsed, start: start, end: end)
+                            actions(ev, displayed: displayed, parsed: parsed, start: start, end: end)
                         }
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
@@ -72,11 +72,11 @@ struct EventDetailView: View {
                             }
                         }
                         // 場所：Apple マップのプレビューと移動の段取り
-                        if !struckNow { EventMapCard(event: ev, start: start) }
-                        details(ev, start: start, end: end)
+                        if !struckNow { EventMapCard(event: displayed, start: start) }
+                        details(displayed, start: start, end: end)
                         // 持ち物：1行（押すと確認の画面）
                         if !struckNow, let occ = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first(where: { $0.masterId == ev.id && $0.start == start }) {
-                            let names = BelongingsList.eventItems(ev)
+                            let names = BelongingsList.eventItems(displayed)
                             if !names.isEmpty {
                                 let k = BelongingsList.key(occ)
                                 let checked = BelongingsList.checked(ev, key: k).intersection(names)
@@ -96,8 +96,8 @@ struct EventDetailView: View {
                                 }
                             }
                         }
-                        if let st = model.studioType(ev.extra?["studio"]?["typeId"]?.stringValue) {
-                            let rows = studioInfoRows(st, values: ev.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
+                        if let st = model.studioType(displayed.extra?["studio"]?["typeId"]?.stringValue) {
+                            let rows = studioInfoRows(st, values: displayed.extra?["studio"]?["values"]?.objectValue ?? [:], time: model.time, hm: model.hm)
                             if !rows.isEmpty {
                                 Section {
                                     ForEach(Array(rows.enumerated()), id: \.offset) { _, r in LabeledContent(r.0, value: r.1) }
@@ -271,30 +271,30 @@ struct EventDetailView: View {
     /// よく使う操作（編集は右上）。ひとつ目は大きく（参加・マップ）、ほかは同じ形の丸いボタンを横に並べる
     /// 大きな主ボタン（参加・経路）は1行まるごと、ほかの操作はその下に同じ幅のタイル（形の上に名前）。
     /// 横1列に詰めると、主ボタンに幅を取られて右のボタンの文字が切れていた
-    private func actions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+    private func actions(_ ev: MTEvent, displayed: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
         VStack(spacing: 10) {
-            if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
+            if let url = displayed.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 primaryButton("参加する", "video.fill") { openURL(u) }
             }
             // 経路のボタンは出さない（場所は下の Apple マップのプレビューから）
-            secondaryActions(ev, parsed: parsed, start: start, end: end)
+            secondaryActions(ev, displayed: displayed, parsed: parsed, start: start, end: end)
         }
         .padding(.vertical, 2)
         .animation(Motion.pop, value: isStruck(ev, parsed))
         .sensoryFeedback(.impact(weight: .light), trigger: struckTick)
     }
 
-    private func secondaryActions(_ ev: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
+    private func secondaryActions(_ ev: MTEvent, displayed: MTEvent, parsed: (masterId: String, originalStart: EpochMs)?, start: EpochMs, end: EpochMs) -> some View {
         HStack(spacing: 8) {
             // 「その他」にしまわず、複製・コピー・共有・取り消すを同じ形のタイルで横に並べる
-            Button { duplicate(ev, start: start, end: end) } label: { roundLabel("複製", "plus.square.on.square") }
+            Button { duplicate(displayed, start: start, end: end) } label: { roundLabel("複製", "plus.square.on.square") }
                 .buttonStyle(PressableStyle())
                 .accessibilityHint("すぐ後に同じ予定を作ります")
             Button {
                 copyOccurrence = model.visibleEvents(from: start - 1, to: end + 1, includeStruck: true).first { $0.id == occurrenceId || $0.masterId == ev.id && $0.start == start }
             } label: { roundLabel("ほかの日へ", "calendar.badge.plus") }
                 .buttonStyle(PressableStyle())
-            ShareLink(item: shareText(ev, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
+            ShareLink(item: shareText(displayed, start: start, end: end)) { roundLabel("共有", "square.and.arrow.up") }
                 .buttonStyle(PressableStyle())
             let struck = isStruck(ev, parsed)
             Button {
@@ -343,13 +343,6 @@ struct EventDetailView: View {
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func displayedEvent(_ master: MTEvent, exception: RecurrenceException?) -> MTEvent {
-        var result = master
-        if let title = exception?.title { result.title = title }
-        if let notes = exception?.notes { result.notes = notes }
-        return result
-    }
-
     private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {
         var copy = MTEvent.make(title: ev.title, calendarId: ev.calendarId, start: end, end: end + (end - start), now: model.now, id: model.repo.newId())
         copy.notes = ev.notes
@@ -376,7 +369,7 @@ struct EventDetailView: View {
                 LabeledContent("カレンダー") { PersonLabel(calendar: cal, size: 18) }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
-            if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
+            if let url = displayed.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 Link(destination: u) { LabeledContent("会議") { Label("参加する", systemImage: "video.fill").foregroundStyle(Color.accentColor) } }
             }
             ForEach(Array((ev.extra?["urls"]?.arrayValue ?? []).enumerated()), id: \.offset) { _, l in

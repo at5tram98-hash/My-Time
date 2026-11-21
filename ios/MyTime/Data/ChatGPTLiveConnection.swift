@@ -179,8 +179,9 @@ final class ChatGPTLiveConnection {
                                    uniquingKeysWith: { first, _ in first })
         let occurrences: [JSONValue] = expandAll(model.events, from: from, to: to, time: model.time).compactMap { occurrence in
             guard !occurrence.isStruck, let summary = summaries[occurrence.masterId] else { return nil }
-            var fields = summary.objectValue ?? [:]
-            fields.removeValue(forKey: "exceptions")
+            var fields = ChatGPTTransfer.occurrenceFields(occurrence.event)
+            fields["id"] = summary["id"]
+            fields["revision"] = summary["revision"]
             fields["title"] = .string(occurrence.title)
             fields["occurrenceId"] = .string(occurrence.id)
             fields["notes"] = .string(occurrence.event.notes)

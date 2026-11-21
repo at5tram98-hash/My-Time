@@ -331,9 +331,36 @@ public func expandEvent(_ ev: MTEvent, from: EpochMs, to: EpochMs, time: DomainT
         if let x, x.kind == .cancelled || x.kind == .archived { return nil }
         let start = x?.start ?? s, end = x?.end ?? s + dur
         guard start < to && end > from else { return nil }
-        var effective = ev
-        effective.notes = x?.notes ?? ev.notes
-        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: effective, start: start, end: end, title: x?.title ?? ev.title)
+        let effective = ev.applyingOccurrence(x)
+        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: effective, start: start, end: end, title: effective.title)
+    }
+}
+
+public extension MTEvent {
+    /// Applies one occurrence's display and scheduling fields without changing its master.
+    func applyingOccurrence(_ exception: RecurrenceException?) -> MTEvent {
+        guard let exception, exception.kind == .override else { return self }
+        var event = self
+        if let title = exception.title { event.title = title }
+        if let notes = exception.notes { event.notes = notes }
+        guard let fields = exception.raw["mcpOverrides"]?.objectValue else { return event }
+        var extra = event.extra?.objectValue ?? [:]
+        var classInfo = event.classInfo?.objectValue ?? [:]
+        for (key, value) in fields {
+            switch key {
+            case "calendarId": if let id = value.stringValue { event.calendarId = id }
+            case "timeZone": if let zone = value.stringValue { event.timeZone = zone }
+            case "employerId": event.employerId = value.stringValue
+            case "hideAfterEnd": if let hidden = value.boolValue { event.hideAfterEnd = hidden }
+            case "subjectName", "room": classInfo[key] = value.isNull ? nil : value
+            case "color", "place", "travelMinutes", "meetingUrl", "notifies", "urls", "spec", "studio", "bring", "allDay", "shiftPending":
+                extra[key] = value.isNull ? nil : value
+            default: break
+            }
+        }
+        event.extra = extra.isEmpty ? nil : .object(extra)
+        event.classInfo = classInfo.isEmpty ? nil : .object(classInfo)
+        return event
     }
 }
 

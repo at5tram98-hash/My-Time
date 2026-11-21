@@ -132,7 +132,12 @@ struct CheckpointSheet: View {
                     if isNew || editing {
                         Button(isNew ? "追加" : "保存") { save() }.fontWeight(.semibold)
                     } else {
-                        Button("編集") { withAnimation(.snappy) { editing = true } }
+                        Button("編集") {
+                            if checkpoint.repeatRule != nil, let series = model.checkpoints.first(where: { $0.id == checkpoint.id }) {
+                                checkpoint = series
+                            }
+                            withAnimation(.snappy) { editing = true }
+                        }
                     }
                 }
             }

@@ -428,9 +428,12 @@ struct EventBelongingsScreen: View {
 
     var body: some View {
         let ev = model.events.first { $0.id == masterId }
-        let names = ev.map(BelongingsList.eventItems) ?? []
+        let effective = ev?.applyingOccurrence(ev?.exceptions.first { exception in
+            occurrenceId == "\(masterId)@\(exception.originalStart)"
+        })
+        let names = effective.map(BelongingsList.eventItems) ?? []
         let checked = ev.map { BelongingsList.checked($0, key: key) } ?? []
-        let g = BelongingGroup(id: "e:\(occurrenceId)", title: ev?.title ?? "", when: start, source: .event(occurrenceId: occurrenceId, masterId: masterId, key: key),
+        let g = BelongingGroup(id: "e:\(occurrenceId)", title: effective?.title ?? "", when: start, source: .event(occurrenceId: occurrenceId, masterId: masterId, key: key),
                                items: names.map { ($0, checked.contains($0)) })
         List {
             Section {

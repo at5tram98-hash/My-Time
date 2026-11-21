@@ -176,6 +176,10 @@ public enum ChatGPTTransfer {
         })
     }
 
+    public static func occurrenceFields(_ event: MTEvent) -> [String: JSONValue] {
+        fields(.event, event.json)
+    }
+
     private static func fields(_ kind: Kind, _ record: JSONValue) -> [String: JSONValue] {
         var values = (record.objectValue ?? [:]).filter { kind.fields.contains($0.key) }
         for key in kind.extraFields { values[key] = record["extra"]?[key] }
@@ -242,7 +246,7 @@ public enum ChatGPTTransfer {
                         if kind == .checkpoint {
                             return try checkpointChange(current, action, start, entry["fields"], now)
                         }
-                        return try occurrenceChange(current, action, start, entry["fields"], now, calendars)
+                        return try occurrenceChange(current, action, start, entry["fields"], now, calendars, employers, repo.studioTypes())
                     }
                     let affectsSeries = kind == .event && current?["recurrence"]?.objectValue != nil
                         || kind == .checkpoint && current?["repeat"]?.stringValue != nil
@@ -514,14 +518,15 @@ public enum ChatGPTTransfer {
     }
 
     private static func occurrenceChange(_ raw: JSONValue, _ action: Action, _ start: EpochMs,
-                                         _ patch: JSONValue?, _ now: EpochMs, _ calendars: Set<String>) throws -> Change {
+                                         _ patch: JSONValue?, _ now: EpochMs, _ calendars: Set<String>,
+                                         _ employers: Set<String>, _ studioTypes: [StudioType]) throws -> Change {
         let event = MTEvent(json: raw)
         guard event.recurrence != nil, ruleStarts(event, from: start, to: start + 1).contains(start) else {
             throw RepositoryError("繰り返し予定の指定された回が見つかりません")
         }
         let exception = event.exceptions.first { $0.originalStart == start }
         guard exception?.kind != .cancelled, exception?.kind != .archived else { throw RepositoryError("この回は削除されています") }
-        var effective = event
+        var effective = event.applyingOccurrence(exception)
         effective.start = exception?.start ?? start
         effective.end = exception?.end ?? (start + event.end - event.start)
         effective.title = exception?.title ?? event.title
@@ -531,8 +536,15 @@ public enum ChatGPTTransfer {
             return Change(kind: .event, action: action, id: event.id, before: effective.json, after: nil,
                           changedFields: [], affectsSeries: false, relatedTasks: 0, occurrenceStart: start)
         }
-        guard let patch = patch?.objectValue, !patch.isEmpty, Set(patch.keys).isSubset(of: ["title", "notes", "start", "end"]) else {
-            throw RepositoryError("指定回では名前・メモ・開始・終了を変更できます")
+        guard let patch = patch?.objectValue, !patch.isEmpty, Set(patch.keys).isSubset(of: Kind.event.fields.subtracting(["recurrence"])) else {
+            throw RepositoryError("指定回に繰り返しルールは設定できません")
+        }
+        if let employer = patch["employerId"]?.stringValue, !employers.contains(employer) {
+            throw RepositoryError("勤務先が見つかりません")
+        }
+        if let id = patch["studio"]?["typeId"]?.stringValue,
+           !studioTypes.contains(where: { $0.id == id && $0.target == "calendar" && Int64($0.version) == patch["studio"]?["version"]?.intValue }) {
+            throw RepositoryError("指定した種類が見つかりません")
         }
         let next = try updated(.event, event.id, effective.json, patch, now, calendars)
         return Change(kind: .event, action: action, id: event.id, before: effective.json, after: next,
@@ -715,9 +727,16 @@ public enum ChatGPTTransfer {
             }
             if let value = change.after {
                 let event = MTEvent(json: value)
+                var overrides: [String: JSONValue] = [:]
+                for key in change.changedFields where !["start", "end", "title", "notes"].contains(key) {
+                    if Kind.event.extraFields.contains(key) { overrides[key] = value["extra"]?[key] ?? .null }
+                    else if ["subjectName", "room"].contains(key) { overrides[key] = value["classInfo"]?[key] ?? .null }
+                    else { overrides[key] = value[key] ?? .null }
+                }
                 try repo.editOccurrence(masterId: change.id, originalStart: original, start: event.start, end: event.end,
                                         title: change.changedFields.contains("title") ? event.title : nil,
-                                        notes: change.changedFields.contains("notes") ? event.notes : nil)
+                                        notes: change.changedFields.contains("notes") ? event.notes : nil,
+                                        overrides: overrides)
             } else {
                 try repo.cancelOccurrence(masterId: change.id, originalStart: original)
             }

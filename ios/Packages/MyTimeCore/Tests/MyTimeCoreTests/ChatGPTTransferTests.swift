@@ -168,6 +168,7 @@ final class ChatGPTTransferTests: XCTestCase {
         let changes = [
             change("edit", "event", eventID, [
                 "title": "この回だけ".json, "notes": "変更メモ".json, "start": moved.json, "end": (moved + HOUR).json,
+                "calendarId": MTCalendar.mioId.json, "place": "変更した場所".json, "notifies": .array([.number(15)]),
             ], revision: token(snapshot, "event")).merging(.object(["occurrenceStart": second.json])),
             change("delete", "event", eventID, revision: token(snapshot, "event")).merging(.object(["occurrenceStart": third.json])),
             change("edit", "checkpoint", pointID, ["title": "確認を変更".json, "at": moved.json, "alarm": .bool(true)],
@@ -178,7 +179,13 @@ final class ChatGPTTransferTests: XCTestCase {
         let master = try XCTUnwrap(repo.event(eventID))
         XCTAssertEqual(master.title, "繰り返し予定")
         XCTAssertFalse(expandEvent(master, from: day, to: time.addDays(day, 4)).contains { $0.originalStart == third })
-        XCTAssertEqual(expandEvent(master, from: moved, to: moved + HOUR).first { $0.originalStart == second }?.event.notes, "変更メモ")
+        let shifted = try XCTUnwrap(expandEvent(master, from: moved, to: moved + HOUR).first { $0.originalStart == second })
+        XCTAssertEqual(shifted.event.notes, "変更メモ")
+        XCTAssertEqual(shifted.event.calendarId, MTCalendar.mioId)
+        XCTAssertEqual(shifted.event.placeName, "変更した場所")
+        XCTAssertEqual(shifted.event.extra?["notifies"]?.arrayValue, [.number(15)])
+        XCTAssertEqual(master.calendarId, MTCalendar.selfId)
+        XCTAssertNil(master.placeName)
 
         let records = repo.settings().raw[ChatGPTTransfer.checkpointsKey]?.arrayValue ?? []
         XCTAssertEqual(ChatGPTTransfer.checkpoints(records, on: day).first?["title"]?.stringValue, "繰り返し確認")

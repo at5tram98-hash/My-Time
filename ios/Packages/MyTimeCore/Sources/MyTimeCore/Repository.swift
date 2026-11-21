@@ -318,7 +318,7 @@ public final class Repository {
     }
 
     /// 繰り返しの「この回のみ」の時刻変更（Web 版 editThisOccurrence と同じ：override の例外。ほかの回・元の予定は変えない）
-    public func editOccurrence(masterId: String, originalStart: EpochMs, start: EpochMs, end: EpochMs, title: String? = nil, notes: String? = nil) throws {
+    public func editOccurrence(masterId: String, originalStart: EpochMs, start: EpochMs, end: EpochMs, title: String? = nil, notes: String? = nil, overrides: [String: JSONValue] = [:]) throws {
         guard var m = event(masterId), m.recurrence != nil else { throw RepositoryError("予定が見つかりません") }
         guard end > start else { throw RepositoryError("終了は開始より後にしてください") }
         let prevOverride = m.exceptions.first { $0.originalStart == originalStart && $0.kind == .override }
@@ -326,6 +326,10 @@ public final class Repository {
         x.kind = .override; x.start = start; x.end = end
         if let title { x.title = title }
         if let notes { x.notes = notes }
+        if !overrides.isEmpty {
+            let previous = x.raw["mcpOverrides"] ?? .object([:])
+            x.raw = x.raw.merging(.object(["mcpOverrides": previous.merging(.object(overrides))]))
+        }
         m.exceptions.removeAll { $0.originalStart == originalStart }
         m.exceptions.append(x)
         m.updatedAt = clock()
