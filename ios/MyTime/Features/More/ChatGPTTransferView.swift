@@ -222,7 +222,7 @@ struct ChatGPTTransferView: View {
     private func rowFields(_ change: ChatGPTTransfer.Change) -> [String] {
         if change.action == .edit { return change.changedFields }
         let order = ["calendarId", "allDay", "start", "end", "plannedStart", "plannedEnd", "checkAt", "at",
-                     "place", "location", "notes", "kind", "alarm", "notifyBefore", "repeat", "estimateMinutes", "color", "timeZone"]
+                     "place", "location", "notes", "kind", "alarm", "notifyBefore", "repeat", "estimateMinutes", "color", "timeZone", "specType", "subjectName", "room", "bring", "recurrence"]
         return order.filter { key in
             guard let value = change.value(key, afterChange: change.action != .delete) else { return false }
             return !value.isNull && value.stringValue != ""
@@ -244,6 +244,7 @@ struct ChatGPTTransferView: View {
             "plannedStart": "開始", "plannedEnd": "終了", "timeZone": "タイムゾーン", "allDay": "終日",
             "place": "場所", "location": "場所", "color": "色", "kind": "タスクの種類",
             "estimateMinutes": "見積時間（分）", "checkAt": "確認時刻", "at": "時刻",
+            "specType": "予定の種類", "subjectName": "科目名", "room": "教室", "bring": "持ち物", "recurrence": "繰り返し",
             "alarm": "アラーム", "notifyBefore": "通知（分前）", "repeat": "繰り返し",
         ][key] ?? key
     }
@@ -259,10 +260,25 @@ struct ChatGPTTransferView: View {
             }
             return "\(model.time.dayLabel(at)) \(model.hm(at))"
         }
+        if key == "bring", let items = value.arrayValue { return items.compactMap(\.stringValue).joined(separator: "、") }
+        if key == "recurrence", let frequency = value["freq"]?.stringValue {
+            let unit = ["daily": "日", "weekly": "週", "monthly": "か月"][frequency] ?? frequency
+            let interval = value["interval"]?.intValue ?? 1
+            let weekdays = ["日", "月", "火", "水", "木", "金", "土"]
+            let days = (value["byWeekday"]?.arrayValue ?? []).compactMap { day -> String? in
+                guard let index = day.intValue.map(Int.init), weekdays.indices.contains(index) else { return nil }
+                return weekdays[index]
+            }.joined(separator: "・")
+            var text = "\(interval)\(unit)ごと"
+            if !days.isEmpty { text += "（\(days)）" }
+            if let until = value["until"]?.intValue { text += "、\(model.time.dayLabel(until))まで" }
+            return text
+        }
         if let flag = value.boolValue { return flag ? "オン" : "オフ" }
         if let text = value.stringValue {
             if key == "calendarId" { return model.calendar(text)?.name ?? text }
             if key == "repeat" { return ["daily": "毎日", "weekdays": "平日", "weekly": "毎週"][text] ?? text }
+            if key == "specType", let spec = SpecTypeId(rawValue: text) { return SPEC_BY_ID[spec]?.name ?? text }
             if key == "kind" { return text == "check" ? "確認" : "実行" }
             return text.isEmpty ? "なし" : text
         }
