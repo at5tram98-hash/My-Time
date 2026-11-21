@@ -317,12 +317,23 @@ public func expandEvent(_ ev: MTEvent, from: EpochMs, to: EpochMs, time: DomainT
     var byStart: [EpochMs: RecurrenceException] = [:]
     for x in ev.exceptions { byStart[x.originalStart] = x }
     let dur = ev.end - ev.start
-    return ruleStarts(ev, from: from - 7 * DAY, to: to + 7 * DAY, time: time).compactMap { s in
+    var starts = Set(ruleStarts(ev, from: from, to: to, time: time))
+    for exception in ev.exceptions where exception.kind == .override {
+        let start = exception.start ?? exception.originalStart
+        let end = exception.end ?? exception.originalStart + dur
+        if start < to && end > from, !starts.contains(exception.originalStart),
+           ruleStarts(ev, from: exception.originalStart, to: exception.originalStart + 1, time: time).contains(exception.originalStart) {
+            starts.insert(exception.originalStart)
+        }
+    }
+    return starts.sorted().compactMap { s in
         let x = byStart[s]
         if let x, x.kind == .cancelled || x.kind == .archived { return nil }
         let start = x?.start ?? s, end = x?.end ?? s + dur
         guard start < to && end > from else { return nil }
-        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: ev, start: start, end: end, title: x?.title ?? ev.title)
+        var effective = ev
+        effective.notes = x?.notes ?? ev.notes
+        return EventOccurrence(id: "\(ev.id)@\(s)", masterId: ev.id, originalStart: s, event: effective, start: start, end: end, title: x?.title ?? ev.title)
     }
 }
 

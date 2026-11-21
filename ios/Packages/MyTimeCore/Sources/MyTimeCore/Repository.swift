@@ -250,6 +250,22 @@ public final class Repository {
         }
     }
 
+    func saveSubtask(_ subtask: MTSubtask) throws {
+        guard let parent = task(subtask.taskId), canAddSubtask(parent) else {
+            throw RepositoryError("このタスクにはサブタスクを追加できません")
+        }
+        let previous = store.get(.subtask, id: subtask.id).map(MTSubtask.init)
+        guard previous == nil || previous?.taskId == subtask.taskId else {
+            throw RepositoryError("別のタスクに同じサブタスクIDがあります")
+        }
+        var child = subtask
+        child.updatedAt = clock()
+        try store.transaction {
+            store.put(.subtask, id: child.id, json: child.json)
+            record(.subtask, child.id, op: "put", action: previous == nil ? "create" : "update", detail: ["taskId": child.taskId.json])
+        }
+    }
+
     public func deleteSubtask(_ id: String) throws {
         try store.transaction { store.delete(.subtask, id: id); record(.subtask, id, op: "delete", action: "delete") }
     }
@@ -302,12 +318,14 @@ public final class Repository {
     }
 
     /// 繰り返しの「この回のみ」の時刻変更（Web 版 editThisOccurrence と同じ：override の例外。ほかの回・元の予定は変えない）
-    public func editOccurrence(masterId: String, originalStart: EpochMs, start: EpochMs, end: EpochMs) throws {
+    public func editOccurrence(masterId: String, originalStart: EpochMs, start: EpochMs, end: EpochMs, title: String? = nil, notes: String? = nil) throws {
         guard var m = event(masterId), m.recurrence != nil else { throw RepositoryError("予定が見つかりません") }
         guard end > start else { throw RepositoryError("終了は開始より後にしてください") }
         let prevOverride = m.exceptions.first { $0.originalStart == originalStart && $0.kind == .override }
         var x = prevOverride ?? RecurrenceException(originalStart: originalStart, kind: .override)
         x.kind = .override; x.start = start; x.end = end
+        if let title { x.title = title }
+        if let notes { x.notes = notes }
         m.exceptions.removeAll { $0.originalStart == originalStart }
         m.exceptions.append(x)
         m.updatedAt = clock()

@@ -77,6 +77,24 @@ it.each([web, codex])('pairs $client, protects schedules, and tracks changes unt
   const listed = await (await rpc('mytime_list', filter, token)).json<{ result: { structuredContent: Record<string, unknown> } }>();
   expect(listed.result.structuredContent).toMatchObject({ covered: true, stale: false, items: [{ id: 'test', title: '試験予定' }] });
 
+  const advanced = { requestId: crypto.randomUUID(), payload: { format: 'my-time-changes-v1', changes: [
+    { action: 'edit', kind: 'event', id: 'test', revision: 'revision', occurrenceStart: from,
+      fields: { title: 'この回だけ' } },
+  ] } };
+  const oldPhone = await (await rpc('mytime_propose_changes', advanced, token)).json<{ result: { isError: boolean } }>();
+  expect(oldPhone.result.isError).toBe(true);
+  const updatedPhone = await post('/device/sync', { snapshot: { format: 'my-time-snapshot-v1', editVersion: 2, from, to,
+    task: [], checkpoint: [{ id: 'cp', at: from - 1000, repeat: 'daily' }],
+    checkpointOccurrences: [{ id: 'cp', at: from + 1000, occurrenceStart: from + 1000 }], occurrences: [],
+  } }, device.token);
+  expect(updatedPhone.status).toBe(200);
+  const point = await (await rpc('mytime_list', { ...filter, kind: 'checkpoint' }, token))
+    .json<{ result: { structuredContent: Record<string, unknown> } }>();
+  expect(point.result.structuredContent).toMatchObject({ editVersion: 2, items: [{ id: 'cp', occurrenceStart: from + 1000 }] });
+  const accepted = await (await rpc('mytime_propose_changes', advanced, token)).json<{ result: { structuredContent: Record<string, unknown> } }>();
+  expect(accepted.result.structuredContent.status).toBe('pending');
+  expect((await post('/device/result', { id: advanced.requestId, status: 'rejected' }, device.token)).status).toBe(200);
+
   const id = crypto.randomUUID();
   const args = { requestId: id, payload: { format: 'my-time-changes-v1', changes: [
     { action: 'add', kind: 'task', id: crypto.randomUUID(), fields: { title: '確認' } },

@@ -22,15 +22,17 @@ struct EventDetailView: View {
         let parsed = parseOccurrenceId(occurrenceId)
         let masterId = parsed?.masterId ?? occurrenceId
         NavigationStack {
-            if let ev = model.events.first(where: { $0.id == masterId }) {
-                let ex = parsed.flatMap { p in ev.exceptions.first { $0.originalStart == p.originalStart } }
+            if let master = model.events.first(where: { $0.id == masterId }) {
+                let ex = parsed.flatMap { p in master.exceptions.first { $0.originalStart == p.originalStart } }
+                let displayed = displayedEvent(master, exception: ex)
+                let ev = master
                 let start = ex?.start ?? parsed?.originalStart ?? ev.start
                 let end = ex?.end ?? start + (ev.end - ev.start)
                 let tint = Color(hex: model.eventColor(ev))
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
                     let now = model.time.ms(ctx.date)
                     List {
-                        Section { header(ev, start: start, end: end, now: now, tint: isStruck(ev, parsed) ? .gray : tint, struck: isStruck(ev, parsed)) }
+                        Section { header(displayed, start: start, end: end, now: now, tint: isStruck(ev, parsed) ? .gray : tint, struck: isStruck(ev, parsed)) }
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                         // 純正カレンダーと同じ、時刻の目盛りに予定を置いたプレビュー。押すと5分ごとの詳細スケジュール
@@ -116,8 +118,8 @@ struct EventDetailView: View {
                                 }
                             }
                         }
-                        if !ev.notes.isEmpty {
-                            Section("メモ") { Text(ev.notes).textSelection(.enabled) }
+                        if !displayed.notes.isEmpty {
+                            Section("メモ") { Text(displayed.notes).textSelection(.enabled) }
                         }
                         // 純正カレンダーと同じく、一番下に赤い「予定を削除」（中央ぞろえ）
                         Section {
@@ -339,6 +341,13 @@ struct EventDetailView: View {
         .frame(maxWidth: .infinity, minHeight: 56)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func displayedEvent(_ master: MTEvent, exception: RecurrenceException?) -> MTEvent {
+        var result = master
+        if let title = exception?.title { result.title = title }
+        if let notes = exception?.notes { result.notes = notes }
+        return result
     }
 
     private func duplicate(_ ev: MTEvent, start: EpochMs, end: EpochMs) {

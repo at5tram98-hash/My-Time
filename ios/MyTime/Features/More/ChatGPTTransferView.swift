@@ -204,6 +204,9 @@ struct ChatGPTTransferView: View {
             Text("\(change.kind.label) · \(actionLabel(change))")
                 .foregroundStyle(change.action == .delete ? Color.red : Color.secondary)
             if change.affectsSeries { Text("繰り返し全体が対象です").foregroundStyle(.orange) }
+            if let start = change.occurrenceStart {
+                Text("この回のみ · \(model.time.dayLabel(start))").foregroundStyle(.secondary)
+            }
             if change.action == .delete, change.kind == .task, change.relatedTasks > 0 {
                 Text("サブタスク \(change.relatedTasks) 件も削除します").foregroundStyle(.red)
             }
@@ -223,7 +226,7 @@ struct ChatGPTTransferView: View {
         if change.action == .edit { return change.changedFields }
         let order = ["calendarId", "allDay", "start", "end", "plannedStart", "plannedEnd", "checkAt", "at",
                      "place", "location", "notes", "kind", "alarm", "notifyBefore", "repeat", "estimateMinutes", "color", "timeZone"]
-        return order.filter { key in
+        return (order + change.changedFields.filter { !order.contains($0) && $0 != "title" }).filter { key in
             guard let value = change.value(key, afterChange: change.action != .delete) else { return false }
             return !value.isNull && value.stringValue != ""
         }
@@ -244,13 +247,20 @@ struct ChatGPTTransferView: View {
             "plannedStart": "開始", "plannedEnd": "終了", "timeZone": "タイムゾーン", "allDay": "終日",
             "place": "場所", "location": "場所", "color": "色", "kind": "タスクの種類",
             "estimateMinutes": "見積時間（分）", "checkAt": "確認時刻", "at": "時刻",
-            "alarm": "アラーム", "notifyBefore": "通知（分前）", "repeat": "繰り返し",
+            "alarm": "アラーム", "notifyBefore": "通知（分前）", "repeat": "繰り返し", "recurrence": "繰り返し",
+            "travelMinutes": "移動時間（分）", "meetingUrl": "会議URL", "notifies": "通知", "urls": "リンク",
+            "employerId": "勤務先", "room": "教室", "subjectName": "科目", "hideAfterEnd": "終了後に非表示",
+            "shiftPending": "仮シフト", "onDay": "日付", "icon": "アイコン", "category": "カテゴリー",
+            "flagged": "フラグ", "priority": "優先度", "tags": "タグ", "eventId": "内包先の予定",
+            "notifyMinutesBefore": "通知（分前）", "autoStartAt": "自動開始", "autoEndAt": "自動終了",
+            "subtasks": "サブタスク", "bring": "持ち物", "checked": "確認済み", "status": "状態", "progress": "進捗",
+            "spec": "予定・タスクの種類", "studio": "自分の種類",
         ][key] ?? key
     }
 
     private func fieldText(_ change: ChatGPTTransfer.Change, _ key: String, after: Bool) -> String {
         guard let value = change.value(key, afterChange: after), !value.isNull else { return "なし" }
-        if ["start", "end", "plannedStart", "plannedEnd", "checkAt", "at"].contains(key), let at = value.intValue {
+        if ["start", "end", "plannedStart", "plannedEnd", "checkAt", "at", "onDay", "autoStartAt", "autoEndAt"].contains(key), let at = value.intValue {
             let allDay = change.value("allDay", afterChange: after)?.boolValue == true
             if allDay {
                 let day = key == "end" ? at - 1 : at
@@ -259,6 +269,8 @@ struct ChatGPTTransferView: View {
             }
             return "\(model.time.dayLabel(at)) \(model.hm(at))"
         }
+        if key == "place", let name = value["name"]?.stringValue { return name }
+        if key == "progress", let fraction = value.doubleValue { return "\(Int((fraction * 100).rounded()))%" }
         if let flag = value.boolValue { return flag ? "オン" : "オフ" }
         if let text = value.stringValue {
             if key == "calendarId" { return model.calendar(text)?.name ?? text }

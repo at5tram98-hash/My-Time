@@ -45,24 +45,8 @@ extension AppModel {
 
     /// その日に出るチェックポイント（繰り返しは、その日の同じ時刻に）
     func checkpoints(on day: EpochMs) -> [Checkpoint] {
-        let d0 = time.startOfDay(day), d1 = time.addDays(d0, 1)
-        return checkpoints.compactMap { c in
-            if c.at >= d0 && c.at < d1 { return c }
-            guard let r = c.repeatRule, c.at < d1 else { return nil }
-            let wd = time.weekday(d0)
-            let ok: Bool
-            switch r {
-            case "daily": ok = true
-            case "weekdays": ok = (1...5).contains(wd)
-            case "weekly": ok = time.weekday(c.at) == wd
-            default: ok = false
-            }
-            guard ok else { return nil }
-            var x = c
-            x.at = d0 + (c.at - time.startOfDay(c.at))
-            return x
-        }
-        .sorted { $0.at < $1.at }
+        let records = settings.raw[Self.checkpointsKey]?.arrayValue ?? []
+        return ChatGPTTransfer.checkpoints(records, on: day, time: time).compactMap(Checkpoint.init)
     }
 
     func saveCheckpoint(_ c: Checkpoint?, removing id: String? = nil) {
