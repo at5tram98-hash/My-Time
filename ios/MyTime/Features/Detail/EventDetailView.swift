@@ -369,7 +369,7 @@ struct EventDetailView: View {
                 LabeledContent("カレンダー") { PersonLabel(calendar: cal, size: 18) }
             }
             if let r = ev.recurrence { LabeledContent("繰り返し", value: recurrenceText(r)) }
-            if let url = displayed.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
+            if let url = ev.extra?["meetingUrl"]?.stringValue, let u = URL(string: url) {
                 Link(destination: u) { LabeledContent("会議") { Label("参加する", systemImage: "video.fill").foregroundStyle(Color.accentColor) } }
             }
             ForEach(Array((ev.extra?["urls"]?.arrayValue ?? []).enumerated()), id: \.offset) { _, l in
